@@ -1,0 +1,368 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(82, 113, 136, 0.28), transparent 30%),
+    linear-gradient(180deg, #101920 0%, #0a0f14 100%);
+  color: #e6edf5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background:
+    radial-gradient(circle at top, rgba(82, 113, 136, 0.28), transparent 30%),
+    linear-gradient(180deg, #101920 0%, #0a0f14 100%);
+}
+
+canvas {
+  display: block;
+}
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud__top,
+.hud__bottom {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hud__top {
+  top: 20px;
+  align-items: flex-start;
+}
+
+.hud__bottom {
+  bottom: 20px;
+  align-items: flex-end;
+}
+
+.hud__round,
+.hud__fps,
+.hud__weapon,
+.hud__utility,
+.hud__movement,
+.hud__pointer {
+  padding: 10px 14px;
+  border: 1px solid rgba(174, 211, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(7, 12, 16, 0.55);
+  backdrop-filter: blur(10px);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+
+.hud__crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+}
+
+.hud__crosshair--hidden {
+  display: none;
+}
+
+.hud__crosshair::before,
+.hud__crosshair::after {
+  content: '';
+  position: absolute;
+  background: rgba(236, 245, 255, 0.95);
+}
+
+.hud__crosshair::before {
+  top: 5px;
+  left: 0;
+  width: 12px;
+  height: 2px;
+}
+
+.hud__crosshair::after {
+  top: 0;
+  left: 5px;
+  width: 2px;
+  height: 12px;
+}
+
+.hud__ads-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  display: none;
+  transform: translate(-50%, -50%);
+}
+
+.hud__ads-reticle--active {
+  display: block;
+}
+
+.hud__ads-reticle::before,
+.hud__ads-reticle::after {
+  content: '';
+  position: absolute;
+  background: rgba(236, 245, 255, 0.92);
+}
+
+.hud__ads-reticle::before {
+  top: 12px;
+  left: 0;
+  width: 26px;
+  height: 2px;
+}
+
+.hud__ads-reticle::after {
+  top: 0;
+  left: 12px;
+  width: 2px;
+  height: 26px;
+}
+
+.hud__scope {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud__scope--active {
+  display: flex;
+}
+
+.hud__scope-lens {
+  position: relative;
+  width: min(78vmin, 760px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 200vmax rgba(0, 0, 0, 0.97);
+}
+
+.hud__scope-lens::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(0, 0, 0, 0.94);
+  border-radius: 50%;
+}
+
+.hud__scope-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+}
+
+.hud__scope-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.hud__scope-line {
+  background: rgba(0, 0, 0, 0.92);
+  transform: translate(-50%, -50%);
+}
+
+.hud__scope-line--vertical {
+  width: 2px;
+  height: 100%;
+}
+
+.hud__scope-line--horizontal {
+  width: 100%;
+  height: 2px;
+}
+
+.hud__loading {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.hud__loading--active {
+  display: flex;
+}
+
+.hud__loading-card {
+  min-width: 240px;
+  padding: 18px 20px;
+  border: 1px solid rgba(174, 211, 255, 0.2);
+  border-radius: 16px;
+  background: rgba(7, 12, 16, 0.82);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.34);
+  text-align: center;
+}
+
+.hud__loading-title {
+  color: rgba(230, 237, 245, 0.94);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud__loading-status {
+  margin-top: 10px;
+  color: rgba(174, 211, 255, 0.92);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+
+.hud__pause {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  background: rgba(5, 8, 12, 0.38);
+  backdrop-filter: blur(10px);
+}
+
+.hud__pause--active {
+  display: flex;
+}
+
+.hud__pause-panel {
+  min-width: 280px;
+  padding: 24px;
+  border: 1px solid rgba(174, 211, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(7, 12, 16, 0.82);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.34);
+}
+
+.hud__pause-title {
+  margin-bottom: 16px;
+  font-size: 28px;
+  letter-spacing: 0.04em;
+}
+
+.hud__pause-button {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(174, 211, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(176, 215, 255, 0.14);
+  color: #e6edf5;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hud__pause-button--secondary {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.hud__pause-button:hover {
+  background: rgba(176, 215, 255, 0.22);
+}
+
+.hud__volume {
+  display: block;
+  margin-top: 12px;
+  padding: 10px 0 2px;
+}
+
+.hud__volume-label {
+  display: block;
+  margin-bottom: 8px;
+  color: rgba(230, 237, 245, 0.9);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+}
+
+.hud__slider-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__slider-value {
+  color: rgba(174, 211, 255, 0.94);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.hud__volume-slider {
+  width: 100%;
+  accent-color: #aed3ff;
+}
+
+.hud__bindings {
+  display: none;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(174, 211, 255, 0.12);
+  color: rgba(230, 237, 245, 0.9);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.hud__bindings--visible {
+  display: block;
+}
+
+.hud__maps,
+.hud__skyboxes {
+  display: none;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(174, 211, 255, 0.12);
+}
+
+.hud__maps--visible,
+.hud__skyboxes--visible {
+  display: block;
+}
+
+.hud__map-option,
+.hud__skybox-option {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(174, 211, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e6edf5;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hud__map-option--active,
+.hud__skybox-option--active {
+  background: rgba(176, 215, 255, 0.18);
+  border-color: rgba(176, 215, 255, 0.34);
+}
