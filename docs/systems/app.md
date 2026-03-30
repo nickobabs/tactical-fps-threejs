@@ -29,17 +29,9 @@
 
 - `three`
 - `InputManager`
-- `CollisionWorld`
-- `FirstPersonController`
 - `mapOptions`
 - `MapRuntime`
 - `createHud`
-- `RoundManager`
-- `WeaponManager`
-- `UtilityManager`
-- `NetworkClient`
-- `TargetManager`
-- `NavigationManager`
 - `SkyboxManager`
 - `AudioManager`
 
@@ -60,4 +52,4 @@
 ## Current Status
 
 - Implemented and active
-- HDR skyboxes, pause menu flow, staged map swapping, navmesh-backed target updates, weapon swapping, and shared audio registration are all integrated into the active runtime
+- HDR skyboxes, pause menu flow, staged map swapping, navmesh-backed target updates, weapon swapping, sensitivity/volume controls, and shared audio registration are all integrated into the active runtime

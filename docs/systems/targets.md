@@ -2,7 +2,7 @@
 
 ## Summary
 
-`TargetDummy` and `TargetManager` provide the current enemy-target sandbox, while `targetView.js` and `targetFeedback.js` own the target's procedural visuals and floating damage-number helpers.
+`TargetDummy` and `TargetManager` provide the current enemy-target sandbox, while `targetView.js`, `targetPresentation.js`, and `targetFeedback.js` own the target's procedural visuals, expression state, and floating damage-number helpers.
 
 ## Inputs
 

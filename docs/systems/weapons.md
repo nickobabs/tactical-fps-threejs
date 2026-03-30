@@ -2,7 +2,7 @@
 
 ## Summary
 
-`WeaponManager` owns equipped weapon state, first-person viewmodels, shot timing, hitscan raycasts, recoil response, zoom state, movement-speed modifiers, muzzle flash, tracers, and temporary impact markers.
+`WeaponManager` coordinates equipped weapon state, while `weaponFiring.js`, `weaponPresentation.js`, and `weaponEffects.js` now own shot resolution, viewmodel presentation math, and temporary shot effects respectively.
 
 ## Inputs
 

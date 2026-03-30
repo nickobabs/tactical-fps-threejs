@@ -68,6 +68,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
         TargetDummy.js
         TargetManager.js
         targetFeedback.js
+        targetPresentation.js
         targetView.js
       ui/
         Hud.js
@@ -77,6 +78,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
         UtilityManager.js
       weapons/
         WeaponManager.js
+        weaponEffects.js
+        weaponFiring.js
+        weaponPresentation.js
         weaponConfigs.js
         viewModels.js
     shared/
@@ -132,11 +136,59 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - The sniper supports scoped zoom with a circular overlay, reduced FOV, and FOV-based sensitivity scaling.
 - The knife is available on `3`, increases movement speed, and uses a short-range thrust attack with its own slash sound.
 - The HUD renders movement state, round state, pointer lock state, weapon name, utility name, and FPS.
-- `Escape` opens a pause menu with resume, key bindings, map selection, skybox selection, and a master volume slider.
+- `Escape` opens a pause menu with resume, key bindings, map selection, skybox selection, master volume, and mouse sensitivity.
+- Map loading now shows a centered loading overlay while the next map and its navmesh are prepared.
 - Multiple HDR skyboxes can be swapped at runtime from the pause menu.
 - Basic weapon audio is live: rifle fire, sniper fire, sniper scope zoom, and knife slash all route through a Web Audio-based `AudioManager` with decoded buffers, playback policies, and master volume control.
-- A simple moving target enemy exists in the map with body/head hit zones, 100 HP, damage feedback numbers, respawn, navmesh-backed wandering, and line-of-sight chase behavior.
+- A simple moving target enemy exists in the map with body/head hit zones, 100 HP, damage feedback numbers, respawn, navmesh-backed wandering, line-of-sight chase behavior, red idle/aggro eye feedback, and angry eyebrows while aggroed.
 - A simple round timer/state loop runs between `freeze` and `live`.
+
+## Current Gameplay Snapshot
+
+- Maps:
+  - `Training Ground`
+  - `Desert Compound`
+- Weapons:
+  - `Rifle`: full auto, ADS, low damage hitscan
+  - `Sniper`: semi-auto, scoped overlay, high damage hitscan, hipfire spread
+  - `Knife`: fast movement, melee thrust
+- Bots:
+  - Wander on navmesh
+  - Chase on sight
+  - Face movement direction while roaming/pathing
+  - Show aggro through eyes + eyebrows
+- Menus:
+  - Pause menu
+  - Key bindings
+  - Map selection
+  - Skybox selection
+  - Volume slider
+  - Sensitivity slider
+
+## Main Runtime Flow
+
+- `GameApp` owns renderer, camera, skybox state, HUD state, pause state, and the animation loop.
+- `MapRuntime` builds and owns map-bound systems: collision, navigation, player controller, weapons, targets, rounds, utility, and networking stub.
+- `InputManager` gathers browser input and exposes one shared frame snapshot per render frame.
+- `FirstPersonController` consumes that snapshot for movement/look.
+- `WeaponManager` consumes the same frame snapshot for swap / scope / fire logic and delegates shot resolution and viewmodel presentation to helper files.
+- `TargetManager` updates target actors using `CollisionWorld` and `NavigationManager`.
+
+## High-Value Files
+
+- [`src/app/GameApp.js`](C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js): top-level runtime composition and frame loop.
+- [`src/game/maps/MapRuntime.js`](C:/Users/nicko/tactical-fps-threejs/src/game/maps/MapRuntime.js): map-bound system assembly and lifecycle.
+- [`src/core/physics/CollisionWorld.js`](C:/Users/nicko/tactical-fps-threejs/src/core/physics/CollisionWorld.js): static world collision, grounding, and LOS.
+- [`src/game/ai/NavigationManager.js`](C:/Users/nicko/tactical-fps-threejs/src/game/ai/NavigationManager.js): runtime navmesh generation and path queries.
+- [`src/game/weapons/WeaponManager.js`](C:/Users/nicko/tactical-fps-threejs/src/game/weapons/WeaponManager.js): weapon runtime state coordination.
+- [`src/game/targets/TargetDummy.js`](C:/Users/nicko/tactical-fps-threejs/src/game/targets/TargetDummy.js): current bot actor behavior.
+- [`src/game/ui/Hud.js`](C:/Users/nicko/tactical-fps-threejs/src/game/ui/Hud.js): HUD shell and loading/pause integration.
+
+## Current Pressure Points
+
+- Bundle size is still the biggest technical pressure point because `recast-navigation` and its WASM chunk are large.
+- AI is still intentionally simple. `TargetDummy` is cleaner than before, but more advanced combat behavior will likely want another split between perception, navigation, and combat decision logic.
+- Weapons are in better shape after the recent helper splits, but reloads/ammo/equip behavior will probably justify another structure pass when those systems land.
 
 ## Known Issues Or Deliberate Compromises
 
