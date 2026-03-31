@@ -32,6 +32,13 @@ export class GameApp {
     this.audioManager.registerSound('knife-slash', '/audio/sword-slash-4.mp3', {
       playback: 'interrupt',
     });
+    this.remotePlayerMeshes = new Map();
+    this.remotePlayerGeometry = new THREE.BoxGeometry(0.7, 1.72, 0.7);
+    this.remotePlayerMaterial = new THREE.MeshStandardMaterial({
+      color: 0x54c7f2,
+      roughness: 0.55,
+      metalness: 0.08,
+    });
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c1218);
@@ -83,9 +90,12 @@ export class GameApp {
     this.stop();
     this.input.destroy();
     this.hud.destroy();
+    this.clearRemotePlayers();
     this.unloadMap();
     this.skyboxManager.dispose();
     this.audioManager.destroy();
+    this.remotePlayerGeometry.dispose();
+    this.remotePlayerMaterial.dispose();
     this.renderer.dispose();
   }
 
@@ -97,6 +107,7 @@ export class GameApp {
       roundManager: this.runtime?.roundManager ?? null,
       weaponManager: this.runtime?.weaponManager ?? null,
       utilityManager: this.runtime?.utilityManager ?? null,
+      networkClient: this.runtime?.networkClient ?? null,
       playerController: this.runtime?.playerController ?? null,
       getFps: () => this.currentFps,
       getMasterVolume: () => this.audioManager.getMasterVolume(),
@@ -117,6 +128,7 @@ export class GameApp {
   }
 
   unloadMap() {
+    this.clearRemotePlayers();
     this.runtime?.destroy(this.scene);
     this.runtime = null;
   }
@@ -221,26 +233,38 @@ export class GameApp {
     this.currentFps = delta > 0 ? Math.round(1 / delta) : 0;
     const frameInput = this.input.consumeFrameState();
 
-    if (this.hadPointerLock && !this.input.pointerLocked && !this.isPaused) {
-      this.pauseGame();
-    }
-
     if (frameInput.justPressed.has('Escape')) {
       this.isPaused ? this.resumeGame() : this.pauseGame();
     }
 
-    if (!this.isPaused && !this.isLoadingMap && this.runtime?.playerController) {
-      this.runtime.playerController.update(delta, frameInput);
+    if (!this.isLoadingMap && this.runtime?.playerController) {
+      const localMovementInput = !this.isPaused
+        ? this.runtime.playerController.getMovementInputSnapshot(frameInput)
+        : null;
+
+      if (!this.isPaused) {
+        this.runtime.playerController.update(delta, frameInput);
+        this.runtime.weaponManager.update(delta, frameInput);
+      }
+
       this.runtime.roundManager.update(delta);
-      this.runtime.weaponManager.update(delta, frameInput);
       this.runtime.utilityManager.update(delta);
-      this.runtime.networkClient.update(delta);
+      this.runtime.networkClient.update(delta, localMovementInput);
+
+      const authoritativeCorrection = this.runtime.networkClient.consumeLocalCorrection();
+      if (authoritativeCorrection) {
+        this.runtime.playerController.reconcileAuthoritativeState(authoritativeCorrection);
+      }
+
       this.runtime.targetManager.update(delta, {
         playerPosition: this.runtime.playerController.position,
         playerEyePosition: this.runtime.playerController.getEyePosition(),
         collisionWorld: this.runtime.collisionWorld,
         navigationManager: this.runtime.navigationManager,
       });
+      this.syncRemotePlayers(this.runtime.networkClient.getRemotePlayers());
+    } else {
+      this.clearRemotePlayers();
     }
 
     this.hud.update();
@@ -270,5 +294,46 @@ export class GameApp {
     } catch (error) {
       console.error('Failed to resume pointer lock.', error);
     }
+  }
+
+  syncRemotePlayers(remotePlayers) {
+    const activeIds = new Set();
+
+    for (const player of remotePlayers) {
+      activeIds.add(player.playerId);
+      let mesh = this.remotePlayerMeshes.get(player.playerId);
+
+      if (!mesh) {
+        mesh = new THREE.Mesh(this.remotePlayerGeometry, this.remotePlayerMaterial);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.remotePlayerMeshes.set(player.playerId, mesh);
+        this.scene.add(mesh);
+      }
+
+      mesh.position.set(
+        player.position.x,
+        player.position.y + 0.86,
+        player.position.z,
+      );
+      mesh.rotation.set(0, player.yaw, 0);
+    }
+
+    for (const [playerId, mesh] of this.remotePlayerMeshes) {
+      if (activeIds.has(playerId)) {
+        continue;
+      }
+
+      this.scene.remove(mesh);
+      this.remotePlayerMeshes.delete(playerId);
+    }
+  }
+
+  clearRemotePlayers() {
+    for (const mesh of this.remotePlayerMeshes.values()) {
+      this.scene.remove(mesh);
+    }
+
+    this.remotePlayerMeshes.clear();
   }
 }

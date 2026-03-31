@@ -18,6 +18,8 @@
 - Updated player position
 - Updated camera yaw and pitch
 - Debug state for HUD
+- Local movement input snapshots for networking
+- Authoritative snap reconciliation when server drift exceeds a threshold
 
 ## Dependencies
 
@@ -36,6 +38,7 @@
 - Base mouse sensitivity is user-adjustable, and scoped sensitivity remains relative to the current FOV on top of that base value.
 - Look input is gathered from browser pointer-lock movement events and applied once per render frame, which keeps aiming tied to the same timing as camera/render updates.
 - Movement speed can be scaled externally without changing controller internals, which is now used for weapon-dependent mobility such as the knife.
+- Core locomotion math is now shared with the multiplayer server through `src/shared/playerMovement.js`, while the browser controller still layers local collision queries on top of that shared simulation.
 
 ## Current Status
 
@@ -44,9 +47,12 @@
 - Supports weapon-dependent movement speed modifiers through a callback passed from `GameApp`
 - Default base sensitivity is lower than the original prototype tuning and can be adjusted from the pause menu
 - Jump descent no longer snaps early back to the floor from the apex
+- Exposes compact movement input snapshots for server-authoritative multiplayer
+- Can reconcile to authoritative server positions through a simple snap correction path
 
 ## Limitations
 
 - No leaning
 - No ladder or vault logic
 - No recoil transfer into camera yet
+- Server authority does not yet share the full client collision model, so reconciliation quality is best in open flat areas

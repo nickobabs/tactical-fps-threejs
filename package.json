@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server:dev": "npm --prefix server run dev",
+    "server:start": "npm --prefix server run start"
   },
   "dependencies": {
+    "colyseus.js": "^0.16.22",
     "recast-navigation": "^0.42.0",
     "three": "^0.181.1",
     "three-mesh-bvh": "^0.9.9"

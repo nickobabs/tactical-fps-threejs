@@ -1,0 +1,15 @@
+{
+  "name": "tactical-fps-threejs-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@colyseus/core": "^0.16.22",
+    "@colyseus/ws-transport": "^0.16.5",
+    "express": "^5.2.1"
+  }
+}

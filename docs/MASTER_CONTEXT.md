@@ -29,6 +29,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       networking.md
       fixed-step-loop.md
   public/
+  server/
+    package.json
+    src/
+      index.js
+      rooms/
+        TacticalRoom.js
   src/
     app/
       GameApp.js
@@ -85,6 +91,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
         viewModels.js
     shared/
       constants.js
+      playerMovement.js
     styles/
       main.css
     main.js
@@ -118,6 +125,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - HUD shell, pause-menu interactions, and static pause-menu content are now split across smaller UI files instead of one large DOM module.
 - HDR environment loading and swapping is now isolated in `SkyboxManager`.
 - Disposable Three.js scene trees are cleaned up through `src/core/three/disposeObject3D.js` so map swaps do not accumulate old geometry, materials, or textures.
+- Multiplayer now uses a separate Colyseus server under `server/`, while the browser runtime keeps networking additive so the prototype remains usable without a live backend.
+- Shared player locomotion math now lives in `src/shared/playerMovement.js`, which is used by both the browser controller and the Colyseus room's first authoritative movement pass.
 - Events currently flow through direct method calls and shared frame data. There is no event bus, no UnityEvent equivalent, and no message broker yet.
 
 ## What Is Already Built And Confirmed Working
@@ -142,6 +151,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Basic weapon audio is live: rifle fire, sniper fire, sniper scope zoom, and knife slash all route through a Web Audio-based `AudioManager` with decoded buffers, playback policies, and master volume control.
 - A simple moving target enemy exists in the map with body/head hit zones, 100 HP, damage feedback numbers, respawn, navmesh-backed wandering, line-of-sight chase behavior, red idle/aggro eye feedback, and angry eyebrows while aggroed.
 - A simple round timer/state loop runs between `freeze` and `live`.
+- Basic additive multiplayer works locally through Colyseus: multiple tabs can join the same room, see remote-player placeholders, and exchange authoritative movement state.
 
 ## Current Gameplay Snapshot
 
@@ -164,13 +174,18 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - Skybox selection
   - Volume slider
   - Sensitivity slider
+- Multiplayer:
+  - Shared `TacticalRoom` via Colyseus
+  - Remote players rendered as simple placeholder boxes
+  - Client-side prediction with basic snap reconciliation
 
 ## Main Runtime Flow
 
 - `GameApp` owns renderer, camera, skybox state, HUD state, pause state, and the animation loop.
-- `MapRuntime` builds and owns map-bound systems: collision, navigation, player controller, weapons, targets, rounds, utility, and networking stub.
+- `MapRuntime` builds and owns map-bound systems: collision, navigation, player controller, weapons, targets, rounds, utility, and the additive multiplayer client.
 - `InputManager` gathers browser input and exposes one shared frame snapshot per render frame.
 - `FirstPersonController` consumes that snapshot for movement/look.
+- `NetworkClient` packages movement input snapshots, sends them to Colyseus, receives authoritative player state, and exposes remote/local correction data back to the runtime.
 - `WeaponManager` consumes the same frame snapshot for swap / scope / fire logic and delegates shot resolution and viewmodel presentation to helper files.
 - `TargetManager` updates target actors using `CollisionWorld` and `NavigationManager`.
 
@@ -183,12 +198,15 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - [`src/game/weapons/WeaponManager.js`](C:/Users/nicko/tactical-fps-threejs/src/game/weapons/WeaponManager.js): weapon runtime state coordination.
 - [`src/game/targets/TargetDummy.js`](C:/Users/nicko/tactical-fps-threejs/src/game/targets/TargetDummy.js): current bot actor behavior.
 - [`src/game/ui/Hud.js`](C:/Users/nicko/tactical-fps-threejs/src/game/ui/Hud.js): HUD shell and loading/pause integration.
+- [`src/shared/playerMovement.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js): shared locomotion math for client prediction and server authority.
+- [`server/src/rooms/TacticalRoom.js`](C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js): current Colyseus authoritative room.
 
 ## Current Pressure Points
 
 - Bundle size is still the biggest technical pressure point because `recast-navigation` and its WASM chunk are large.
 - AI is still intentionally simple. `TargetDummy` is cleaner than before, but more advanced combat behavior will likely want another split between perception, navigation, and combat decision logic.
 - Weapons are in better shape after the recent helper splits, but reloads/ammo/equip behavior will probably justify another structure pass when those systems land.
+- Multiplayer authority is now the biggest architectural correctness pressure point: movement uses shared logic, but the server still does not own authored collision or the rest of gameplay simulation.
 
 ## Known Issues Or Deliberate Compromises
 
@@ -200,6 +218,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - The target enemy moves and takes damage, but it still does not shoot, use cover, coordinate with other bots, or use any animation system.
 - Navigation meshes are currently generated at runtime from collision geometry rather than baked offline.
 - Runtime navmesh generation still happens on the main thread, so load-time cost grows with map complexity even though gameplay frames no longer share that work.
-- `RoundManager`, `UtilityManager`, and `NetworkClient` are still early stubs outside their currently visible features.
+- `RoundManager` and `UtilityManager` are still early stubs outside their currently visible features.
+- `NetworkClient` is no longer a stub, but multiplayer still only covers player presence and movement.
+- Server-authoritative movement currently assumes flat ground and does not yet share authored map collision, so client/server movement can still diverge around ramps, steps, and cover.
 - `FixedStepLoop` and `PlayerState` exist but are not yet integrated into the active runtime loop.
 - There is no save/load, replay, bots, replication, buy phase economy, or win-condition system yet.

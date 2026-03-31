@@ -6,6 +6,7 @@ export function createHud({
   roundManager,
   weaponManager,
   utilityManager,
+  networkClient,
   playerController,
   getFps,
   getMasterVolume,
@@ -48,6 +49,7 @@ export function createHud({
     <div class="hud__bottom">
       <div class="hud__weapon"></div>
       <div class="hud__utility"></div>
+      <div class="hud__network"></div>
       <div class="hud__movement"></div>
       <div class="hud__pointer"></div>
     </div>
@@ -72,6 +74,7 @@ export function createHud({
   const fpsEl = hud.querySelector('.hud__fps');
   const weaponEl = hud.querySelector('.hud__weapon');
   const utilityEl = hud.querySelector('.hud__utility');
+  const networkEl = hud.querySelector('.hud__network');
   const movementEl = hud.querySelector('.hud__movement');
   const pointerEl = hud.querySelector('.hud__pointer');
   const crosshairEl = hud.querySelector('.hud__crosshair');
@@ -84,6 +87,7 @@ export function createHud({
   let lastFpsText = '';
   let lastWeaponText = '';
   let lastUtilityText = '';
+  let lastNetworkText = '';
   let lastMovementText = '';
   let lastPointerText = '';
   let lastLoadingText = '';
@@ -122,6 +126,8 @@ export function createHud({
       const fpsText = `FPS: ${getFps?.() ?? '--'}`;
       const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}`;
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
+      const remotePlayerCount = networkClient?.getRemotePlayers?.().length ?? 0;
+      const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount}`;
       const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - ${movement.speed.toFixed(1)} m/s`;
       const pointerText = paused
         ? 'Paused'
@@ -133,6 +139,7 @@ export function createHud({
       lastFpsText = setTextIfChanged(fpsEl, fpsText, lastFpsText);
       lastWeaponText = setTextIfChanged(weaponEl, weaponText, lastWeaponText);
       lastUtilityText = setTextIfChanged(utilityEl, utilityText, lastUtilityText);
+      lastNetworkText = setTextIfChanged(networkEl, networkText, lastNetworkText);
       lastMovementText = setTextIfChanged(movementEl, movementText, lastMovementText);
       lastPointerText = setTextIfChanged(pointerEl, pointerText, lastPointerText);
 

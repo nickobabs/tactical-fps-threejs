@@ -92,6 +92,17 @@ export class MapRuntime {
         mouseSensitivity,
         getSpeedMultiplier: () => runtime.weaponManager?.getMovementSpeedMultiplier() ?? 1,
       });
+      runtime.networkClient.initializeLocalPlayer({
+        position: {
+          x: map.spawnPoint.x,
+          y: map.spawnPoint.y,
+          z: map.spawnPoint.z,
+        },
+        yaw: runtime.playerController.yawAngle,
+        isGrounded: runtime.playerController.isGrounded,
+        isCrouched: runtime.playerController.isCrouched,
+        currentHeight: runtime.playerController.currentHeight,
+      });
 
       return runtime;
     } catch (error) {
@@ -115,6 +126,7 @@ export class MapRuntime {
   destroy(scene) {
     this.weaponManager?.destroy();
     this.targetManager?.destroy?.();
+    this.networkClient?.destroy?.();
     this.detachFromScene(scene);
     this.navigationManager?.destroy();
     this.map.dispose?.();
