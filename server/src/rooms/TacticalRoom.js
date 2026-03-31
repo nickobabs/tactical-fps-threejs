@@ -1,16 +1,28 @@
+import * as THREE from 'three';
 import { Room } from '@colyseus/core';
+import { CollisionWorld } from '../../../src/core/physics/CollisionWorld.js';
 import {
   createPlayerMovementState,
   simulatePlayerMovement,
 } from '../../../src/shared/playerMovement.js';
+import {
+  NETCODE_SIMULATION_RATE,
+  NETCODE_SIMULATION_STEP,
+} from '../../../src/shared/netcode.js';
+import {
+  createPlayerInputMessage,
+  createPlayerReadyMessage,
+  serializeAuthoritativePlayerState,
+} from '../../../src/shared/netcodeProtocol.js';
+import { createCollisionMapForMapId } from '../../../src/shared/maps/mapCollision.js';
 
-const SERVER_TICK_RATE = 60;
-const SERVER_TICK_DELTA = 1 / SERVER_TICK_RATE;
+const SERVER_MOVE_POSITION = new THREE.Vector3();
 
 export class TacticalRoom extends Room {
   onCreate() {
     this.setPrivate(false);
     this.players = {};
+    this.collisionWorlds = new Map();
     this.setSimulationInterval(() => {
       let hasSimulationChanges = false;
 
@@ -19,9 +31,35 @@ export class TacticalRoom extends Room {
           continue;
         }
 
-        player.motionState = simulatePlayerMovement(player.motionState, player.latestInput, SERVER_TICK_DELTA, {
-          groundHeight: 0,
+        const collisionWorld = this.getCollisionWorldForMap(player.mapId);
+        player.motionState = simulatePlayerMovement(player.motionState, player.latestInput, NETCODE_SIMULATION_STEP, {
+          groundHeight: collisionWorld?.getGroundHeight() ?? 0,
+          speedMultiplier: Number(player.latestInput.speedMultiplier ?? 1),
+          moveHorizontal: collisionWorld
+            ? (position, radius, height, horizontalDelta) => {
+              const moved = collisionWorld.move(
+                SERVER_MOVE_POSITION.set(position.x, position.y, position.z),
+                radius,
+                height,
+                horizontalDelta,
+              );
+              return {
+                x: moved.x,
+                y: moved.y,
+                z: moved.z,
+              };
+            }
+            : null,
+          getGroundHeightAt: collisionWorld
+            ? (x, z, currentY, maxStepUp) => collisionWorld.getGroundHeightAt(
+              x,
+              z,
+              currentY,
+              maxStepUp,
+            )
+            : null,
         });
+        player.latestInput.jump = false;
         player.lastProcessedSequence = player.latestInput.sequence;
         player.lastProcessedTimestamp = player.latestInput.timestamp;
         hasSimulationChanges = true;
@@ -30,7 +68,7 @@ export class TacticalRoom extends Room {
       if (hasSimulationChanges) {
         this.broadcastPlayerState();
       }
-    }, 1000 / SERVER_TICK_RATE);
+    }, 1000 / NETCODE_SIMULATION_RATE);
 
     this.onMessage('player-input', (client, message) => {
       const player = this.players[client.sessionId];
@@ -44,18 +82,10 @@ export class TacticalRoom extends Room {
         return;
       }
 
-      player.latestInput = {
-        forward: Boolean(message?.forward),
-        backward: Boolean(message?.backward),
-        left: Boolean(message?.left),
-        right: Boolean(message?.right),
-        sprint: Boolean(message?.sprint),
-        crouch: Boolean(message?.crouch),
-        jump: Boolean(message?.jump),
+      player.latestInput = createPlayerInputMessage({
+        ...message,
         yaw: Number(message?.yaw ?? player.motionState.yaw),
-        sequence,
-        timestamp: Number(message?.timestamp ?? Date.now()),
-      };
+      }, sequence, Number(message?.timestamp ?? Date.now()));
     });
 
     this.onMessage('player-ready', (client, message) => {
@@ -64,16 +94,15 @@ export class TacticalRoom extends Room {
         return;
       }
 
+      const readyState = createPlayerReadyMessage(message);
+      player.mapId = readyState.mapId;
       player.motionState = createPlayerMovementState({
-        position: {
-          x: Number(message?.position?.x ?? 0),
-          y: Number(message?.position?.y ?? 0),
-          z: Number(message?.position?.z ?? 0),
-        },
-        yaw: Number(message?.yaw ?? 0),
-        isGrounded: Boolean(message?.isGrounded ?? true),
-        isCrouched: Boolean(message?.isCrouched ?? false),
-        currentHeight: Number(message?.currentHeight ?? 1.72),
+        position: readyState.position,
+        velocity: readyState.velocity,
+        yaw: readyState.yaw,
+        isGrounded: readyState.isGrounded,
+        isCrouched: readyState.isCrouched,
+        currentHeight: readyState.currentHeight,
       });
       this.broadcastPlayerState();
     });
@@ -91,6 +120,7 @@ export class TacticalRoom extends Room {
       playerId: client.sessionId,
       motionState: createPlayerMovementState(),
       latestInput: null,
+      mapId: 'training-ground',
       lastProcessedSequence: 0,
       lastProcessedTimestamp: Date.now(),
     };
@@ -120,24 +150,19 @@ export class TacticalRoom extends Room {
     );
   }
 
+  onDispose() {
+    for (const collisionWorld of this.collisionWorlds.values()) {
+      collisionWorld.collisionGeometry?.dispose?.();
+    }
+
+    this.collisionWorlds.clear();
+  }
+
   getSerializablePlayers() {
     return Object.fromEntries(
       Object.entries(this.players).map(([playerId, player]) => [
         playerId,
-        {
-          playerId,
-          position: {
-            x: player.motionState.position.x,
-            y: player.motionState.position.y,
-            z: player.motionState.position.z,
-          },
-          yaw: player.motionState.yaw,
-          isGrounded: player.motionState.isGrounded,
-          isCrouched: player.motionState.isCrouched,
-          currentHeight: player.motionState.currentHeight,
-          lastProcessedSequence: player.lastProcessedSequence,
-          lastProcessedTimestamp: player.lastProcessedTimestamp,
-        },
+        serializeAuthoritativePlayerState(playerId, player),
       ]),
     );
   }
@@ -146,5 +171,24 @@ export class TacticalRoom extends Room {
     this.broadcast('player-state', {
       players: this.getSerializablePlayers(),
     });
+  }
+
+  getCollisionWorldForMap(mapId) {
+    const resolvedMapId = mapId ?? 'training-ground';
+    if (this.collisionWorlds.has(resolvedMapId)) {
+      return this.collisionWorlds.get(resolvedMapId);
+    }
+
+    const collisionMap = createCollisionMapForMapId(resolvedMapId);
+    if (!collisionMap) {
+      return null;
+    }
+
+    const collisionWorld = new CollisionWorld({
+      groundHeight: collisionMap.groundHeight,
+      collisionGeometry: collisionMap.collisionGeometry,
+    });
+    this.collisionWorlds.set(resolvedMapId, collisionWorld);
+    return collisionWorld;
   }
 }

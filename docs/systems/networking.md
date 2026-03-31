@@ -11,7 +11,7 @@ The current networking slice supports:
 - Client-to-server input snapshots at roughly 20 Hz
 - Server-authoritative player positions derived from those inputs
 - A fixed-rate authoritative room simulation on the server
-- Client-side local movement prediction with simple snap reconciliation
+- Client-side local movement prediction with replay-based reconciliation and a separate local presentation layer
 - Remote-player placeholder rendering through replicated authoritative state
 
 Multiplayer is still optional. If no Colyseus server is reachable, the game continues to run fully in single-player mode.
@@ -34,6 +34,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - `colyseus.js`
 - Standalone Colyseus Node server in `server/`
 - Shared movement simulation in `src/shared/playerMovement.js`
+- Shared netcode timing constants in `src/shared/netcode.js`
+- Shared protocol normalization/helpers in `src/shared/netcodeProtocol.js`
+- Shared authoritative map collision layouts in `src/shared/maps/`
 
 ## Key Design Decisions
 
@@ -41,10 +44,12 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - The first authoritative movement pass sends inputs, not positions.
 - Clients seed the server with their initial spawn state once, then switch over to input snapshots for ongoing movement.
 - Movement simulation is factored into a shared module so client and server can evolve toward a common movement model instead of duplicating magic numbers.
+- Timing constants and message-shape normalization are also shared so the room and browser client do not drift on protocol assumptions.
 - The client still moves immediately for responsiveness, then reconciles to server authority using the server's last processed input sequence.
-- Reconciliation is intentionally simple for now: if the local player drifts far enough from the authoritative position, the controller snaps to the server state.
+- Reconciliation now updates predicted simulation state directly, while the presented local rig absorbs moderate correction error over time instead of applying every correction straight to the camera.
+- Small local drift is intentionally ignored. Local correction now uses a deadzone and hysteresis model so the client only starts converging once divergence is meaningfully above threshold, and stops once it has settled back into a smaller band.
 - Remote players are currently rendered as simple placeholders rather than full replicated first-person rigs.
-- The server-side simulation is intentionally simpler than the client at this stage: it runs a fixed-step flat-ground authoritative movement pass and does not yet share authored collision geometry with the browser runtime.
+- The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 
 ## Current Status
 
@@ -53,16 +58,79 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Remote players appear as simple blue box proxies
 - Connection state and remote-player count are visible in the HUD
 - Server authority and reconciliation are wired end-to-end for player movement
+- Server authority now uses shared map collision for `Training Ground` and `Desert Compound`
+- `NETDEBUG` instrumentation exists in the HUD/devtools path for local multiplayer diagnosis and is intentionally being kept available while multiplayer expands
 
 ## Limitations
 
-- Server-side authoritative movement currently assumes flat ground and does not yet use map collision, ramps, catwalks, or step-up logic
-- Because server collision is not yet map-aware, reconciliation quality is best in open flat areas and can diverge near authored geometry
+- Server/client movement can still diverge intermittently because the browser map runtime and the server collision runtime are not yet driven from one single source of truth
 - Bots, rounds, weapons, damage, and world interactions are still local-only and are not yet synchronized
-- Remote players use raw authoritative transforms without interpolation/smoothing yet
+- Local movement feel is now materially improved by correction deadzone/hysteresis, but this still needs validation across more cases like ramps, jump arcs, and future combat-driven correction
+
+## Investigation Notes
+
+- Input-authoritative movement, replay-based reconciliation, remote interpolation, shared map collision primitives, and weapon speed-multiplier sync are all in place.
+- Instrumentation showed that the worst earlier issue, constant server correction on every authoritative update, was real and was substantially reduced after syncing weapon speed multipliers through the protocol.
+- Later instrumentation showed the remaining choppy feel was still tied to frequent tiny local corrections rather than render frametime or major drift.
+- Current `NETDEBUG` captures indicate that local flat-ground movement no longer suffers from severe network backlog or large authoritative drift. Typical values have shown:
+  - sequence gap around `1-2`
+  - authoritative update cadence around `20 Hz`
+  - predicted drift and correction distance typically around `0.02-0.03`, with small occasional spikes
+  - presentation offset usually small as well
+- The most useful A/B check was toggling local correction off entirely. With correction disabled, local movement felt effectively correct, which confirmed that the remaining issue was correction policy rather than render cadence.
+- The current working baseline is to trust local prediction for tiny drift and only begin convergence once the correction clears a meaningful threshold.
+
+## Tried And Observed
+
+- Shared authoritative collision on the server:
+  - Improved correctness around authored geometry, but did not resolve the local flat-ground feel issue.
+- Local presentation interpolation:
+  - Reduced visible stepping, but added noticeable local lag.
+- Removing local interpolation:
+  - Removed some lag but brought back visible frizz/step artifacts.
+- Velocity-based local extrapolation:
+  - Removed the worst visible frizzing from 60 Hz local stepping.
+- Raising the local-only simulation cadence to `120 Hz`:
+  - Helped somewhat, but did not fully restore single-player feel.
+- Adding local correction deadzone and hysteresis:
+  - This was the first change that clearly passed the eye test.
+  - It removed the constant micro-correction feel by refusing to react to tiny disagreement every server update.
+  - This is now the active baseline rather than an experiment.
+
+## Current Conclusion
+
+- The local-player path is now in a meaningfully better place.
+- The current baseline is:
+  - immediate local movement feel from client prediction
+  - server authority retained for meaningful divergence
+  - tiny correction ignored through deadzone/hysteresis
+- The architecture still benefits from keeping local presentation, predicted canonical state, and authoritative server state separate, but that is now an evolution path from a working baseline rather than an unresolved crisis.
+
+## Reset Plan
+
+- Target outcome:
+  - local movement should feel effectively single-player under normal conditions
+  - server authority should still own correction, validation, and future combat/gameplay truth
+  - server cadence should not be directly visible in ordinary local locomotion
+- New architecture goal:
+  - `Immediate Local Presentation State`
+    - first-person camera/viewmodel feel
+    - render-rate responsive
+    - should not inherit routine server refresh cadence
+  - `Predicted Canonical State`
+    - fixed-step local gameplay prediction
+    - source of sent inputs and replay/reconciliation
+  - `Authoritative Server State`
+    - final truth for validation, correction, and later damage/combat authority
+- Implementation direction:
+  - simplify the current local presentation path first
+  - separate first-person feel from predicted canonical movement explicitly
+  - only let server correction become visible when divergence is significant
+  - keep remote-player interpolation separate from local-player presentation concerns
 
 ## Near-Term Plans
 
-- Share authored map collision or a simplified collision representation with the server so authoritative movement matches client traversal more closely
-- Add interpolation/smoothing for remote-player proxies
+- Consolidate map geometry so client visuals/collision and server authority are generated from the same shared layout source
+- Validate the current correction model against more gameplay cases such as jumps, ramps, weapon swaps, and eventual damage/combat correction
 - Move additional gameplay state, starting with round state and combat-relevant actors, toward server authority as needed
+- Keep the current debug instrumentation in place until those validation passes are done, since it is now part of the practical multiplayer workflow

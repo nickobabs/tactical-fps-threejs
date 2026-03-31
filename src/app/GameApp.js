@@ -6,6 +6,8 @@ import { createHud } from '../game/ui/Hud.js';
 import { SKYBOX_OPTIONS, getSkyboxOption } from '../game/skyboxes/skyboxOptions.js';
 import { SkyboxManager } from '../game/skyboxes/SkyboxManager.js';
 import { AudioManager } from '../game/audio/AudioManager.js';
+import { FixedStepLoop } from '../core/loop/FixedStepLoop.js';
+import { NETCODE_SIMULATION_STEP } from '../shared/netcode.js';
 
 export class GameApp {
   constructor(root) {
@@ -14,10 +16,14 @@ export class GameApp {
     this.isPaused = false;
     this.isLoadingMap = false;
     this.loadingStatus = '';
-    this.hadPointerLock = false;
     this.currentFps = 0;
     this.mouseSensitivity = 0.0011;
     this.mapLoadToken = 0;
+    this.networkJumpQueued = false;
+    this.ignoreLocalCorrections = false;
+    this.markDebugSnapshotRequested = false;
+    this.fatalErrorEl = null;
+    this.localSimulationLoop = new FixedStepLoop(NETCODE_SIMULATION_STEP);
     this.audioManager = new AudioManager({ masterVolume: 0.6 });
     this.audioManager.registerSound('rifle-fire', '/audio/m4a1_silencer_01.mp3', {
       playback: 'interrupt',
@@ -90,6 +96,7 @@ export class GameApp {
     this.stop();
     this.input.destroy();
     this.hud.destroy();
+    this.fatalErrorEl?.remove();
     this.clearRemotePlayers();
     this.unloadMap();
     this.skyboxManager.dispose();
@@ -120,6 +127,12 @@ export class GameApp {
       getSelectedMapId: () => this.selectedMapId,
       getIsLoading: () => this.isLoadingMap,
       getLoadingStatus: () => this.loadingStatus,
+      getIgnoreLocalCorrections: () => this.ignoreLocalCorrections,
+      consumeMarkDebugSnapshotRequested: () => {
+        const requested = this.markDebugSnapshotRequested;
+        this.markDebugSnapshotRequested = false;
+        return requested;
+      },
       onSelectSkybox: (skyboxId) => this.setSkybox(skyboxId),
       skyboxes: SKYBOX_OPTIONS,
       getSelectedSkyboxId: () => this.selectedSkyboxId,
@@ -164,6 +177,8 @@ export class GameApp {
       this.unloadMap();
       this.selectedMapId = mapOption.id;
       this.runtime = runtime;
+      this.networkJumpQueued = false;
+      this.localSimulationLoop.accumulator = 0;
       this.runtime.attachToScene(this.scene);
       runtime = null;
 
@@ -229,52 +244,85 @@ export class GameApp {
   }
 
   animate() {
-    const delta = Math.min(this.clock.getDelta(), 0.05);
-    this.currentFps = delta > 0 ? Math.round(1 / delta) : 0;
-    const frameInput = this.input.consumeFrameState();
+    try {
+      const delta = Math.min(this.clock.getDelta(), 0.05);
+      this.currentFps = delta > 0 ? Math.round(1 / delta) : 0;
+      const frameInput = this.input.consumeFrameState();
 
-    if (frameInput.justPressed.has('Escape')) {
-      this.isPaused ? this.resumeGame() : this.pauseGame();
-    }
-
-    if (!this.isLoadingMap && this.runtime?.playerController) {
-      const localMovementInput = !this.isPaused
-        ? this.runtime.playerController.getMovementInputSnapshot(frameInput)
-        : null;
-
-      if (!this.isPaused) {
-        this.runtime.playerController.update(delta, frameInput);
-        this.runtime.weaponManager.update(delta, frameInput);
+      if (frameInput.justPressed.has('Escape')) {
+        this.isPaused ? this.resumeGame() : this.pauseGame();
       }
 
-      this.runtime.roundManager.update(delta);
-      this.runtime.utilityManager.update(delta);
-      this.runtime.networkClient.update(delta, localMovementInput);
-
-      const authoritativeCorrection = this.runtime.networkClient.consumeLocalCorrection();
-      if (authoritativeCorrection) {
-        this.runtime.playerController.reconcileAuthoritativeState(authoritativeCorrection);
+      if (frameInput.justPressed.has('F9')) {
+        this.ignoreLocalCorrections = !this.ignoreLocalCorrections;
       }
 
-      this.runtime.targetManager.update(delta, {
-        playerPosition: this.runtime.playerController.position,
-        playerEyePosition: this.runtime.playerController.getEyePosition(),
-        collisionWorld: this.runtime.collisionWorld,
-        navigationManager: this.runtime.navigationManager,
-      });
-      this.syncRemotePlayers(this.runtime.networkClient.getRemotePlayers());
-    } else {
-      this.clearRemotePlayers();
+      if (frameInput.justPressed.has('F10')) {
+        this.markDebugSnapshotRequested = true;
+      }
+
+      if (!this.isLoadingMap && this.runtime?.playerController) {
+        if (frameInput.justPressed.has('Space')) {
+          this.networkJumpQueued = true;
+        }
+
+        if (!this.isPaused) {
+          this.runtime.playerController.updateLook(frameInput.lookDelta);
+          this.localSimulationLoop.advance(delta, (simulationStep) => {
+            const movementInput = this.runtime.playerController.getMovementInputSnapshot({
+              jumpPressed: this.networkJumpQueued,
+            });
+            const speedMultiplier = this.runtime.playerController.getCurrentSpeedMultiplier();
+
+            this.runtime.playerController.stepSimulation(simulationStep, movementInput, speedMultiplier);
+            this.runtime.networkClient.sampleLocalInput(movementInput, {
+              simulationStep,
+              speedMultiplier,
+              predictedPosition: this.runtime.playerController.position,
+            });
+
+            this.networkJumpQueued = false;
+          });
+          this.runtime.weaponManager.update(delta, frameInput);
+        }
+
+        this.runtime.roundManager.update(delta);
+        this.runtime.utilityManager.update(delta);
+        this.runtime.networkClient.update(delta);
+
+        const authoritativeCorrection = this.runtime.networkClient.consumeLocalCorrection();
+        if (authoritativeCorrection && !this.ignoreLocalCorrections) {
+          this.runtime.playerController.reconcileAuthoritativeState(authoritativeCorrection);
+        }
+        this.runtime.playerController.updatePresentation(
+          delta,
+          this.localSimulationLoop.accumulator / NETCODE_SIMULATION_STEP,
+        );
+
+        this.runtime.targetManager.update(delta, {
+          playerPosition: this.runtime.playerController.position,
+          playerEyePosition: this.runtime.playerController.getEyePosition(),
+          collisionWorld: this.runtime.collisionWorld,
+          navigationManager: this.runtime.navigationManager,
+        });
+        this.syncRemotePlayers(this.runtime.networkClient.getRemotePlayers());
+      } else {
+        this.clearRemotePlayers();
+      }
+
+      this.hud.update();
+
+      this.renderer.render(this.scene, this.camera);
+    } catch (error) {
+      this.stop();
+      this.showFatalError(error);
+      console.error('Fatal runtime error in GameApp.animate()', error);
     }
-
-    this.hud.update();
-
-    this.renderer.render(this.scene, this.camera);
-    this.hadPointerLock = this.input.pointerLocked;
   }
 
   pauseGame() {
     this.isPaused = true;
+    this.localSimulationLoop.accumulator = 0;
     this.hud?.setPaused(true);
     if (document.pointerLockElement === this.renderer.domElement) {
       document.exitPointerLock();
@@ -289,6 +337,7 @@ export class GameApp {
     try {
       await this.renderer.domElement.requestPointerLock();
       await this.audioManager.unlock();
+      this.localSimulationLoop.accumulator = 0;
       this.isPaused = false;
       this.hud?.setPaused(false);
     } catch (error) {
@@ -335,5 +384,26 @@ export class GameApp {
     }
 
     this.remotePlayerMeshes.clear();
+  }
+
+  showFatalError(error) {
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+
+    if (!this.fatalErrorEl) {
+      this.fatalErrorEl = document.createElement('div');
+      this.fatalErrorEl.style.position = 'fixed';
+      this.fatalErrorEl.style.inset = '0';
+      this.fatalErrorEl.style.zIndex = '9999';
+      this.fatalErrorEl.style.display = 'grid';
+      this.fatalErrorEl.style.placeItems = 'center';
+      this.fatalErrorEl.style.background = 'rgba(8, 12, 18, 0.92)';
+      this.fatalErrorEl.style.color = '#f4f7fb';
+      this.fatalErrorEl.style.fontFamily = 'monospace';
+      this.fatalErrorEl.style.padding = '24px';
+      this.fatalErrorEl.style.whiteSpace = 'pre-wrap';
+      this.root.appendChild(this.fatalErrorEl);
+    }
+
+    this.fatalErrorEl.textContent = `Runtime Error\n\n${message}`;
   }
 }

@@ -19,10 +19,13 @@ export function createHud({
   getSelectedMapId,
   getIsLoading,
   getLoadingStatus,
+  getIgnoreLocalCorrections,
+  consumeMarkDebugSnapshotRequested,
   onSelectSkybox,
   skyboxes = [],
   getSelectedSkyboxId,
 }) {
+  const DEBUG_HISTORY_WINDOW_MS = 3000;
   const hud = document.createElement('div');
   hud.className = 'hud';
   hud.innerHTML = `
@@ -53,6 +56,7 @@ export function createHud({
       <div class="hud__movement"></div>
       <div class="hud__pointer"></div>
     </div>
+    <pre class="hud__netdebug" hidden></pre>
   `;
 
   container.appendChild(hud);
@@ -82,7 +86,10 @@ export function createHud({
   const scopeEl = hud.querySelector('.hud__scope');
   const loadingEl = hud.querySelector('.hud__loading');
   const loadingStatusEl = hud.querySelector('.hud__loading-status');
+  const netDebugEl = hud.querySelector('.hud__netdebug');
   let paused = false;
+  let showNetDebug = false;
+  let displaySpeed = 0;
   let lastRoundText = '';
   let lastFpsText = '';
   let lastWeaponText = '';
@@ -95,6 +102,70 @@ export function createHud({
   let lastAdsReticle = null;
   let lastScopeOverlay = null;
   let lastLoading = null;
+  let lastNetDebugText = '';
+  let currentNetDebugText = '';
+  const debugHistory = [];
+
+  function summarizeMetric(samples, key) {
+    if (samples.length === 0) {
+      return 'n/a';
+    }
+
+    let min = samples[0][key];
+    let max = samples[0][key];
+    let total = 0;
+
+    for (const sample of samples) {
+      const value = sample[key];
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+      total += value;
+    }
+
+    const avg = total / samples.length;
+    return `${min.toFixed(3)}/${avg.toFixed(3)}/${max.toFixed(3)}`;
+  }
+
+  function buildDebugSummary() {
+    if (debugHistory.length === 0) {
+      return currentNetDebugText;
+    }
+
+    const latest = debugHistory[debugHistory.length - 1];
+    return [
+      currentNetDebugText,
+      '',
+      `window_ms=${DEBUG_HISTORY_WINDOW_MS} samples=${debugHistory.length}`,
+      `seq_gap(min/avg/max)=${summarizeMetric(debugHistory, 'sequenceGap')}`,
+      `snapshot_age_ms(min/avg/max)=${summarizeMetric(debugHistory, 'snapshotAgeMs')}`,
+      `predicted_drift(min/avg/max)=${summarizeMetric(debugHistory, 'predictedDrift')}`,
+      `corr_dist(min/avg/max)=${summarizeMetric(debugHistory, 'correctionDistance')}`,
+      `present_offset(min/avg/max)=${summarizeMetric(debugHistory, 'presentationOffset')}`,
+      `buffered_correction(min/avg/max)=${summarizeMetric(debugHistory, 'bufferedCorrection')}`,
+      `corr_enqueue_per_sec(min/avg/max)=${summarizeMetric(debugHistory, 'correctionEnqueueRatePerSecond')}`,
+      `corr_active(min/avg/max)=${summarizeMetric(debugHistory, 'correctionActive')}`,
+      `responsive_offset(min/avg/max)=${summarizeMetric(debugHistory, 'responsiveOffset')}`,
+      `frame_ms(min/avg/max)=${summarizeMetric(debugHistory, 'frameMs')}`,
+      `corr_per_sec(min/avg/max)=${summarizeMetric(debugHistory, 'correctionRatePerSecond')}`,
+      `speed(min/avg/max)=${summarizeMetric(debugHistory, 'speed')}`,
+      `latest_state=${latest.connectionState} latest_seq_local=${latest.latestSequence} latest_seq_ack=${latest.acknowledgedSequence}`,
+    ].join('\n');
+  }
+
+  function handleKeyDown(event) {
+    if (event.code !== 'F8') {
+      return;
+    }
+
+    showNetDebug = !showNetDebug;
+    netDebugEl.hidden = !showNetDebug;
+    if (currentNetDebugText) {
+      console.log(buildDebugSummary());
+    }
+    event.preventDefault();
+  }
+
+  window.addEventListener('keydown', handleKeyDown);
 
   function setTextIfChanged(element, nextText, lastText) {
     if (lastText !== nextText) {
@@ -107,6 +178,7 @@ export function createHud({
 
   return {
     destroy() {
+      window.removeEventListener('keydown', handleKeyDown);
       pauseMenu.destroy();
       hud.remove();
     },
@@ -119,7 +191,43 @@ export function createHud({
         grounded: true,
         crouched: false,
         speed: 0,
+        correctionOffsetMagnitude: 0,
+        simulationDeltaMagnitude: 0,
       };
+      const networkDebug = networkClient?.getDebugState?.() ?? {
+        connectionState: 'offline',
+        latestSequence: 0,
+        acknowledgedSequence: 0,
+        pendingInputCount: 0,
+        sequenceGap: 0,
+        snapshotAgeMs: -1,
+        lastPredictedDriftDistance: 0,
+        authoritativeUpdatesPerSecond: 0,
+        pendingJumpSend: false,
+      };
+      const now = performance.now();
+      debugHistory.push({
+        time: now,
+        connectionState: networkDebug.connectionState,
+        latestSequence: networkDebug.latestSequence,
+        acknowledgedSequence: networkDebug.acknowledgedSequence,
+        sequenceGap: networkDebug.sequenceGap,
+        snapshotAgeMs: Math.max(0, networkDebug.snapshotAgeMs),
+        predictedDrift: networkDebug.lastPredictedDriftDistance,
+        correctionDistance: movement.lastCorrectionDistance ?? 0,
+        presentationOffset: movement.correctionOffsetMagnitude ?? 0,
+        bufferedCorrection: movement.bufferedCanonicalCorrectionMagnitude ?? 0,
+        correctionEnqueueRatePerSecond: movement.correctionEnqueueRatePerSecond ?? 0,
+        correctionActive: movement.correctionActive ? 1 : 0,
+        responsiveOffset: movement.responsiveOffsetMagnitude ?? 0,
+        frameMs: getFps?.() > 0 ? 1000 / getFps() : 0,
+        correctionRatePerSecond: movement.correctionRatePerSecond ?? 0,
+        speed: movement.speed ?? 0,
+      });
+      while (debugHistory.length > 0 && now - debugHistory[0].time > DEBUG_HISTORY_WINDOW_MS) {
+        debugHistory.shift();
+      }
+      displaySpeed += (movement.speed - displaySpeed) * 0.18;
       const roundText = roundManager
         ? `Round ${roundManager.roundNumber} - ${roundManager.phase}`
         : 'Round --';
@@ -127,8 +235,8 @@ export function createHud({
       const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}`;
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
       const remotePlayerCount = networkClient?.getRemotePlayers?.().length ?? 0;
-      const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount}`;
-      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - ${movement.speed.toFixed(1)} m/s`;
+      const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
+      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - ${displaySpeed.toFixed(1)} m/s`;
       const pointerText = paused
         ? 'Paused'
         : input.pointerLocked
@@ -171,6 +279,34 @@ export function createHud({
       if (loadingText !== lastLoadingText) {
         loadingStatusEl.textContent = loadingText;
         lastLoadingText = loadingText;
+      }
+
+      if (showNetDebug) {
+        const debugText = [
+          'NETDEBUG',
+          `ignore_local_corrections=${Boolean(getIgnoreLocalCorrections?.())}`,
+          `state=${networkDebug.connectionState}`,
+          `seq_local=${networkDebug.latestSequence} seq_ack=${networkDebug.acknowledgedSequence} seq_gap=${networkDebug.sequenceGap}`,
+          `pending_inputs=${networkDebug.pendingInputCount} jump_latched=${networkDebug.pendingJumpSend}`,
+          `snapshot_age_ms=${networkDebug.snapshotAgeMs} auth_per_sec=${networkDebug.authoritativeUpdatesPerSecond}`,
+          `predicted_drift=${networkDebug.lastPredictedDriftDistance.toFixed(3)} corr_per_sec=${movement.correctionRatePerSecond}`,
+          `corr_dist=${movement.lastCorrectionDistance.toFixed(3)} present_offset=${movement.correctionOffsetMagnitude.toFixed(3)}`,
+          `buffered_corr=${(movement.bufferedCanonicalCorrectionMagnitude ?? 0).toFixed(3)} responsive_offset=${(movement.responsiveOffsetMagnitude ?? 0).toFixed(3)}`,
+          `corr_enqueue_per_sec=${(movement.correctionEnqueueRatePerSecond ?? 0).toFixed(3)} corr_active=${movement.correctionActive ? 'yes' : 'no'}`,
+          `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,
+        ].join('\n');
+
+        if (debugText !== lastNetDebugText) {
+          netDebugEl.textContent = debugText;
+          lastNetDebugText = debugText;
+        }
+        currentNetDebugText = debugText;
+      } else if (currentNetDebugText) {
+        currentNetDebugText = '';
+      }
+
+      if (consumeMarkDebugSnapshotRequested?.()) {
+        console.log(buildDebugSummary());
       }
 
       pauseMenu.updateSelections({

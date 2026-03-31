@@ -93,10 +93,16 @@ export class MapRuntime {
         getSpeedMultiplier: () => runtime.weaponManager?.getMovementSpeedMultiplier() ?? 1,
       });
       runtime.networkClient.initializeLocalPlayer({
+        mapId: mapOption.id,
         position: {
           x: map.spawnPoint.x,
           y: map.spawnPoint.y,
           z: map.spawnPoint.z,
+        },
+        velocity: {
+          x: runtime.playerController.velocity.x,
+          y: runtime.playerController.velocity.y,
+          z: runtime.playerController.velocity.z,
         },
         yaw: runtime.playerController.yawAngle,
         isGrounded: runtime.playerController.isGrounded,

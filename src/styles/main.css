@@ -60,6 +60,7 @@ canvas {
 .hud__fps,
 .hud__weapon,
 .hud__utility,
+.hud__network,
 .hud__movement,
 .hud__pointer {
   padding: 10px 14px;
@@ -69,6 +70,22 @@ canvas {
   backdrop-filter: blur(10px);
   font-size: 13px;
   letter-spacing: 0.03em;
+}
+
+.hud__netdebug {
+  position: absolute;
+  top: 68px;
+  right: 24px;
+  min-width: 360px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(174, 211, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(7, 12, 16, 0.72);
+  backdrop-filter: blur(10px);
+  color: #d5e9ff;
+  font: 12px/1.45 Consolas, Monaco, monospace;
+  white-space: pre-wrap;
 }
 
 .hud__crosshair {
