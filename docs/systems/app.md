@@ -2,7 +2,7 @@
 
 ## Summary
 
-`GameApp` is the top-level runtime composition root. It builds the Three.js scene, camera, renderer, map runtime, gameplay systems, HUD, skybox system, and update loop, and it distributes one shared frame input snapshot to the systems that need it.
+`GameApp` is the top-level runtime composition root. It builds the Three.js scene, camera, renderer, HUD, skybox system, app-level networking, map runtime, and update loop, and it distributes one shared frame input snapshot to the systems that need it.
 
 ## Inputs
 
@@ -14,6 +14,7 @@
 - Asynchronous map-load requests and navmesh generation stages
 - Fixed-step local simulation steps for multiplayer prediction
 - Local debug toggles for multiplayer correction diagnosis
+- Imported-map debug toggles for fly mode, markers, and collision overlay
 
 ## Outputs
 
@@ -28,6 +29,7 @@
 - Shared audio registration and lifecycle
 - Remote-player placeholder rendering from authoritative network state
 - Local correction toggles and debug snapshot requests for multiplayer diagnosis
+- Collision debug wireframe overlay
 
 ## Dependencies
 
@@ -45,9 +47,9 @@
 
 - `GameApp` owns composition, not gameplay details.
 - Input is consumed once per frame in `GameApp` and handed to systems that need it.
-- Map data returns both render geometry and gameplay metadata such as spawn point and collision volumes.
+- Map data now comes through the manifest/asset-loader pipeline and can be assembled from runtime factories or imported assets.
 - Map loading is registry-driven, but activation is now staged through `MapRuntime`: `GameApp` requests a map by ID, the runtime builder creates the map payload and navmesh, and only then is the active runtime swapped.
-- Navigation is initialized per loaded map from that map's collision geometry before the new map is activated, so bot pathfinding cost is paid at load time instead of during live play.
+- Navigation is initialized per loaded map before activation and now prefers baked navmesh data, with runtime generation remaining only as a fallback path.
 - The render loop currently updates player movement before weapon presentation and HUD refresh.
 - Local multiplayer prediction now runs through a fixed-step loop owned by `GameApp`, while look input and rendering remain frame-rate driven.
 - Pause is coordinated at the app layer by suspending gameplay updates while continuing HUD and render output.
@@ -55,20 +57,26 @@
 - Skybox selection is delegated to `SkyboxManager`, keeping HDR loading and disposal out of the rest of the runtime.
 - Audio registration and browser audio-context lifecycle are coordinated in `GameApp`, while playback remains encapsulated in `AudioManager`.
 - `GameApp` now owns composition and high-level state, while map-bound systems such as collision, targets, navigation, and player spawn live inside `MapRuntime`.
+- `NetworkClient` now lives at the app layer instead of being recreated inside `MapRuntime` on every map swap.
 - Old map scene trees are explicitly disposed during unload to avoid leaking geometry, materials, and textures across repeated map swaps.
 - `GameApp` renders remote multiplayer placeholders directly for now rather than introducing a dedicated replicated-actor layer before the protocol settles.
 - Temporary multiplayer diagnostics are also coordinated here:
   - `F9` toggles local correction application for A/B testing
   - `F10` requests an immediate debug summary dump
+- Additional imported-map diagnostics are also coordinated here:
+  - `V` toggles fly mode
+  - `J`, `K`, `L` support coordinate/marker dumping
+  - `B` toggles collision wireframe overlay
 
 ## Current Status
 
 - Implemented and active
-- HDR skyboxes, pause menu flow, staged map swapping, navmesh-backed target updates, weapon swapping, sensitivity/volume controls, shared audio registration, and additive multiplayer placeholder rendering are all integrated into the active runtime
+- HDR skyboxes, pause menu flow, staged map swapping, baked-nav-first map initialization, weapon swapping, sensitivity/volume controls, shared audio registration, imported-map debugging, and additive multiplayer placeholder rendering are all integrated into the active runtime
 - Local multiplayer prediction, reconciliation handoff, and remote placeholder rendering are all wired through the active app loop
 
 ## Near-Term Direction
 
 - Keep `GameApp` as the composition root, not the long-term home for deeper replicated-actor presentation logic
 - Retain the current debug toggles until jumping, ramps, and combat authority have been validated under multiplayer
+- Keep the imported-map debug controls available until the asset/export pipeline stops being manual
 - Eventually move remote-player rendering and multiplayer-specific presentation responsibilities behind a more dedicated replicated-runtime layer once the protocol stabilizes

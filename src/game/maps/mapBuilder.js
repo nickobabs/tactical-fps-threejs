@@ -1,7 +1,22 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
-export function createBoxMesh({ size, position, color, roughness = 0.85, metalness = 0.08 }) {
+function createVector3Like(value = {}) {
+  if (value instanceof THREE.Vector3) {
+    return value.clone();
+  }
+
+  return new THREE.Vector3(value.x ?? 0, value.y ?? 0, value.z ?? 0);
+}
+
+export function createBoxMesh({
+  size,
+  position,
+  rotation,
+  color,
+  roughness = 0.85,
+  metalness = 0.08,
+}) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(size.x, size.y, size.z),
     new THREE.MeshStandardMaterial({
@@ -10,7 +25,10 @@ export function createBoxMesh({ size, position, color, roughness = 0.85, metalne
       metalness,
     }),
   );
-  mesh.position.copy(position);
+  mesh.position.copy(createVector3Like(position));
+  if (rotation) {
+    mesh.rotation.set(rotation.x ?? 0, rotation.y ?? 0, rotation.z ?? 0);
+  }
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
@@ -54,6 +72,13 @@ export function createMapBuilder(root = new THREE.Group()) {
     return addMesh(createBoxMesh(config), options);
   }
 
+  function addLayoutBoxes(boxes, styles = [], options) {
+    return boxes.map((box, index) => addBox({
+      ...box,
+      ...(styles[index] ?? {}),
+    }, options));
+  }
+
   function addTarget(target) {
     root.add(target.getObject());
     shootables.push(...target.getShootables());
@@ -61,14 +86,14 @@ export function createMapBuilder(root = new THREE.Group()) {
     return target;
   }
 
-  function finalize({ spawnPoint, groundHeight = 0 } = {}) {
+  function finalize({ spawnPoint, groundHeight = 0, collisionGeometry = null } = {}) {
     return {
       scene: root,
       spawnPoint,
       groundHeight,
-      collisionGeometry: collisionGeometries.length > 0
+      collisionGeometry: collisionGeometry ?? (collisionGeometries.length > 0
         ? mergeGeometries(collisionGeometries, false)
-        : null,
+        : null),
       shootables,
       targets,
       dispose() {
@@ -82,6 +107,7 @@ export function createMapBuilder(root = new THREE.Group()) {
     shootables,
     targets,
     addBox,
+    addLayoutBoxes,
     addMesh,
     addTarget,
     addDisposable,

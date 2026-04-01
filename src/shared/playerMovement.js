@@ -12,6 +12,8 @@ export const PLAYER_MOVEMENT_DEFAULTS = {
   crouchLerpSpeed: 12,
   maxStepHeight: 0.45,
 };
+const GROUNDED_PROBE_EPSILON = 0.04;
+const GROUNDED_STICK_EPSILON = 0.08;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -122,6 +124,74 @@ export function simulatePlayerMovement(
   const stepX = state.velocity.x * delta;
   const stepY = state.velocity.y * delta;
   const stepZ = state.velocity.z * delta;
+  const desiredPosition = {
+    x: state.position.x + stepX,
+    y: state.position.y + stepY,
+    z: state.position.z + stepZ,
+  };
+
+  if (options.resolvePosition) {
+    const resolvedPosition = options.resolvePosition(
+      state.position,
+      config.radius,
+      state.currentHeight,
+      { x: stepX, y: stepY, z: stepZ },
+    );
+    const resolvedStepX = resolvedPosition.x - state.position.x;
+    const resolvedStepY = resolvedPosition.y - state.position.y;
+    const resolvedStepZ = resolvedPosition.z - state.position.z;
+    const correctionX = resolvedPosition.x - desiredPosition.x;
+    const correctionY = resolvedPosition.y - desiredPosition.y;
+    const correctionZ = resolvedPosition.z - desiredPosition.z;
+    const correctionLength = Math.hypot(correctionX, correctionY, correctionZ);
+    let groundedFromCorrection = correctionY > Math.abs(stepY * 0.25);
+
+    if (options.getGroundHeightAt) {
+      const supportProbeY = Math.max(state.position.y, resolvedPosition.y);
+      const supportFloor = options.getGroundHeightAt(
+        resolvedPosition.x,
+        resolvedPosition.z,
+        supportProbeY,
+        wasGrounded ? config.maxStepHeight : 0,
+        Math.max(2, Math.abs(stepY) + config.maxStepHeight + config.radius + 0.5),
+      );
+      const floorDelta = resolvedPosition.y - supportFloor;
+      const supportThreshold = wasGrounded
+        ? config.maxStepHeight + GROUNDED_STICK_EPSILON
+        : GROUNDED_PROBE_EPSILON;
+
+      if (state.velocity.y <= 0 && floorDelta <= supportThreshold) {
+        resolvedPosition.y = supportFloor;
+        groundedFromCorrection = true;
+      }
+    }
+
+    if (delta > 1e-6) {
+      state.velocity.x = resolvedStepX / delta;
+      state.velocity.z = resolvedStepZ / delta;
+      state.velocity.y = groundedFromCorrection ? 0 : resolvedStepY / delta;
+    }
+
+    if (!groundedFromCorrection && correctionLength > 1e-6) {
+      const correctionNormalX = correctionX / correctionLength;
+      const correctionNormalY = correctionY / correctionLength;
+      const correctionNormalZ = correctionZ / correctionLength;
+      const velocityDot = (state.velocity.x * correctionNormalX)
+        + (state.velocity.y * correctionNormalY)
+        + (state.velocity.z * correctionNormalZ);
+
+      state.velocity.x -= correctionNormalX * velocityDot;
+      state.velocity.y -= correctionNormalY * velocityDot;
+      state.velocity.z -= correctionNormalZ * velocityDot;
+    }
+
+    state.position.x = resolvedPosition.x;
+    state.position.y = resolvedPosition.y;
+    state.position.z = resolvedPosition.z;
+    state.isGrounded = groundedFromCorrection;
+    state.position.y = clamp(state.position.y, groundHeight - 32, groundHeight + 256);
+    return state;
+  }
 
   const nextHorizontalPosition = options.moveHorizontal
     ? options.moveHorizontal(
@@ -136,16 +206,26 @@ export function simulatePlayerMovement(
       z: state.position.z + stepZ,
     };
 
+  if (options.moveHorizontal && delta > 1e-6) {
+    state.velocity.x = (nextHorizontalPosition.x - state.position.x) / delta;
+    state.velocity.z = (nextHorizontalPosition.z - state.position.z) / delta;
+  }
+
   state.position.x = nextHorizontalPosition.x;
   state.position.z = nextHorizontalPosition.z;
+  const previousY = state.position.y;
   state.position.y += stepY;
+
+  const groundProbeY = Math.max(previousY, state.position.y);
+  const maxGroundDrop = Math.max(12, Math.abs(stepY) + config.maxStepHeight + config.radius + 0.5);
 
   const floor = options.getGroundHeightAt
     ? options.getGroundHeightAt(
       state.position.x,
       state.position.z,
-      state.position.y,
+      groundProbeY,
       wasGrounded ? config.maxStepHeight : 0,
+      maxGroundDrop,
     )
     : groundHeight;
 
@@ -161,7 +241,7 @@ export function simulatePlayerMovement(
     state.isGrounded = false;
   }
 
-  state.position.y = clamp(state.position.y, groundHeight - 32, 256);
+  state.position.y = clamp(state.position.y, groundHeight - 32, groundHeight + 256);
 
   return state;
 }

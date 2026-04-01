@@ -6,6 +6,7 @@ import { fireHitscan, performKnifeHit, playWeaponAudio } from './weaponFiring.js
 import { updateWeaponPresentation } from './weaponPresentation.js';
 
 const MUZZLE_WORLD = new THREE.Vector3();
+const FIRE_DIRECTION = new THREE.Vector3();
 
 export class WeaponManager {
   constructor({ camera, scene, shootables = [], audioManager = null }) {
@@ -30,6 +31,8 @@ export class WeaponManager {
     this.wasScoped = false;
     this.knifeAttackTime = 0;
     this.knifeAttackDuration = 0.18;
+    this.authoritativeCombatEnabled = false;
+    this.onFireRequest = null;
 
     this.raycaster = new THREE.Raycaster();
     this.temporaryObjects = [];
@@ -49,6 +52,11 @@ export class WeaponManager {
 
   getMovementSpeedMultiplier() {
     return this.currentWeapon?.movementSpeedMultiplier ?? 1;
+  }
+
+  setCombatNetworking({ authoritativeCombatEnabled = false, onFireRequest = null } = {}) {
+    this.authoritativeCombatEnabled = authoritativeCombatEnabled;
+    this.onFireRequest = onFireRequest;
   }
 
   equipWeapon(weaponKey) {
@@ -163,6 +171,12 @@ export class WeaponManager {
       muzzleWorld: MUZZLE_WORLD,
       weapon: this.currentWeapon,
       isScoped: this.isScoped,
+      applyDamage: !this.authoritativeCombatEnabled,
+    });
+    this.onFireRequest?.({
+      weaponKey: this.activeWeaponKey,
+      origin: MUZZLE_WORLD,
+      direction: this.raycaster.ray.direction,
     });
   }
 
@@ -170,11 +184,18 @@ export class WeaponManager {
     this.cooldown = this.currentWeapon.fireInterval;
     this.knifeAttackTime = this.knifeAttackDuration;
     playWeaponAudio(this.audioManager, this.activeWeaponKey, this.currentWeapon);
+    this.muzzle?.getWorldPosition?.(MUZZLE_WORLD);
     performKnifeHit({
       camera: this.camera,
       shootables: this.shootables,
       raycaster: this.raycaster,
       weapon: this.currentWeapon,
+      applyDamage: !this.authoritativeCombatEnabled,
+    });
+    this.onFireRequest?.({
+      weaponKey: this.activeWeaponKey,
+      origin: MUZZLE_WORLD,
+      direction: this.camera.getWorldDirection(FIRE_DIRECTION),
     });
   }
 

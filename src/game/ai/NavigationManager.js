@@ -1,33 +1,34 @@
-import { init as initRecast, NavMeshQuery } from 'recast-navigation';
-import { generateSoloNavMesh } from 'recast-navigation/generators';
+let recastCoreModulePromise = null;
 
-let recastInitPromise = null;
-
-function ensureRecastInit() {
-  if (!recastInitPromise) {
-    recastInitPromise = initRecast();
+async function loadRecastCoreModules() {
+  if (!recastCoreModulePromise) {
+    recastCoreModulePromise = import('recast-navigation').then(async (recastNavigation) => {
+      await recastNavigation.init();
+      return {
+        NavMeshQuery: recastNavigation.NavMeshQuery,
+        importNavMesh: recastNavigation.importNavMesh,
+        exportNavMesh: recastNavigation.exportNavMesh,
+      };
+    });
   }
 
-  return recastInitPromise;
+  return recastCoreModulePromise;
 }
 
-function getGeometryArrays(geometry) {
-  const positions = geometry.getAttribute('position');
-  const indices = geometry.index;
+export function preloadNavigationModules() {
+  return loadRecastCoreModules();
+}
 
-  if (!positions) {
-    return { positions: [], indices: [] };
+function normalizeNavMeshExport(navMeshExport) {
+  if (navMeshExport instanceof Uint8Array) {
+    return navMeshExport;
   }
 
-  const positionArray = Array.from(positions.array);
-  const indexArray = indices
-    ? Array.from(indices.array)
-    : Array.from({ length: positions.count }, (_, index) => index);
+  if (navMeshExport instanceof ArrayBuffer) {
+    return new Uint8Array(navMeshExport);
+  }
 
-  return {
-    positions: positionArray,
-    indices: indexArray,
-  };
+  return null;
 }
 
 export class NavigationManager {
@@ -38,42 +39,24 @@ export class NavigationManager {
     this.buildToken = 0;
   }
 
-  async initialize(collisionGeometry) {
+  async initialize(_collisionGeometry, options = {}) {
     this.destroy();
     this.buildToken += 1;
-    const token = this.buildToken;
 
-    if (!collisionGeometry) {
-      return false;
-    }
+    const normalizedNavMeshExport = normalizeNavMeshExport(options.navMeshExport);
+    return normalizedNavMeshExport
+      ? this.initializeFromNavMeshExport(normalizedNavMeshExport, this.buildToken)
+      : false;
+  }
 
-    await ensureRecastInit();
+  async initializeFromNavMeshExport(navMeshExport, token = this.buildToken) {
+    const { NavMeshQuery, importNavMesh } = await loadRecastCoreModules();
     if (token !== this.buildToken) {
       return false;
     }
 
-    const { positions, indices } = getGeometryArrays(collisionGeometry);
-    if (positions.length === 0 || indices.length === 0) {
-      return false;
-    }
-
-    const { success, navMesh } = generateSoloNavMesh(positions, indices, {
-      cs: 0.2,
-      ch: 0.2,
-      walkableSlopeAngle: 55,
-      walkableHeight: 10,
-      walkableClimb: 4,
-      walkableRadius: 2,
-      maxEdgeLen: 20,
-      maxSimplificationError: 1.15,
-      minRegionArea: 12,
-      mergeRegionArea: 24,
-      maxVertsPerPoly: 6,
-      detailSampleDist: 4,
-      detailSampleMaxError: 0.8,
-    });
-
-    if (!success || token !== this.buildToken) {
+    const { navMesh } = importNavMesh(navMeshExport);
+    if (!navMesh || token !== this.buildToken) {
       navMesh?.destroy?.();
       return false;
     }
@@ -83,6 +66,24 @@ export class NavigationManager {
     this.query.defaultQueryHalfExtents = { x: 4, y: 6, z: 4 };
     this.ready = true;
     return true;
+  }
+
+  async exportNavMesh() {
+    if (!this.navMesh) {
+      return null;
+    }
+
+    const { exportNavMesh } = await loadRecastCoreModules();
+    return exportNavMesh(this.navMesh);
+  }
+
+  async exportNavMeshFromRuntime(navMesh) {
+    if (!navMesh) {
+      return null;
+    }
+
+    const { exportNavMesh } = await loadRecastCoreModules();
+    return exportNavMesh(navMesh);
   }
 
   projectPoint(point) {

@@ -8,6 +8,8 @@ export function createHud({
   utilityManager,
   networkClient,
   playerController,
+  getDamageVignette,
+  getHitDamagePopups,
   getFps,
   getMasterVolume,
   getMouseSensitivity,
@@ -34,6 +36,10 @@ export function createHud({
       <div class="hud__fps"></div>
     </div>
     <div class="hud__crosshair" aria-hidden="true"></div>
+    <div class="hud__dead-overlay" aria-hidden="true"></div>
+    <div class="hud__damage-vignette" aria-hidden="true"></div>
+    <div class="hud__hit-damage" aria-hidden="true"></div>
+    <div class="hud__respawn" aria-hidden="true"></div>
     <div class="hud__ads-reticle" aria-hidden="true"></div>
     <div class="hud__scope ${weaponManager?.showScopeOverlay ? 'hud__scope--active' : ''}" aria-hidden="true">
       <div class="hud__scope-lens">
@@ -50,10 +56,12 @@ export function createHud({
       </div>
     </div>
     <div class="hud__bottom">
+      <div class="hud__health"></div>
       <div class="hud__weapon"></div>
       <div class="hud__utility"></div>
       <div class="hud__network"></div>
       <div class="hud__movement"></div>
+      <div class="hud__position"></div>
       <div class="hud__pointer"></div>
     </div>
     <pre class="hud__netdebug" hidden></pre>
@@ -77,11 +85,17 @@ export function createHud({
   const roundEl = hud.querySelector('.hud__round');
   const fpsEl = hud.querySelector('.hud__fps');
   const weaponEl = hud.querySelector('.hud__weapon');
+  const healthEl = hud.querySelector('.hud__health');
   const utilityEl = hud.querySelector('.hud__utility');
   const networkEl = hud.querySelector('.hud__network');
   const movementEl = hud.querySelector('.hud__movement');
+  const positionEl = hud.querySelector('.hud__position');
   const pointerEl = hud.querySelector('.hud__pointer');
   const crosshairEl = hud.querySelector('.hud__crosshair');
+  const deadOverlayEl = hud.querySelector('.hud__dead-overlay');
+  const damageVignetteEl = hud.querySelector('.hud__damage-vignette');
+  const hitDamageEl = hud.querySelector('.hud__hit-damage');
+  const respawnEl = hud.querySelector('.hud__respawn');
   const adsReticleEl = hud.querySelector('.hud__ads-reticle');
   const scopeEl = hud.querySelector('.hud__scope');
   const loadingEl = hud.querySelector('.hud__loading');
@@ -93,9 +107,11 @@ export function createHud({
   let lastRoundText = '';
   let lastFpsText = '';
   let lastWeaponText = '';
+  let lastHealthText = '';
   let lastUtilityText = '';
   let lastNetworkText = '';
   let lastMovementText = '';
+  let lastPositionText = '';
   let lastPointerText = '';
   let lastLoadingText = '';
   let lastCrosshairHidden = null;
@@ -104,6 +120,10 @@ export function createHud({
   let lastLoading = null;
   let lastNetDebugText = '';
   let currentNetDebugText = '';
+  let lastDamageVignette = -1;
+  let lastDeadOverlay = null;
+  let lastHitDamageHtml = '';
+  let lastRespawnText = '';
   const debugHistory = [];
 
   function summarizeMetric(samples, key) {
@@ -165,6 +185,7 @@ export function createHud({
       `buffered_corr=${(movement.bufferedCanonicalCorrectionMagnitude ?? 0).toFixed(3)} responsive_offset=${(movement.responsiveOffsetMagnitude ?? 0).toFixed(3)}`,
       `corr_enqueue_per_sec=${(movement.correctionEnqueueRatePerSecond ?? 0).toFixed(3)} corr_active=${movement.correctionActive ? 'yes' : 'no'}`,
       `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,
+      `mode=${movement.movementMode ?? 'grounded'} pos=${movement.positionText ?? 'n/a'}`,
     ].join('\n');
   }
 
@@ -210,6 +231,8 @@ export function createHud({
         speed: 0,
         correctionOffsetMagnitude: 0,
         simulationDeltaMagnitude: 0,
+        movementMode: 'grounded',
+        positionText: '0.00, 0.00, 0.00',
       };
       const networkDebug = networkClient?.getDebugState?.() ?? {
         connectionState: 'offline',
@@ -251,11 +274,14 @@ export function createHud({
         ? `Round ${roundManager.roundNumber} - ${roundManager.phase}`
         : 'Round --';
       const fpsText = `FPS: ${getFps?.() ?? '--'}`;
+      const localPlayerState = networkClient?.getLocalPlayerState?.() ?? null;
+      const healthText = `Health: ${localPlayerState?.health ?? '--'}/${localPlayerState?.maxHealth ?? '--'}${localPlayerState?.isAlive === false ? ' - DOWN' : ''}`;
       const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}`;
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
       const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
       const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - ${displaySpeed.toFixed(1)} m/s`;
+      const positionText = `Pos: ${movement.positionText ?? '0.00, 0.00, 0.00'} - ${movement.movementMode ?? 'grounded'}`;
       const pointerText = paused
         ? 'Paused'
         : input.pointerLocked
@@ -264,11 +290,48 @@ export function createHud({
 
       lastRoundText = setTextIfChanged(roundEl, roundText, lastRoundText);
       lastFpsText = setTextIfChanged(fpsEl, fpsText, lastFpsText);
+      lastHealthText = setTextIfChanged(healthEl, healthText, lastHealthText);
       lastWeaponText = setTextIfChanged(weaponEl, weaponText, lastWeaponText);
       lastUtilityText = setTextIfChanged(utilityEl, utilityText, lastUtilityText);
       lastNetworkText = setTextIfChanged(networkEl, networkText, lastNetworkText);
       lastMovementText = setTextIfChanged(movementEl, movementText, lastMovementText);
+      lastPositionText = setTextIfChanged(positionEl, positionText, lastPositionText);
       lastPointerText = setTextIfChanged(pointerEl, pointerText, lastPointerText);
+
+      const damageVignette = Math.max(0, Math.min(1, Number(getDamageVignette?.() ?? 0)));
+      if (Math.abs(damageVignette - lastDamageVignette) > 0.01) {
+        damageVignetteEl.style.opacity = String(damageVignette * 0.75);
+        lastDamageVignette = damageVignette;
+      }
+
+      const deadOverlayActive = Boolean(localPlayerState?.isAlive === false);
+      if (deadOverlayActive !== lastDeadOverlay) {
+        deadOverlayEl.classList.toggle('hud__dead-overlay--active', deadOverlayActive);
+        lastDeadOverlay = deadOverlayActive;
+      }
+
+      const hitDamagePopups = getHitDamagePopups?.() ?? [];
+      const hitDamageHtml = hitDamagePopups.map((popup, index) => {
+        const normalizedLife = Math.max(0, Math.min(1, popup.life / 0.7));
+        const y = index * 28 + (1 - normalizedLife) * -18;
+        return `<div class="hud__hit-damage-popup" style="opacity:${normalizedLife.toFixed(3)}; transform:translate(-50%, ${y.toFixed(1)}px);">${popup.text}</div>`;
+      }).join('');
+      if (hitDamageHtml !== lastHitDamageHtml) {
+        hitDamageEl.innerHTML = hitDamageHtml;
+        lastHitDamageHtml = hitDamageHtml;
+      }
+
+      const respawnSeconds = localPlayerState?.isAlive === false && localPlayerState?.respawnAt > 0
+        ? Math.max(0, (localPlayerState.respawnAt - Date.now()) / 1000)
+        : 0;
+      const respawnText = respawnSeconds > 0
+        ? `Respawning in: ${respawnSeconds.toFixed(1)}`
+        : '';
+      if (respawnText !== lastRespawnText) {
+        respawnEl.textContent = respawnText;
+        respawnEl.classList.toggle('hud__respawn--active', Boolean(respawnText));
+        lastRespawnText = respawnText;
+      }
 
       const crosshairHidden = Boolean(weaponManager?.isScoped || paused);
       if (crosshairHidden !== lastCrosshairHidden) {

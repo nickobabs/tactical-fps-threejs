@@ -1,11 +1,11 @@
 import { Client } from 'colyseus.js';
 import {
-  NETCODE_INPUT_SEND_INTERVAL,
   NETCODE_MAX_REMOTE_SNAPSHOTS,
   NETCODE_REMOTE_INTERPOLATION_DELAY_MS,
   NETCODE_SIMULATION_STEP,
 } from '../../shared/netcode.js';
 import {
+  createPlayerFireMessage,
   createPlayerInputMessage,
   createPlayerReadyMessage,
   normalizeAuthoritativePlayerState,
@@ -58,7 +58,6 @@ export class NetworkClient {
     this.connectionState = 'idle';
     this.destroyed = false;
     this.remotePlayerBuffers = new Map();
-    this.sendAccumulator = 0;
     this.lastError = null;
     this.nextInputSequence = 1;
     this.lastReconciledSequence = 0;
@@ -71,6 +70,8 @@ export class NetworkClient {
     this.lastAuthoritativeSequence = 0;
     this.lastCorrectionDistance = 0;
     this.authoritativeEvents = [];
+    this.localPlayerState = null;
+    this.pendingCombatEvents = [];
 
     void this.connect();
   }
@@ -112,6 +113,10 @@ export class NetworkClient {
         this.applyPlayerState(message?.players ?? {});
       });
 
+      room.onMessage('combat-event', (message) => {
+        this.pendingCombatEvents.push(message);
+      });
+
       room.onLeave((code) => {
         this.room = null;
         this.remotePlayerBuffers.clear();
@@ -150,6 +155,7 @@ export class NetworkClient {
       const normalizedState = normalizeAuthoritativePlayerState(playerId, playerState);
 
       if (playerId === this.playerId) {
+        this.localPlayerState = normalizedState;
         if (normalizedState.sequence > this.lastReconciledSequence) {
           const localEntry = this.pendingInputs.find((entry) => entry.sequence === normalizedState.sequence);
           this.lastCorrectionDistance = localEntry
@@ -239,33 +245,24 @@ export class NetworkClient {
     this.pendingInputs.push(entry);
     this.latestSampledInput = packet;
     this.pendingJumpSend = this.pendingJumpSend || packet.jump;
-    this.nextInputSequence += 1;
-    return entry;
-  }
-
-  update(delta) {
-    if (!this.room || !this.latestSampledInput) {
-      return false;
-    }
-
-    this.sendAccumulator += delta;
-    if (this.sendAccumulator < NETCODE_INPUT_SEND_INTERVAL) {
-      return false;
-    }
-
-    this.sendAccumulator -= NETCODE_INPUT_SEND_INTERVAL;
-    const packet = createPlayerInputMessage(
-      {
-        ...this.latestSampledInput,
-        jump: this.latestSampledInput.jump || this.pendingJumpSend,
-      },
-      this.latestSampledInput.sequence,
-      this.latestSampledInput.timestamp,
-    );
     this.room.send('player-input', packet);
     if (packet.jump) {
       this.pendingJumpSend = false;
     }
+    this.nextInputSequence += 1;
+    return entry;
+  }
+
+  update() {
+    return false;
+  }
+
+  sendFireRequest(fireRequest) {
+    if (!this.room || !fireRequest) {
+      return false;
+    }
+
+    this.room.send('player-fire', createPlayerFireMessage(fireRequest, Date.now()));
     return true;
   }
 
@@ -273,6 +270,32 @@ export class NetworkClient {
     const correction = this.pendingLocalCorrection;
     this.pendingLocalCorrection = null;
     return correction;
+  }
+
+  consumeCombatEvents() {
+    const events = this.pendingCombatEvents;
+    this.pendingCombatEvents = [];
+    return events;
+  }
+
+  getLocalPlayerState() {
+    return this.localPlayerState;
+  }
+
+  suspendGameplaySync() {
+    this.remotePlayerBuffers.clear();
+    this.pendingLocalCorrection = null;
+    this.pendingInitializationState = null;
+    this.pendingInputs.length = 0;
+    this.latestSampledInput = null;
+    this.pendingJumpSend = false;
+    this.lastCorrectionDistance = 0;
+    this.lastAuthoritativeSequence = 0;
+    this.lastReconciledSequence = 0;
+    this.lastAuthoritativeStateAt = 0;
+    this.authoritativeEvents.length = 0;
+    this.localPlayerState = null;
+    this.pendingCombatEvents = [];
   }
 
   getRemotePlayers() {
@@ -362,6 +385,8 @@ export class NetworkClient {
     this.latestSampledInput = null;
     this.pendingJumpSend = false;
     this.authoritativeEvents.length = 0;
+    this.localPlayerState = null;
+    this.pendingCombatEvents = [];
 
     if (this.room) {
       void this.room.leave().catch((error) => {

@@ -2,7 +2,7 @@
 
 ## What This Game Is
 
-This project is a Counter-Strike-like tactical first-person shooter focused on grounded movement, tight lanes, readable cover, low time-to-kill combat, and round-based play. It is being built in Three.js with Vite and JavaScript, with the goal of growing this prototype directly into the main game rather than treating it as a throwaway experiment.
+This project is a Counter-Strike-like tactical first-person shooter focused on grounded movement, readable lanes, low time-to-kill hitscan combat, and round-based play. It is built in Three.js with Vite and JavaScript, and the working assumption is still that this prototype will evolve in place into the real game rather than being thrown away.
 
 ## Folder Structure
 
@@ -29,6 +29,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       networking.md
       fixed-step-loop.md
   public/
+    maps/
+    navmeshes/
+  scripts/
+    build-navmeshes.mjs
   server/
     package.json
     src/
@@ -48,10 +52,16 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       three/
         disposeObject3D.js
     game/
+      ai/
+        NavigationManager.js
+        navigationGeneration.js
+      audio/
+        AudioManager.js
       maps/
         DesertCompound.js
         MapRuntime.js
         TrainingGround.js
+        mapAssetLoader.js
         mapBuilder.js
         mapOptions.js
       networking/
@@ -66,10 +76,6 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       skyboxes/
         SkyboxManager.js
         skyboxOptions.js
-      audio/
-        AudioManager.js
-      ai/
-        NavigationManager.js
       targets/
         TargetDummy.js
         TargetManager.js
@@ -94,6 +100,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       maps/
         mapCollision.js
         mapLayouts.js
+        mapManifest.js
       netcode.js
       netcodeProtocol.js
       playerMovement.js
@@ -111,170 +118,247 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Classes use PascalCase filenames and exports, for example `GameApp`, `InputManager`, and `WeaponManager`.
 - Factory-style scene builders use verb-style exports such as `createTrainingGround` and `createHud`.
 - Shared constants use uppercase keys, for example `TEAMS.ATTACKERS`.
-- Files are currently JavaScript ES modules with one primary responsibility per file.
+- Files are JavaScript ES modules with one primary responsibility per file.
 
 ## Key Architectural Decisions
 
-- The game is being built directly in Three.js. Architecture and naming should continue to support incremental expansion of this codebase rather than a later engine swap.
-- `GameApp` is the composition root. It creates the renderer, scene, camera, systems, map, and main animation loop.
-- Input is consumed once per rendered frame and passed into systems that need it, rather than letting each system poll and clear input independently.
-- The player controller owns movement and look state, while `CollisionWorld` owns static mesh-based world collision resolution and downward ground sampling.
-- Weapons are runtime-built viewmodels attached directly to the camera rather than imported assets at this stage.
-- Shooting is hitscan-based through `THREE.Raycaster`, using map meshes as shoot targets.
-- Weapon definitions now live in a lightweight config layer under `src/game/weapons/weaponConfigs.js`, while procedural viewmodel building lives in `src/game/weapons/viewModels.js`.
-- HUD is DOM/CSS, not world-space UI.
-- The pause menu and skybox selection UI live inside the HUD layer rather than as separate app-level DOM systems.
-- Maps are selected through a small registry in `src/game/maps/mapOptions.js`, and `GameApp` now delegates staged map creation to `src/game/maps/MapRuntime.js` so map creation, navmesh generation, and map-bound system wiring are isolated from the top-level app loop.
-- Graybox map factories share common assembly helpers through `src/game/maps/mapBuilder.js`, which reduces duplication in mesh registration, collision extraction, and target wiring.
-- Bot navigation is isolated in `src/game/ai/NavigationManager.js`, which builds a navmesh from each loaded map's collision geometry during that loading stage rather than opportunistically after activation.
-- HUD shell, pause-menu interactions, and static pause-menu content are now split across smaller UI files instead of one large DOM module.
-- HDR environment loading and swapping is now isolated in `SkyboxManager`.
-- Disposable Three.js scene trees are cleaned up through `src/core/three/disposeObject3D.js` so map swaps do not accumulate old geometry, materials, or textures.
-- Multiplayer now uses a separate Colyseus server under `server/`, while the browser runtime keeps networking additive so the prototype remains usable without a live backend.
-- Shared player locomotion math now lives in `src/shared/playerMovement.js`, which is used by both the browser controller and the Colyseus room's first authoritative movement pass.
-- Shared multiplayer timing/protocol helpers now live in `src/shared/netcode.js` and `src/shared/netcodeProtocol.js`, which keeps message shape and tick assumptions aligned between browser and server.
-- Shared authoritative map layout/collision helpers now live under `src/shared/maps/`, which the Colyseus room uses to build map-aware collision for server movement.
-- Events currently flow through direct method calls and shared frame data. There is no event bus, no UnityEvent equivalent, and no message broker yet.
+- `GameApp` is the composition root. It owns the renderer, scene, camera, HUD, pause state, skybox state, app-level networking, map lifecycle, and frame loop.
+- Input is consumed once per render frame and distributed to systems instead of being polled/cleared independently by each feature.
+- `MapRuntime` owns map-bound systems only: collision, navigation, player controller, weapons, rounds, utility, and targets.
+- `NetworkClient` now lives at the app/session layer in `GameApp`, not inside `MapRuntime`, so map swaps no longer imply reconnect churn.
+- The player controller owns look, movement state, prediction/reconciliation, movement mode, and the split between canonical gameplay state and presented first-person state.
+- `CollisionWorld` owns static mesh-based collision resolution, downward ground sampling, and line-of-sight checks using `three-mesh-bvh`.
+- Weapons remain procedural viewmodels attached directly to the camera.
+- HUD and pause menu are DOM/CSS, not world-space UI.
+- Shared locomotion math lives in `src/shared/playerMovement.js` and is used by both the browser controller and the Colyseus room.
+- Shared map metadata now has an explicit manifest in `src/shared/maps/mapManifest.js`.
+- Map assembly has a real asset boundary in `src/game/maps/mapAssetLoader.js`. The runtime no longer assumes every map must be “one JS factory that returns everything.”
+- Graybox maps still render through runtime factories, but imported maps can render from glTF scenes, collide against separate glTF collision scenes, and load baked navmesh assets from the manifest.
+- Navigation prefers baked navmesh binaries at runtime. Runtime nav generation still exists as a dev/fallback path.
+- Imported map support is now a real workflow, not a future placeholder.
 
 ## What Is Already Built And Confirmed Working
 
 - Vite project bootstraps and builds successfully.
-- A playable first-person prototype launches in browser and can swap between multiple graybox maps at runtime.
-- The active map can be swapped from the pause menu through a map-selection list.
-- Map swaps now show an explicit loading state and build navigation before the new map goes live, favoring runtime stability over swap speed.
-- `Training Ground` remains the compact systems sandbox, while `Desert Compound` is a larger two-site / mid-style layout for broader traversal and sightline testing.
-- Mouse look, WASD movement, sprint, crouch, and jump work.
-- The player is blocked by a merged static collision mesh and can traverse solids such as the current ramp and catwalk through the same collision path.
-- Pointer lock flow works from the game canvas.
-- Three weapon slots are available: `Rifle` on `1`, `Sniper` on `2`, and `Knife` on `3`.
-- Left click fires hitscan shots with recoil, muzzle flash, tracers, and temporary impact markers.
-- The rifle supports ADS with an aligned viewmodel sight and FOV-based sensitivity scaling.
-- The sniper supports scoped zoom with a circular overlay, reduced FOV, and FOV-based sensitivity scaling.
-- The knife is available on `3`, increases movement speed, and uses a short-range thrust attack with its own slash sound.
-- The HUD renders movement state, round state, pointer lock state, weapon name, utility name, and FPS.
-- `Escape` opens a pause menu with resume, key bindings, map selection, skybox selection, master volume, and mouse sensitivity.
-- Map loading now shows a centered loading overlay while the next map and its navmesh are prepared.
-- Multiple HDR skyboxes can be swapped at runtime from the pause menu.
-- Basic weapon audio is live: rifle fire, sniper fire, sniper scope zoom, and knife slash all route through a Web Audio-based `AudioManager` with decoded buffers, playback policies, and master volume control.
-- A simple moving target enemy exists in the map with body/head hit zones, 100 HP, damage feedback numbers, respawn, navmesh-backed wandering, line-of-sight chase behavior, red idle/aggro eye feedback, and angry eyebrows while aggroed.
-- A simple round timer/state loop runs between `freeze` and `live`.
-- Basic additive multiplayer works locally through Colyseus: multiple tabs can join the same room, see remote-player placeholders, and exchange authoritative movement state.
-- The local player now runs through a fixed-step prediction loop with replay-based reconciliation and a separate rendered presentation path layered on top of predicted gameplay state.
-- Multiplayer correction now uses a deadzone/hysteresis policy so tiny drift does not constantly tug on local movement.
-- Temporary multiplayer debug instrumentation exists to inspect sequence gap, authoritative update cadence, predicted drift, correction rate, buffered correction, and presentation offset during local testing, and it is intentionally being kept available.
+- A playable first-person prototype launches in browser.
+- Runtime map swapping works from the pause menu.
+- Map loading is staged and shows a loading overlay while the next map and navmesh are prepared.
+- Pointer lock works from the game canvas.
+- `Escape` now reliably opens the pause menu when pointer lock is lost instead of only releasing the mouse.
+- `Ctrl` is no longer used for crouch. Crouch is `C` only, specifically to avoid accidental browser shortcut conflicts such as `Ctrl+W`.
+- Mouse look, walk, sprint, crouch, and jump work.
+- The player is blocked by merged static collision meshes.
+- Three weapon slots are available:
+  - `1`: Rifle
+  - `2`: Sniper
+  - `3`: Knife
+- Rifle, sniper, and knife all have functioning presentation/effects/audio paths.
+- The sniper scope overlay works and is still HUD-driven.
+- HDR skyboxes can be swapped at runtime.
+- Additive multiplayer still works locally through Colyseus:
+  - multiple tabs can join
+  - remote placeholders render
+  - local prediction and replay-based reconciliation are active
+  - authoritative movement now covers `Training Ground`, `Desert Compound`, and `Dust2 Import Test`
+- Multiplayer correction now uses a deadzone/hysteresis policy and remains the current baseline.
+- HUD shows round state, FPS, weapon, utility, pointer-lock state, movement state, and current position/movement mode.
+- Debug controls are now part of the active workflow:
+  - `F8`: toggle `NETDEBUG`
+  - `F9`: ignore local corrections
+  - `F10`: dump a debug snapshot
+  - `V`: toggle fly mode
+  - `J`: log current position
+  - `K`: save a debug marker
+  - `L`: dump saved markers
+  - `B`: toggle collision wireframe overlay
+- Baked navmesh generation exists through `npm run build:navmesh`.
+- Imported map support is working through `Dust2 Import Test`:
+  - visual `.glb`
+  - separate collision `.glb`
+  - baked navmesh binary
+  - manifest-defined spawn/gameplay defaults
 
 ## Current Gameplay Snapshot
 
 - Maps:
   - `Training Ground`
   - `Desert Compound`
+  - `Dust2 Import Test`
 - Weapons:
   - `Rifle`: full auto, ADS, low damage hitscan
   - `Sniper`: semi-auto, scoped overlay, high damage hitscan, hipfire spread
   - `Knife`: fast movement, melee thrust
 - Bots:
-  - Wander on navmesh
-  - Chase on sight
-  - Face movement direction while roaming/pathing
-  - Show aggro through eyes + eyebrows
+  - wander on navmesh
+  - chase on sight
+  - use simple line-of-sight driven behavior
 - Menus:
-  - Pause menu
-  - Key bindings
-  - Map selection
-  - Skybox selection
-  - Volume slider
-  - Sensitivity slider
+  - pause menu
+  - key bindings
+  - map selection
+  - skybox selection
+  - volume slider
+  - sensitivity slider
 - Multiplayer:
-  - Shared `TacticalRoom` via Colyseus
-  - Remote players rendered as simple placeholder boxes
-  - Client-side prediction with replay-based reconciliation and a separate local presentation path
-  - Local movement feel is now materially improved by correction deadzone/hysteresis and currently passes the eye test for flat-ground movement
-  - Debug workflow remains active:
-    - `F8`: toggle `NETDEBUG`
-    - `F9`: disable local correction application for A/B testing
-    - `F10`: force an immediate debug summary dump
+  - Colyseus room
+  - remote players shown as placeholders
+  - client prediction with replay/reconciliation
+  - debug workflow still active
 
 ## Main Runtime Flow
 
-- `GameApp` owns renderer, camera, skybox state, HUD state, pause state, and the animation loop.
-- `MapRuntime` builds and owns map-bound systems: collision, navigation, player controller, weapons, targets, rounds, utility, and the additive multiplayer client.
-- `InputManager` gathers browser input and exposes one shared frame snapshot per render frame.
-- `FirstPersonController` consumes that snapshot for look, runs local fixed-step movement prediction, reconciles only predicted gameplay state, and exposes a separate presented rig for local rendering.
-- `NetworkClient` packages movement input snapshots, sends them to Colyseus, receives authoritative player state, and exposes remote/local correction data back to the runtime.
-- `WeaponManager` consumes the same frame snapshot for swap / scope / fire logic and delegates shot resolution and viewmodel presentation to helper files.
-- `TargetManager` updates target actors using `CollisionWorld` and `NavigationManager`.
+- `GameApp` owns renderer, HUD, pause/resume, map selection, skybox selection, app-level networking, and the main animation loop.
+- `MapRuntime.create()` builds the selected map, initializes navigation, creates `CollisionWorld`, creates the player controller, and assembles map-bound systems.
+- `InputManager` gathers browser input and exposes one shared frame snapshot per rendered frame.
+- `FirstPersonController` consumes look input, runs fixed-step movement simulation, and exposes local presentation separately from canonical simulation state.
+- `NetworkClient` samples local inputs, receives authoritative state, exposes corrections, and renders remote placeholders indirectly through `GameApp`.
+- `WeaponManager` consumes frame input for swap/scope/fire logic.
+- `TargetManager` updates bots using `CollisionWorld` and `NavigationManager`.
 
 ## High-Value Files
 
-- [`src/app/GameApp.js`](C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js): top-level runtime composition and frame loop.
+- [`src/app/GameApp.js`](C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js): composition root, map lifecycle, pause flow, HUD wiring, debug controls, collision debug overlay, and app-level networking ownership.
 - [`src/game/maps/MapRuntime.js`](C:/Users/nicko/tactical-fps-threejs/src/game/maps/MapRuntime.js): map-bound system assembly and lifecycle.
-- [`src/core/physics/CollisionWorld.js`](C:/Users/nicko/tactical-fps-threejs/src/core/physics/CollisionWorld.js): static world collision, grounding, and LOS.
-- [`src/game/ai/NavigationManager.js`](C:/Users/nicko/tactical-fps-threejs/src/game/ai/NavigationManager.js): runtime navmesh generation and path queries.
-- [`src/game/weapons/WeaponManager.js`](C:/Users/nicko/tactical-fps-threejs/src/game/weapons/WeaponManager.js): weapon runtime state coordination.
-- [`src/game/targets/TargetDummy.js`](C:/Users/nicko/tactical-fps-threejs/src/game/targets/TargetDummy.js): current bot actor behavior.
-- [`src/game/ui/Hud.js`](C:/Users/nicko/tactical-fps-threejs/src/game/ui/Hud.js): HUD shell and loading/pause integration.
-- [`src/shared/playerMovement.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js): shared locomotion math for client prediction and server authority.
-- [`src/shared/maps/mapLayouts.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/maps/mapLayouts.js): shared collision-critical map primitive definitions for server authority.
-- [`src/shared/maps/mapCollision.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/maps/mapCollision.js): server-side collision-geometry assembly from shared map layouts.
-- [`src/shared/netcode.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/netcode.js): shared networking tick/snapshot constants.
-- [`src/shared/netcodeProtocol.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/netcodeProtocol.js): shared message normalization and serialization helpers.
-- [`server/src/rooms/TacticalRoom.js`](C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js): current Colyseus authoritative room.
+- [`src/game/maps/mapAssetLoader.js`](C:/Users/nicko/tactical-fps-threejs/src/game/maps/mapAssetLoader.js): manifest-driven map assembly for runtime-factory maps and imported glTF maps.
+- [`src/shared/maps/mapManifest.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/maps/mapManifest.js): map registry including asset paths, spawn defaults, gameplay mode, and baked navmesh metadata.
+- [`src/core/physics/CollisionWorld.js`](C:/Users/nicko/tactical-fps-threejs/src/core/physics/CollisionWorld.js): static collision, ground sampling, and LOS.
+- [`src/shared/playerMovement.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js): shared movement simulation used by both client and server.
+- [`src/game/player/controllers/FirstPersonController.js`](C:/Users/nicko/tactical-fps-threejs/src/game/player/controllers/FirstPersonController.js): movement modes, prediction, presentation, fly mode, and landing logic.
+- [`src/game/ai/NavigationManager.js`](C:/Users/nicko/tactical-fps-threejs/src/game/ai/NavigationManager.js): navmesh query runtime.
+- [`scripts/build-navmeshes.mjs`](C:/Users/nicko/tactical-fps-threejs/scripts/build-navmeshes.mjs): offline navmesh builder for shared-layout and glTF collision maps.
+- [`server/src/rooms/TacticalRoom.js`](C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js): current authoritative Colyseus room.
+
+## Imported Map Workflow Snapshot
+
+- Current imported map under active test: `Dust2 Import Test`.
+- Current runtime asset paths:
+  - visual scene: `public/maps/de_dust2_-_cs_map.glb`
+  - collision scene: `public/maps/de_dust2_collision.glb`
+  - baked navmesh: `public/navmeshes/dust2-import-test.bin`
+- Current Blender-to-game coordinate mapping:
+  - Blender `X -> game x`
+  - Blender `Z -> game y`
+  - Blender `Y -> game z` with sign flipped
+- Current practical workflow:
+  - import source `.glb` into Blender
+  - create a collision-only collection / objects for gameplay collision
+  - export one visual `.glb`
+  - export one collision `.glb`
+  - place/update `spawn_01` in Blender
+  - copy the mapped spawn values into `mapManifest.js`
+  - run `npm run build:navmesh`
+  - test in browser and iterate
+- This is a real usable iteration path, but not yet a production-quality content pipeline.
+
+## Important Changes Landed In This Session
+
+- `NetworkClient` ownership was moved to `GameApp`.
+- Graybox map collision authoring was pushed toward shared manifest/layout boundaries.
+- Baked navmesh support was added and is now the preferred runtime path.
+- `recast-navigation`, map modules, and loader-heavy pieces were split/lazy-loaded as part of bundle work.
+- Imported map plumbing was added:
+  - glTF render scenes
+  - glTF collision scenes
+  - manifest-driven gameplay defaults
+  - baked navmesh generation from imported collision geometry
+- `Dust2 Import Test` was made playable enough for real-scale environment testing.
+- High-altitude floor clamping bug was fixed in shared movement:
+  - old behavior effectively snapped high maps down to `groundHeight - 32`
+  - current behavior clamps relative to `groundHeight` on both bounds
+- Landing from height was fixed by probing ground from the higher of pre/post-step Y and using a dynamic drop distance.
+- Ramp floating was fixed by returning actual hit height from `CollisionWorld.getGroundHeightAt()` instead of clamping upward to fallback `groundHeight`.
+- Ramp sliding was fixed by excluding walkable upward-facing triangles from horizontal pushback.
+- Fog range was expanded to fit larger imported maps.
+- Global fly mode toggle was added.
+- Position/marker debug tools were added.
+- Collision wireframe overlay was added for imported-map debugging.
 
 ## Current Pressure Points
 
-- Bundle size is still the biggest technical pressure point because `recast-navigation` and its WASM chunk are large.
-- AI is still intentionally simple. `TargetDummy` is cleaner than before, but more advanced combat behavior will likely want another split between perception, navigation, and combat decision logic.
-- Weapons are in better shape after the recent helper splits, but reloads/ammo/equip behavior will probably justify another structure pass when those systems land.
-- Multiplayer authority is still the biggest architectural correctness pressure point: movement now uses shared logic and shared collision primitives, but the client and server still do not generate gameplay collision from one fully unified source of truth.
-- Multiplayer correctness still needs continued validation around jumps, ramps, and future combat authority, but the worst flat-ground local feel issue has been materially improved by the current correction model.
-- Another architectural pressure point is code organization around multiplayer presentation. `GameApp` currently still owns remote placeholder rendering and some debug plumbing because that is the fastest path while the protocol is settling.
+- Bundle size is still a major pressure point because `recast-navigation` and its WASM payload are still large.
+- AI is still intentionally simple.
+- Weapons are in better shape, but reload/ammo/equip behaviors will need another structure pass later.
+- Multiplayer authority is still the biggest correctness pressure point:
+  - graybox maps use shared movement/shared collision primitives
+  - imported maps like Dust2 now load authoritative collision from manifest-defined glTF assets on the server, but the broader client/server map assembly path is still not one single source of truth
+- Imported-map support is good enough for iteration, but the export pipeline is still manual and Blender-driven.
+- `GameApp` still owns some temporary debug/presentation responsibilities because that is the fastest path while broader runtime boundaries are still settling.
+- The top active blocker after the latest multiplayer pass is still wall-pressure correctness under authority/correction.
 
 ## Known Issues Or Deliberate Compromises
 
-- Collision is now mesh-based through `three-mesh-bvh`, but it is still static-world only. There is no dynamic body interaction, moving-platform support, or full stair-step / ledge system yet.
-- The map is a graybox. Layout readability is acceptable for testing but not art-complete or competitively tuned.
-- Weapon models are simple procedural placeholders intended to establish framing and feel, not final art.
-- Only the sniper currently has hipfire spread. There is still no ammo, reload, weapon sway tied to locomotion, reload cancel, or ballistic simulation.
-- Knife attack logic is intentionally simple: a short forward thrust with a close-range center-screen hit check rather than a full melee trace or animation system.
-- The target enemy moves and takes damage, but it still does not shoot, use cover, coordinate with other bots, or use any animation system.
-- Navigation meshes are currently generated at runtime from collision geometry rather than baked offline.
-- Runtime navmesh generation still happens on the main thread, so load-time cost grows with map complexity even though gameplay frames no longer share that work.
-- `RoundManager` and `UtilityManager` are still early stubs outside their currently visible features.
-- `NetworkClient` is no longer a stub, but multiplayer still only covers player presence and movement.
-- Server-authoritative movement now uses shared map collision primitives, but client/server movement can still diverge because the client map factories and the server collision layout are not yet fully unified.
-- `FixedStepLoop` is now integrated into the active local prediction path, while `PlayerState` remains unused.
-- Several local multiplayer presentation experiments have already been tried, including interpolation, removal of interpolation, velocity-based extrapolation, weapon speed-multiplier sync, a temporary local-only `120 Hz` prediction-step test, and buffered correction. The current working baseline is the deadzone/hysteresis correction model plus retained debug tooling.
+- Collision is static-world only.
+- No moving platforms, trigger volumes, or dynamic rigid-body interaction.
+- Wall contact still has a known oscillation/shimmer problem when the player leans into solid geometry. Several small mitigations were tried; the issue was not solved cleanly and is intentionally paused for now.
+- Under multiplayer correction/authority pressure, the player can still eventually phase through walls after pushing into blockers for a short time.
+- The latest safe state keeps:
+  - ramp sliding fixed
+  - ramp floating fixed
+  - landing/fall-through fixed
+  - wall-contact oscillation unresolved
+- `Dust2 Import Test` is currently best treated as:
+  - traversal testbed
+  - collision/scale/lighting/fog validation map
+  - future weapon-feel test space
+- `Dust2 Import Test` is not yet a fully production-ready gameplay map:
+  - collision is manually authored
+  - server-side authoritative movement now uses the imported collision glTF, but broader gameplay authority is still incomplete
+  - export workflow is manual
+- Runtime nav generation still exists as a fallback and still runs on the main thread when used.
+- `RoundManager` and `UtilityManager` remain early stubs.
+- `PlayerState` still exists but remains unused.
+
+## Latest Multiplayer Investigation
+
+- Current rollback checkpoint before the next wall-contact pass:
+  - full-capsule BVH movement path is active on both client and server
+  - sustained wall pressure no longer phases the player through geometry
+  - flat-ground walk/run/stop behavior is stable again
+  - floor sink / `air`-`grounded` flicker was fixed by restoring a floor-support probe on top of the full-capsule move path
+  - remaining issue at this checkpoint is contact jitter:
+    - oscillation when pushing into walls
+    - jitter on sloped surfaces
+- If a later pass regresses movement, the checkpoint implementation lives primarily in:
+  - `src/core/physics/CollisionWorld.js`
+  - `src/shared/playerMovement.js`
+  - `src/game/player/controllers/FirstPersonController.js`
+  - `server/src/rooms/TacticalRoom.js`
+- Recent confirmed improvements:
+  - server-side imported-map collision now loads from manifest-defined glTF assets
+  - immediate per-step input sending replaced the older "latest input resent at 20 Hz" model
+  - ordered server-side input queueing removed the obvious forward correction after releasing sprint
+  - local yaw/pitch preservation during reconciliation fixed correction-induced mouse-look slowdown/oscillation
+- Recent attempted fixes that did not solve wall phasing:
+  - making buffered corrections collision-aware
+  - making hard-snap corrections collision-aware
+  - substepping correction motion
+  - substepping `CollisionWorld.move()`
+  - directional filtering to avoid resolving against the exit face of hollow blockers
+- Current best hypothesis:
+  - the remaining phasing issue is tied to the current hollow / thin-shell collision authoring plus the custom capsule response model in `CollisionWorld`
+  - a more robust next direction may be solid gameplay blocker volumes, a more principled BVH-backed character controller approach, or both
 
 ## Local Multiplayer Feel Baseline
 
-- Keep the existing additive multiplayer foundation:
+- Keep the current additive multiplayer foundation:
   - Colyseus room
   - input-authoritative protocol
   - replay/reconciliation
   - remote interpolation
-  - shared collision primitives on the server
-- The local-player feel work was reset around a cleaner architectural baseline:
-  - `Immediate Local Presentation State`
-    - what the player feels in first person
-    - should track local input/render cadence
-  - `Predicted Canonical State`
-    - fixed-step client prediction used for networking and replay
-  - `Authoritative Server State`
-    - correction/validation truth
-- Working assumption going forward:
-  - ordinary locomotion should feel single-player
-  - server refresh should not be routinely visible while just moving around
-  - visible correction should be exceptional, not the default movement experience
-- Current implementation choice:
-  - tiny local drift is ignored
-  - correction begins only after a meaningful divergence threshold
-  - correction stops again after falling back below a smaller threshold
-  - debug controls remain available during development:
-    - `F8`: net debug overlay / summary
-    - `F9`: ignore local corrections
-    - `F10`: immediate burst dump
-- Current next direction:
-  - validate this baseline across jumps, ramps, weapon switching, and later damage/combat authority
-  - continue unifying client and server collision/layout generation
-  - only revisit deeper local-presentation refactors if instrumentation shows the current baseline breaking down in those broader scenarios
-- There is no save/load, replay, bots, replication, buy phase economy, or win-condition system yet.
+  - shared movement logic
+- Active design target remains:
+  - local camera should feel immediate like single-player
+  - predicted gameplay state should remain deterministic/replayable
+  - authoritative correction should be exceptional, not routine
+- Current working baseline:
+  - deadzone/hysteresis correction
+  - debug controls still available during development
+  - app-layer `NetworkClient` lifetime
+
+## Near-Term Direction
+
+- Keep building on the imported-map pipeline instead of reverting to graybox-only assumptions.
+- Formalize gameplay metadata export for imported maps later, likely from Blender or a similar DCC path.
+- Keep baked navmesh as the preferred runtime model.
+- Leave wall-contact oscillation paused until it is worth doing a more principled controller/contact pass.
+- Continue validating multiplayer on jumps, ramps, and future combat authority after the current imported-map movement fixes.

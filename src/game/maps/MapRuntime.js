@@ -3,10 +3,13 @@ import { FirstPersonController } from '../player/controllers/FirstPersonControll
 import { RoundManager } from '../rounds/RoundManager.js';
 import { WeaponManager } from '../weapons/WeaponManager.js';
 import { UtilityManager } from '../utility/UtilityManager.js';
-import { NetworkClient } from '../networking/NetworkClient.js';
 import { TargetManager } from '../targets/TargetManager.js';
 import { NavigationManager } from '../ai/NavigationManager.js';
 import { disposeObject3D } from '../../core/three/disposeObject3D.js';
+
+const ALLOW_RUNTIME_NAV_GENERATION = import.meta.env.DEV
+  || import.meta.env.VITE_ALLOW_RUNTIME_NAV_GENERATION === 'true';
+const DISABLE_LOCAL_TARGETS_FOR_PVP_TESTING = import.meta.env.VITE_DISABLE_LOCAL_TARGETS_FOR_PVP === 'true';
 
 function waitForNextFrame() {
   return new Promise((resolve) => {
@@ -24,7 +27,6 @@ export class MapRuntime {
     roundManager,
     weaponManager,
     utilityManager,
-    networkClient,
     targetManager,
   }) {
     this.map = map;
@@ -35,7 +37,6 @@ export class MapRuntime {
     this.roundManager = roundManager;
     this.weaponManager = weaponManager;
     this.utilityManager = utilityManager;
-    this.networkClient = networkClient;
     this.targetManager = targetManager;
   }
 
@@ -51,14 +52,54 @@ export class MapRuntime {
     onStatusChange?.(`Loading ${mapOption.label}...`);
     await waitForNextFrame();
 
-    const map = mapOption.create();
+    const map = await mapOption.create();
 
     try {
-      onStatusChange?.(`Generating navmesh for ${mapOption.label}...`);
-      await waitForNextFrame();
+      if (DISABLE_LOCAL_TARGETS_FOR_PVP_TESTING && map.targets?.length) {
+        const targetShootables = new Set();
+        for (const target of map.targets) {
+          target.getObject?.().removeFromParent?.();
+          for (const mesh of target.getShootables?.() ?? []) {
+            targetShootables.add(mesh);
+          }
+        }
 
-      const navigationManager = new NavigationManager();
-      await navigationManager.initialize(map.collisionGeometry);
+        map.targets = [];
+        if (Array.isArray(map.shootables) && targetShootables.size > 0) {
+          map.shootables = map.shootables.filter((mesh) => !targetShootables.has(mesh));
+        }
+      }
+
+      let navigationManager = new NavigationManager();
+      let initializedNavigation = false;
+
+      if (mapOption.loadNavigationData) {
+        onStatusChange?.(`Loading baked navmesh for ${mapOption.label}...`);
+        await waitForNextFrame();
+
+        try {
+          const navMeshExport = await mapOption.loadNavigationData();
+          initializedNavigation = await navigationManager.initialize(null, { navMeshExport });
+        } catch (error) {
+          console.warn(`Failed to load baked navmesh for "${mapOption.id}". Falling back to generation.`, error);
+        }
+      }
+
+      if (!initializedNavigation && ALLOW_RUNTIME_NAV_GENERATION) {
+        onStatusChange?.(`Generating navmesh for ${mapOption.label}...`);
+        await waitForNextFrame();
+        const { buildNavigationManagerFromCollisionGeometry } = await import('../ai/navigationGeneration.js');
+        const generatedNavigation = await buildNavigationManagerFromCollisionGeometry(
+          map.collisionGeometry,
+        );
+        navigationManager.destroy();
+        navigationManager = generatedNavigation.navigationManager;
+        initializedNavigation = generatedNavigation.success;
+      }
+
+      if (!initializedNavigation) {
+        throw new Error(`Navigation initialization failed for map "${mapOption.id}".`);
+      }
 
       const collisionWorld = new CollisionWorld({
         groundHeight: map.groundHeight,
@@ -74,7 +115,6 @@ export class MapRuntime {
         roundManager: new RoundManager(),
         weaponManager: null,
         utilityManager: new UtilityManager(),
-        networkClient: new NetworkClient(),
         targetManager: new TargetManager(map.targets),
       });
 
@@ -88,26 +128,12 @@ export class MapRuntime {
       runtime.playerController = new FirstPersonController(camera, input, {
         position: map.spawnPoint,
         groundHeight: map.groundHeight,
+        movementMode: map.movementMode,
+        allowGroundedMode: map.allowGroundedMode,
         collisionWorld,
+        landingSurfaces: map.shootables,
         mouseSensitivity,
         getSpeedMultiplier: () => runtime.weaponManager?.getMovementSpeedMultiplier() ?? 1,
-      });
-      runtime.networkClient.initializeLocalPlayer({
-        mapId: mapOption.id,
-        position: {
-          x: map.spawnPoint.x,
-          y: map.spawnPoint.y,
-          z: map.spawnPoint.z,
-        },
-        velocity: {
-          x: runtime.playerController.velocity.x,
-          y: runtime.playerController.velocity.y,
-          z: runtime.playerController.velocity.z,
-        },
-        yaw: runtime.playerController.yawAngle,
-        isGrounded: runtime.playerController.isGrounded,
-        isCrouched: runtime.playerController.isCrouched,
-        currentHeight: runtime.playerController.currentHeight,
       });
 
       return runtime;
@@ -132,7 +158,6 @@ export class MapRuntime {
   destroy(scene) {
     this.weaponManager?.destroy();
     this.targetManager?.destroy?.();
-    this.networkClient?.destroy?.();
     this.detachFromScene(scene);
     this.navigationManager?.destroy();
     this.map.dispose?.();

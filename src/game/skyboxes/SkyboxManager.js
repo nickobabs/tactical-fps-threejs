@@ -1,5 +1,18 @@
 import * as THREE from 'three';
-import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+
+let rgbeLoaderModulePromise = null;
+
+async function loadRGBELoader() {
+  if (!rgbeLoaderModulePromise) {
+    rgbeLoaderModulePromise = import('three/examples/jsm/loaders/RGBELoader.js');
+  }
+
+  return rgbeLoaderModulePromise;
+}
+
+export function preloadSkyboxModules() {
+  return loadRGBELoader();
+}
 
 export class SkyboxManager {
   constructor(scene, renderer) {
@@ -14,6 +27,7 @@ export class SkyboxManager {
     const loadToken = ++this.loadToken;
 
     try {
+      const { RGBELoader } = await loadRGBELoader();
       const texture = await new RGBELoader().loadAsync(path);
       if (loadToken !== this.loadToken) {
         texture.dispose();

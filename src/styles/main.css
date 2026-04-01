@@ -58,10 +58,12 @@ canvas {
 
 .hud__round,
 .hud__fps,
+.hud__health,
 .hud__weapon,
 .hud__utility,
 .hud__network,
 .hud__movement,
+.hud__position,
 .hud__pointer {
   padding: 10px 14px;
   border: 1px solid rgba(174, 211, 255, 0.14);
@@ -95,6 +97,67 @@ canvas {
   width: 12px;
   height: 12px;
   transform: translate(-50%, -50%);
+}
+
+.hud__dead-overlay {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background:
+    radial-gradient(circle at center, rgba(18, 8, 8, 0.22) 0%, rgba(8, 2, 2, 0.78) 100%);
+}
+
+.hud__dead-overlay--active {
+  opacity: 1;
+}
+
+.hud__damage-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background:
+    radial-gradient(circle at center, rgba(180, 20, 20, 0.05) 30%, rgba(180, 20, 20, 0.28) 100%);
+}
+
+.hud__hit-damage {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  width: 1px;
+  height: 1px;
+}
+
+.hud__hit-damage-popup {
+  position: absolute;
+  left: 50%;
+  color: #ffd37a;
+  font: 700 28px/1 "Segoe UI", sans-serif;
+  letter-spacing: 0.03em;
+  text-shadow:
+    0 0 8px rgba(0, 0, 0, 0.6),
+    0 2px 10px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.hud__respawn {
+  position: absolute;
+  left: 50%;
+  bottom: 112px;
+  transform: translateX(-50%);
+  display: none;
+  padding: 14px 18px;
+  border: 1px solid rgba(255, 160, 160, 0.22);
+  border-radius: 12px;
+  background: rgba(20, 6, 6, 0.82);
+  backdrop-filter: blur(10px);
+  color: #ffe3e3;
+  font-size: 18px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hud__respawn--active {
+  display: block;
 }
 
 .hud__crosshair--hidden {

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:navmesh": "node scripts/build-navmeshes.mjs",
     "preview": "vite preview",
     "server:dev": "npm --prefix server run dev",
     "server:start": "npm --prefix server run start"

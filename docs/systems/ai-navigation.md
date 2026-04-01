@@ -2,7 +2,7 @@
 
 ## Summary
 
-`NavigationManager` owns runtime navmesh generation and path queries for bots using `recast-navigation`.
+`NavigationManager` owns navmesh query runtime for bots using `recast-navigation`. Runtime generation still exists, but baked navmesh import is now the preferred path.
 
 ## Inputs
 
@@ -18,25 +18,25 @@
 ## Dependencies
 
 - `recast-navigation`
-- `recast-navigation/generators`
 - Map collision geometry
 
 ## Key Design Decisions
 
 - Navigation is isolated from bot actor logic so path generation can evolve independently from combat behavior.
-- The current implementation generates a solo navmesh at runtime from the map's merged collision geometry.
-- Navmesh generation is expected to happen during map load, not after the map is already active, so runtime bot updates never need to wait for navigation setup.
+- The preferred runtime path is now to load a baked navmesh export during map load.
+- Runtime navmesh generation still exists as a fallback and is expected to happen during map load, not after the map is already active.
 - Bots use navmesh path queries, but still move with game-side transform updates rather than crowd simulation for now.
 - This keeps the first AI pass simple while preserving a path toward more advanced behaviors later.
 
 ## Current Status
 
 - Implemented and active
-- Navmesh builds per loaded map during the loading phase
+- Baked navmesh binaries load per map during the loading phase when available
+- Runtime navmesh generation still works as a dev/fallback path
 - Bots can pick random reachable wander targets and compute chase paths toward the player
 
 ## Limitations
 
 - No crowd simulation or local avoidance yet
-- No offline navmesh baking pipeline yet
+- Browser runtime still carries `recast-navigation` and its WASM because both baked-nav import and runtime fallback still depend on it
 - No debug navmesh visualization yet

@@ -2,7 +2,7 @@
 
 ## Summary
 
-`FirstPersonController` owns camera look, movement velocity, grounded state, crouch interpolation, jump behavior, collision-aware locomotion, and the split between predicted simulation state and presented local camera state.
+`FirstPersonController` owns camera look, movement velocity, grounded state, crouch interpolation, jump behavior, collision-aware locomotion, movement mode, and the split between predicted simulation state and presented local camera state.
 
 ## Inputs
 
@@ -12,6 +12,7 @@
 - Spawn position and ground height
 - Optional movement-speed multiplier callback from higher-level gameplay systems
 - Configurable base mouse sensitivity
+- Optional landing surfaces for imported-map landing checks
 
 ## Outputs
 
@@ -21,6 +22,7 @@
 - Local movement input snapshots for networking
 - Authoritative reconciliation of predicted simulation state
 - Smoothed presented camera/world transform for the local player
+- Fly-mode toggling and landing attempts
 
 ## Dependencies
 
@@ -42,16 +44,25 @@
 - Core locomotion math is now shared with the multiplayer server through `src/shared/playerMovement.js`, while the browser controller still layers local collision queries on top of that shared simulation.
 - The controller now separates predicted gameplay state from the rendered local rig, so reconciliation can correct simulation without directly jolting the camera every time authoritative state arrives.
 - Local reconciliation now uses a deadzone/hysteresis policy for ordinary movement drift, so tiny disagreement is ignored and only meaningful divergence is allowed to influence the live local path.
+- Local look now stays under client control during ordinary reconciliation. Earlier authoritative yaw application made mouse look oscillate and feel slowed while correction was active.
+- A general fly mode exists for debugging and imported-map exploration, and grounded mode can be disallowed per map if a map is not ready for full gameplay collision yet.
+- Landing-from-height behavior now probes ground from a safer height window, which was required once imported maps stopped living near `y = 0`.
 
 ## Current Status
 
 - Implemented and active
 - Supports look, walk, sprint, crouch, jump, collision blocking, and walking onto authored raised surfaces
+- Supports fly mode for debugging/imported-map exploration
 - Supports weapon-dependent movement speed modifiers through a callback passed from `GameApp`
 - Default base sensitivity is lower than the original prototype tuning and can be adjusted from the pause menu
 - Jump descent no longer snaps early back to the floor from the apex
 - Exposes compact movement input snapshots for server-authoritative multiplayer
 - Reconciles authoritative server state into the predicted simulation path, while presentation follows that simulation through correction-offset handling and bounded local responsiveness
+- Crouch is `C` only. `Ctrl` crouch was removed to avoid accidental browser shortcut conflicts.
+- Latest stable checkpoint:
+  - the controller now predicts movement through a full BVH capsule move path shared with server authority
+  - ordinary walking now feels correct again and sustained wall pressure no longer phases through geometry
+  - the remaining issue is contact jitter when leaning into walls or traversing some sloped surfaces
 
 ## Investigation Notes
 
@@ -63,8 +74,9 @@
   - removal of interpolation
   - velocity-based extrapolation from the latest predicted state
   - a temporary local-only `120 Hz` prediction-step experiment
+  - preserving local yaw/pitch during reconciliation
 - Those experiments improved specific symptoms at different times, and the important outcome was that local deadzone/hysteresis correction produced the first movement baseline that passed the eye test in local multiplayer.
-- Current debugging suggests the biggest remaining risk is no longer flat-ground micro-stutter, but future divergence cases such as ramps, jumps, and combat-driven correction once more gameplay becomes authoritative.
+- Current debugging suggests the biggest remaining risk is now wall-pressure correctness under authority/correction, not just flat-ground feel. The obvious post-sprint forward nudge was improved by fixing stale-input transport, but wall phasing remains unresolved.
 
 ## Reset Plan
 
@@ -84,9 +96,12 @@
 - No recoil transfer into camera yet
 - Server authority still does not share the full client map assembly path, so some client/server divergence can remain
 - Local first-person feel in multiplayer is now substantially closer to single-player on flat-ground movement, but it still needs broader validation before the model should be treated as final
+- Wall-contact oscillation when leaning into solid geometry is still unresolved and is not currently considered a controller-level solved problem
+- If the player sustains pressure into a blocker while corrections are active, they can still eventually phase through geometry. Several correction-path fixes were attempted, so the remaining issue may not live purely in the controller.
 
 ## Near-Term Direction
 
 - Validate the current correction policy against more than flat-ground strafing
 - Keep prediction deterministic and replay-friendly while expanding authoritative gameplay
 - Avoid stacking more ad hoc local smoothing unless instrumentation shows a specific need
+- Leave the wall-contact oscillation issue paused unless a more principled controller/contact pass is scheduled

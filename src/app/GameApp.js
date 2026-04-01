@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { InputManager } from '../core/input/InputManager.js';
-import { MAP_OPTIONS, getMapOption } from '../game/maps/mapOptions.js';
+import { MAP_OPTIONS, getMapOption, preloadMapOptions } from '../game/maps/mapOptions.js';
 import { MapRuntime } from '../game/maps/MapRuntime.js';
 import { createHud } from '../game/ui/Hud.js';
 import { SKYBOX_OPTIONS, getSkyboxOption } from '../game/skyboxes/skyboxOptions.js';
-import { SkyboxManager } from '../game/skyboxes/SkyboxManager.js';
+import { SkyboxManager, preloadSkyboxModules } from '../game/skyboxes/SkyboxManager.js';
 import { AudioManager } from '../game/audio/AudioManager.js';
+import { NetworkClient } from '../game/networking/NetworkClient.js';
+import { preloadNavigationModules } from '../game/ai/NavigationManager.js';
 import { FixedStepLoop } from '../core/loop/FixedStepLoop.js';
 import { NETCODE_SIMULATION_STEP } from '../shared/netcode.js';
 
@@ -19,9 +21,14 @@ export class GameApp {
     this.currentFps = 0;
     this.mouseSensitivity = 0.0011;
     this.mapLoadToken = 0;
+    this.authoritativeNetworkingEnabled = true;
     this.networkJumpQueued = false;
     this.ignoreLocalCorrections = false;
     this.markDebugSnapshotRequested = false;
+    this.debugMarkers = [];
+    this.nextDebugMarkerId = 1;
+    this.showCollisionDebug = false;
+    this.collisionDebugMesh = null;
     this.fatalErrorEl = null;
     this.localSimulationLoop = new FixedStepLoop(NETCODE_SIMULATION_STEP);
     this.audioManager = new AudioManager({ masterVolume: 0.6 });
@@ -38,6 +45,7 @@ export class GameApp {
     this.audioManager.registerSound('knife-slash', '/audio/sword-slash-4.mp3', {
       playback: 'interrupt',
     });
+    this.networkClient = new NetworkClient();
     this.remotePlayerMeshes = new Map();
     this.remotePlayerGeometry = new THREE.BoxGeometry(0.7, 1.72, 0.7);
     this.remotePlayerMaterial = new THREE.MeshStandardMaterial({
@@ -45,10 +53,17 @@ export class GameApp {
       roughness: 0.55,
       metalness: 0.08,
     });
+    this.remotePlayerDeadMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6f2a2a,
+      roughness: 0.7,
+      metalness: 0.05,
+    });
+    this.damageVignette = 0;
+    this.hitDamagePopups = [];
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c1218);
-    this.scene.fog = new THREE.Fog(0x0c1218, 24, 90);
+    this.scene.fog = new THREE.Fog(0x0c1218, 120, 320);
     this.selectedMapId = MAP_OPTIONS[0].id;
     this.selectedSkyboxId = SKYBOX_OPTIONS[0].id;
 
@@ -77,21 +92,19 @@ export class GameApp {
     this.scene.add(this.createLighting());
     this.rebuildHud();
     void this.loadMap(this.selectedMapId);
+    this.scheduleAsyncWarmup();
 
     this.onResize = this.onResize.bind(this);
     this.animate = this.animate.bind(this);
-    this.handlePointerLockChange = this.handlePointerLockChange.bind(this);
   }
 
   start() {
     window.addEventListener('resize', this.onResize);
-    document.addEventListener('pointerlockchange', this.handlePointerLockChange);
     this.renderer.setAnimationLoop(this.animate);
   }
 
   stop() {
     window.removeEventListener('resize', this.onResize);
-    document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
     this.renderer.setAnimationLoop(null);
   }
 
@@ -103,9 +116,12 @@ export class GameApp {
     this.clearRemotePlayers();
     this.unloadMap();
     this.skyboxManager.dispose();
+    this.networkClient.destroy();
     this.audioManager.destroy();
     this.remotePlayerGeometry.dispose();
     this.remotePlayerMaterial.dispose();
+    this.remotePlayerDeadMaterial.dispose();
+    this.disposeCollisionDebugMesh();
     this.renderer.dispose();
   }
 
@@ -117,8 +133,10 @@ export class GameApp {
       roundManager: this.runtime?.roundManager ?? null,
       weaponManager: this.runtime?.weaponManager ?? null,
       utilityManager: this.runtime?.utilityManager ?? null,
-      networkClient: this.runtime?.networkClient ?? null,
+      networkClient: this.networkClient,
       playerController: this.runtime?.playerController ?? null,
+      getDamageVignette: () => this.damageVignette,
+      getHitDamagePopups: () => this.hitDamagePopups,
       getFps: () => this.currentFps,
       getMasterVolume: () => this.audioManager.getMasterVolume(),
       getMouseSensitivity: () => this.mouseSensitivity,
@@ -145,8 +163,161 @@ export class GameApp {
 
   unloadMap() {
     this.clearRemotePlayers();
+    this.disposeCollisionDebugMesh();
     this.runtime?.destroy(this.scene);
     this.runtime = null;
+  }
+
+  createCollisionDebugMesh(collisionGeometry) {
+    if (!collisionGeometry) {
+      return null;
+    }
+
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(collisionGeometry, material);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 1000;
+    return mesh;
+  }
+
+  disposeCollisionDebugMesh() {
+    if (!this.collisionDebugMesh) {
+      return;
+    }
+
+    this.scene.remove(this.collisionDebugMesh);
+    this.collisionDebugMesh.material.dispose();
+    this.collisionDebugMesh = null;
+  }
+
+  syncCollisionDebugMesh() {
+    this.disposeCollisionDebugMesh();
+
+    if (!this.showCollisionDebug || !this.runtime?.map?.collisionGeometry) {
+      return;
+    }
+
+    this.collisionDebugMesh = this.createCollisionDebugMesh(this.runtime.map.collisionGeometry);
+    if (this.collisionDebugMesh) {
+      this.scene.add(this.collisionDebugMesh);
+    }
+  }
+
+  toggleCollisionDebug() {
+    this.showCollisionDebug = !this.showCollisionDebug;
+    this.syncCollisionDebugMesh();
+  }
+
+  getGameplaySyncEnabled() {
+    return this.authoritativeNetworkingEnabled
+      && this.runtime?.playerController?.getMovementMode?.() !== 'fly';
+  }
+
+  syncLocalPlayerToNetwork() {
+    if (!this.runtime?.playerController || !this.authoritativeNetworkingEnabled) {
+      return;
+    }
+
+    this.networkClient.initializeLocalPlayer({
+      mapId: this.selectedMapId,
+      position: {
+        x: this.runtime.playerController.position.x,
+        y: this.runtime.playerController.position.y,
+        z: this.runtime.playerController.position.z,
+      },
+      velocity: {
+        x: this.runtime.playerController.velocity.x,
+        y: this.runtime.playerController.velocity.y,
+        z: this.runtime.playerController.velocity.z,
+      },
+      yaw: this.runtime.playerController.yawAngle,
+      isGrounded: this.runtime.playerController.isGrounded,
+      isCrouched: this.runtime.playerController.isCrouched,
+      currentHeight: this.runtime.playerController.currentHeight,
+    });
+  }
+
+  syncCombatNetworkingMode() {
+    this.runtime?.weaponManager?.setCombatNetworking({
+      authoritativeCombatEnabled: this.getGameplaySyncEnabled(),
+      onFireRequest: (fireRequest) => {
+        if (!this.getGameplaySyncEnabled()) {
+          return;
+        }
+
+        this.networkClient.sendFireRequest(fireRequest);
+      },
+    });
+  }
+
+  toggleFlyMode() {
+    if (!this.runtime?.playerController) {
+      return;
+    }
+
+    const nextMode = this.runtime.playerController.toggleFlyMode();
+    this.networkJumpQueued = false;
+    this.localSimulationLoop.accumulator = 0;
+
+    if (nextMode === 'fly') {
+      this.syncCombatNetworkingMode();
+      this.networkClient.suspendGameplaySync();
+      this.clearRemotePlayers();
+      return;
+    }
+
+    if (this.authoritativeNetworkingEnabled) {
+      this.syncLocalPlayerToNetwork();
+    }
+    this.syncCombatNetworkingMode();
+  }
+
+  getCurrentPlayerPosition() {
+    if (!this.runtime?.playerController) {
+      return null;
+    }
+
+    return {
+      x: Number(this.runtime.playerController.position.x.toFixed(3)),
+      y: Number(this.runtime.playerController.position.y.toFixed(3)),
+      z: Number(this.runtime.playerController.position.z.toFixed(3)),
+      mode: this.runtime.playerController.getMovementMode?.() ?? 'grounded',
+      mapId: this.selectedMapId,
+    };
+  }
+
+  logCurrentPosition() {
+    const position = this.getCurrentPlayerPosition();
+    if (!position) {
+      return;
+    }
+
+    console.log('[MapDebug] position', position);
+  }
+
+  saveDebugMarker() {
+    const position = this.getCurrentPlayerPosition();
+    if (!position) {
+      return;
+    }
+
+    const marker = {
+      id: `marker-${this.nextDebugMarkerId}`,
+      ...position,
+    };
+    this.nextDebugMarkerId += 1;
+    this.debugMarkers.push(marker);
+    console.log('[MapDebug] saved marker', marker);
+  }
+
+  dumpDebugMarkers() {
+    console.log('[MapDebug] markers', JSON.stringify(this.debugMarkers, null, 2));
   }
 
   async loadMap(mapId) {
@@ -179,14 +350,22 @@ export class GameApp {
 
       this.unloadMap();
       this.selectedMapId = mapOption.id;
+      this.authoritativeNetworkingEnabled = mapOption.supportsAuthoritativeNetworking !== false;
       this.runtime = runtime;
       this.networkJumpQueued = false;
       this.localSimulationLoop.accumulator = 0;
       this.runtime.attachToScene(this.scene);
+      this.syncCollisionDebugMesh();
+      if (this.getGameplaySyncEnabled()) {
+        this.syncLocalPlayerToNetwork();
+      } else {
+        this.networkClient.suspendGameplaySync();
+      }
       runtime = null;
 
       this.loadingStatus = '';
       this.isLoadingMap = false;
+      this.syncCombatNetworkingMode();
       this.rebuildHud();
     } catch (error) {
       console.error(`Failed to load map "${mapOption.id}".`, error);
@@ -246,17 +425,33 @@ export class GameApp {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  handlePointerLockChange() {
-    const pointerLockedToGame = document.pointerLockElement === this.renderer.domElement;
+  scheduleAsyncWarmup() {
+    const warmup = () => {
+      void Promise.allSettled([
+        preloadMapOptions(),
+        preloadNavigationModules(),
+        preloadSkyboxModules(),
+      ]);
+    };
 
-    if (!pointerLockedToGame && !this.isPaused && !this.isLoadingMap) {
-      this.pauseGame();
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => warmup(), { timeout: 2000 });
+      return;
     }
+
+    window.setTimeout(warmup, 250);
   }
 
   animate() {
     try {
       const delta = Math.min(this.clock.getDelta(), 0.05);
+      this.damageVignette = Math.max(0, this.damageVignette - delta * 1.8);
+      this.hitDamagePopups = this.hitDamagePopups
+        .map((popup) => ({
+          ...popup,
+          life: popup.life - delta,
+        }))
+        .filter((popup) => popup.life > 0);
       this.currentFps = delta > 0 ? Math.round(1 / delta) : 0;
       const frameInput = this.input.consumeFrameState();
 
@@ -272,38 +467,87 @@ export class GameApp {
         this.markDebugSnapshotRequested = true;
       }
 
+      if (frameInput.justPressed.has('KeyV')) {
+        this.toggleFlyMode();
+      }
+
+      if (frameInput.justPressed.has('KeyJ')) {
+        this.logCurrentPosition();
+      }
+
+      if (frameInput.justPressed.has('KeyK')) {
+        this.saveDebugMarker();
+      }
+
+      if (frameInput.justPressed.has('KeyL')) {
+        this.dumpDebugMarkers();
+      }
+
+      if (frameInput.justPressed.has('KeyB')) {
+        this.toggleCollisionDebug();
+      }
+
       if (!this.isLoadingMap && this.runtime?.playerController) {
+        const localCombatState = this.networkClient.getLocalPlayerState?.();
+        const localPlayerAlive = localCombatState?.isAlive !== false;
         if (frameInput.justPressed.has('Space')) {
           this.networkJumpQueued = true;
         }
 
         if (!this.isPaused) {
+          this.syncCombatNetworkingMode();
           this.runtime.playerController.updateLook(frameInput.lookDelta);
-          this.localSimulationLoop.advance(delta, (simulationStep) => {
-            const movementInput = this.runtime.playerController.getMovementInputSnapshot({
-              jumpPressed: this.networkJumpQueued,
-            });
-            const speedMultiplier = this.runtime.playerController.getCurrentSpeedMultiplier();
+          if (localPlayerAlive) {
+            this.localSimulationLoop.advance(delta, (simulationStep) => {
+              const movementInput = this.runtime.playerController.getMovementInputSnapshot({
+                jumpPressed: this.networkJumpQueued,
+              });
+              const speedMultiplier = this.runtime.playerController.getCurrentSpeedMultiplier();
 
-            this.runtime.playerController.stepSimulation(simulationStep, movementInput, speedMultiplier);
-            this.runtime.networkClient.sampleLocalInput(movementInput, {
-              simulationStep,
-              speedMultiplier,
-              predictedPosition: this.runtime.playerController.position,
-            });
+              this.runtime.playerController.stepSimulation(simulationStep, movementInput, speedMultiplier);
+              if (this.getGameplaySyncEnabled()) {
+                this.networkClient.sampleLocalInput(movementInput, {
+                  simulationStep,
+                  speedMultiplier,
+                  predictedPosition: this.runtime.playerController.position,
+                });
+              }
 
+              this.networkJumpQueued = false;
+            });
+            this.runtime.weaponManager.update(delta, frameInput);
+          } else {
+            this.localSimulationLoop.accumulator = 0;
             this.networkJumpQueued = false;
-          });
-          this.runtime.weaponManager.update(delta, frameInput);
+          }
         }
 
         this.runtime.roundManager.update(delta);
         this.runtime.utilityManager.update(delta);
-        this.runtime.networkClient.update(delta);
+        if (this.getGameplaySyncEnabled()) {
+          this.networkClient.update(delta);
+          for (const event of this.networkClient.consumeCombatEvents()) {
+            if (event?.type === 'player-hit') {
+              if (event.attackerPlayerId === this.networkClient.playerId) {
+                this.hitDamagePopups.push({
+                  id: `${performance.now()}-${Math.random()}`,
+                  text: String(event.damage ?? 0),
+                  life: 0.7,
+                });
+              }
 
-        const authoritativeCorrection = this.runtime.networkClient.consumeLocalCorrection();
-        if (authoritativeCorrection && !this.ignoreLocalCorrections) {
-          this.runtime.playerController.reconcileAuthoritativeState(authoritativeCorrection);
+              if (event.victimPlayerId === this.networkClient.playerId) {
+                this.damageVignette = Math.min(1, this.damageVignette + 0.35);
+              }
+            }
+          }
+
+          const authoritativeCorrection = this.networkClient.consumeLocalCorrection();
+          if (authoritativeCorrection && !this.ignoreLocalCorrections) {
+            this.runtime.playerController.reconcileAuthoritativeState(authoritativeCorrection);
+          }
+        } else {
+          this.networkClient.suspendGameplaySync();
         }
         this.runtime.playerController.updatePresentation(
           delta,
@@ -316,7 +560,11 @@ export class GameApp {
           collisionWorld: this.runtime.collisionWorld,
           navigationManager: this.runtime.navigationManager,
         });
-        this.syncRemotePlayers(this.runtime.networkClient.getRemotePlayers());
+        if (this.getGameplaySyncEnabled()) {
+          this.syncRemotePlayers(this.networkClient.getRemotePlayers());
+        } else {
+          this.clearRemotePlayers();
+        }
       } else {
         this.clearRemotePlayers();
       }
@@ -371,6 +619,10 @@ export class GameApp {
         this.scene.add(mesh);
       }
 
+      const authoritativeState = this.networkClient.remotePlayerBuffers.get(player.playerId)?.at?.(-1) ?? null;
+      mesh.material = authoritativeState?.isAlive === false
+        ? this.remotePlayerDeadMaterial
+        : this.remotePlayerMaterial;
       mesh.position.set(
         player.position.x,
         player.position.y + 0.86,

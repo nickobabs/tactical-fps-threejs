@@ -43,6 +43,7 @@ export function fireHitscan({
   muzzleWorld,
   weapon,
   isScoped,
+  applyDamage = true,
 }) {
   const shotOffset = applyHipfireSpread(weapon, isScoped);
   raycaster.layers.set(0);
@@ -51,7 +52,9 @@ export function fireHitscan({
 
   if (hit) {
     addImpactEffect(scene, temporaryObjects, muzzleWorld, hit);
-    hit.object.userData.damageReceiver?.applyDamage(weapon.damage, hit.point, hit);
+    if (applyDamage) {
+      hit.object.userData.damageReceiver?.applyDamage(weapon.damage, hit.point, hit);
+    }
     return hit;
   }
 
@@ -61,7 +64,13 @@ export function fireHitscan({
   return null;
 }
 
-export function performKnifeHit({ camera, shootables, raycaster, weapon }) {
+export function performKnifeHit({
+  camera,
+  shootables,
+  raycaster,
+  weapon,
+  applyDamage = true,
+}) {
   raycaster.layers.set(0);
   raycaster.setFromCamera(SHOT_OFFSET.set(0, 0), camera);
   const hit = raycaster.intersectObjects(shootables, false)[0];
@@ -70,6 +79,8 @@ export function performKnifeHit({ camera, shootables, raycaster, weapon }) {
   }
 
   KNIFE_HIT_POINT.copy(hit.point);
-  hit.object.userData.damageReceiver?.applyDamage(weapon.damage, KNIFE_HIT_POINT, hit);
+  if (applyDamage) {
+    hit.object.userData.damageReceiver?.applyDamage(weapon.damage, KNIFE_HIT_POINT, hit);
+  }
   return hit;
 }

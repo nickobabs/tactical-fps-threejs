@@ -14,6 +14,23 @@ export function createPlayerInputMessage(inputSnapshot, sequence, timestamp) {
   };
 }
 
+export function createPlayerFireMessage(fireRequest, timestamp) {
+  return {
+    weaponKey: String(fireRequest?.weaponKey ?? 'rifle'),
+    origin: {
+      x: Number(fireRequest?.origin?.x ?? 0),
+      y: Number(fireRequest?.origin?.y ?? 0),
+      z: Number(fireRequest?.origin?.z ?? 0),
+    },
+    direction: {
+      x: Number(fireRequest?.direction?.x ?? 0),
+      y: Number(fireRequest?.direction?.y ?? 0),
+      z: Number(fireRequest?.direction?.z ?? -1),
+    },
+    timestamp: Number(timestamp ?? fireRequest?.timestamp ?? 0),
+  };
+}
+
 export function createPlayerReadyMessage(state) {
   return {
     mapId: String(state?.mapId ?? 'training-ground'),
@@ -53,6 +70,10 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     isGrounded: Boolean(state?.isGrounded),
     isCrouched: Boolean(state?.isCrouched),
     currentHeight: Number(state?.currentHeight ?? 1.72),
+    health: Number(state?.health ?? 100),
+    maxHealth: Number(state?.maxHealth ?? 100),
+    isAlive: Boolean(state?.isAlive ?? true),
+    respawnAt: Number(state?.respawnAt ?? 0),
   };
 }
 
@@ -75,5 +96,9 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     currentHeight: Number(player?.motionState?.currentHeight ?? 1.72),
     lastProcessedSequence: Number(player?.lastProcessedSequence ?? 0),
     lastProcessedTimestamp: Number(player?.lastProcessedTimestamp ?? 0),
+    health: Number(player?.health ?? 100),
+    maxHealth: Number(player?.maxHealth ?? 100),
+    isAlive: Boolean(player?.isAlive ?? true),
+    respawnAt: Number(player?.respawnAt ?? 0),
   };
 }

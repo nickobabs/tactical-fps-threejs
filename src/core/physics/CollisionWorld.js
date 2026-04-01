@@ -6,9 +6,18 @@ const CAPSULE_SEGMENT = new THREE.Line3();
 const TRIANGLE_POINT = new THREE.Vector3();
 const CAPSULE_POINT = new THREE.Vector3();
 const PUSH_DIRECTION = new THREE.Vector3();
+const TRIANGLE_NORMAL = new THREE.Vector3();
 const GROUND_RAY = new THREE.Ray();
 const VISIBILITY_RAY = new THREE.Ray();
 const VISIBILITY_DIRECTION = new THREE.Vector3();
+const HIT_RAY = new THREE.Ray();
+const HIT_DIRECTION = new THREE.Vector3();
+const PENETRATION_EPSILON = 1e-3;
+const COLLISION_SKIN = 0.015;
+const MOVE_STEP_DELTA = new THREE.Vector3();
+const MOVE_START = new THREE.Vector3();
+const MAX_HORIZONTAL_MOVE_SUBSTEP = 0.08;
+const MAX_COLLISION_PASSES = 8;
 
 export class CollisionWorld {
   constructor({ groundHeight = 0, collisionGeometry = null } = {}) {
@@ -46,71 +55,94 @@ export class CollisionWorld {
       return this.groundHeight;
     }
 
-    return Math.max(this.groundHeight, hit.point.y);
+    return hit.point.y;
   }
 
   move(position, radius, height, delta, target = position) {
-    const next = target.copy(position).add(delta);
-
     if (!this.collisionGeometry?.boundsTree) {
-      return next;
+      return target.copy(position).add(delta);
     }
 
-    const segmentStartY = next.y + radius;
-    const segmentEndY = next.y + Math.max(radius, height - radius);
+    MOVE_START.copy(position);
+    const moveDistance = Math.hypot(delta.x, delta.y, delta.z);
+    const steps = Math.max(1, Math.ceil(moveDistance / MAX_HORIZONTAL_MOVE_SUBSTEP));
+    target.copy(position);
 
-    CAPSULE_SEGMENT.start.set(next.x, segmentStartY, next.z);
-    CAPSULE_SEGMENT.end.set(next.x, segmentEndY, next.z);
+    for (let stepIndex = 1; stepIndex <= steps; stepIndex += 1) {
+      const alpha = stepIndex / steps;
+      const nextX = MOVE_START.x + delta.x * alpha;
+      const nextY = MOVE_START.y + delta.y * alpha;
+      const nextZ = MOVE_START.z + delta.z * alpha;
 
-    for (let i = 0; i < 3; i += 1) {
-      let adjusted = false;
+      target.set(nextX, nextY, nextZ);
+      const segmentStartY = target.y + radius;
+      const segmentEndY = target.y + Math.max(radius, height - radius);
 
-      CAPSULE_BOX.makeEmpty();
-      CAPSULE_BOX.expandByPoint(CAPSULE_SEGMENT.start);
-      CAPSULE_BOX.expandByPoint(CAPSULE_SEGMENT.end);
-      CAPSULE_BOX.min.addScalar(-radius);
-      CAPSULE_BOX.max.addScalar(radius);
+      CAPSULE_SEGMENT.start.set(target.x, segmentStartY, target.z);
+      CAPSULE_SEGMENT.end.set(target.x, segmentEndY, target.z);
 
-      this.collisionGeometry.boundsTree.shapecast({
-        intersectsBounds: (box) => box.intersectsBox(CAPSULE_BOX),
-        intersectsTriangle: (triangle) => {
-          const distance = triangle.closestPointToSegment(
-            CAPSULE_SEGMENT,
-            TRIANGLE_POINT,
-            CAPSULE_POINT,
-          );
+      for (let i = 0; i < MAX_COLLISION_PASSES; i += 1) {
+        let adjusted = false;
 
-          if (distance >= radius) {
-            return false;
-          }
+        CAPSULE_BOX.makeEmpty();
+        CAPSULE_BOX.expandByPoint(CAPSULE_SEGMENT.start);
+        CAPSULE_BOX.expandByPoint(CAPSULE_SEGMENT.end);
+        CAPSULE_BOX.min.addScalar(-radius);
+        CAPSULE_BOX.max.addScalar(radius);
 
-          PUSH_DIRECTION.copy(CAPSULE_POINT).sub(TRIANGLE_POINT);
-          if (PUSH_DIRECTION.lengthSq() < 1e-8) {
-            triangle.getNormal(PUSH_DIRECTION);
-          } else {
+        this.collisionGeometry.boundsTree.shapecast({
+          intersectsBounds: (box) => box.intersectsBox(CAPSULE_BOX),
+          intersectsTriangle: (triangle) => {
+            triangle.getNormal(TRIANGLE_NORMAL);
+            if (TRIANGLE_NORMAL.y > 0.35) {
+              return false;
+            }
+
+            const distance = triangle.closestPointToSegment(
+              CAPSULE_SEGMENT,
+              TRIANGLE_POINT,
+              CAPSULE_POINT,
+            );
+
+            const targetSeparation = radius + COLLISION_SKIN;
+            if (distance >= targetSeparation) {
+              return false;
+            }
+
+            PUSH_DIRECTION.copy(CAPSULE_POINT).sub(TRIANGLE_POINT);
+            if (PUSH_DIRECTION.lengthSq() < 1e-8) {
+              PUSH_DIRECTION.copy(TRIANGLE_NORMAL);
+            }
+            if (PUSH_DIRECTION.lengthSq() < 1e-8) {
+              return false;
+            }
             PUSH_DIRECTION.normalize();
-          }
 
-          const depth = radius - distance;
-          CAPSULE_SEGMENT.start.addScaledVector(PUSH_DIRECTION, depth);
-          CAPSULE_SEGMENT.end.addScaledVector(PUSH_DIRECTION, depth);
-          adjusted = true;
-          return false;
-        },
-      });
+            const depth = targetSeparation - distance;
+            if (depth <= PENETRATION_EPSILON) {
+              return false;
+            }
 
-      if (!adjusted) {
-        break;
+            CAPSULE_SEGMENT.start.addScaledVector(PUSH_DIRECTION, depth);
+            CAPSULE_SEGMENT.end.addScaledVector(PUSH_DIRECTION, depth);
+            adjusted = true;
+            return false;
+          },
+        });
+
+        if (!adjusted) {
+          break;
+        }
       }
+
+      target.set(
+        CAPSULE_SEGMENT.start.x,
+        CAPSULE_SEGMENT.start.y - radius,
+        CAPSULE_SEGMENT.start.z,
+      );
     }
 
-    next.set(
-      CAPSULE_SEGMENT.start.x,
-      CAPSULE_SEGMENT.start.y - radius,
-      CAPSULE_SEGMENT.start.z,
-    );
-
-    return next;
+    return target;
   }
 
   hasLineOfSight(start, end, padding = 0.05) {
@@ -136,5 +168,28 @@ export class CollisionWorld {
     );
 
     return !hit;
+  }
+
+  raycast(start, direction, maxDistance = Infinity) {
+    if (!this.collisionGeometry?.boundsTree) {
+      return null;
+    }
+
+    HIT_DIRECTION.copy(direction);
+    const directionLength = HIT_DIRECTION.length();
+    if (directionLength <= 1e-6) {
+      return null;
+    }
+
+    HIT_DIRECTION.divideScalar(directionLength);
+    HIT_RAY.origin.copy(start);
+    HIT_RAY.direction.copy(HIT_DIRECTION);
+
+    return this.collisionGeometry.boundsTree.raycastFirst(
+      HIT_RAY,
+      THREE.DoubleSide,
+      0,
+      maxDistance,
+    );
   }
 }
