@@ -334,6 +334,10 @@ export class NetworkClient {
     return interpolatedPlayers;
   }
 
+  getRemotePlayerCount() {
+    return this.remotePlayerBuffers.size;
+  }
+
   getDebugState() {
     const now = getNow();
     return {

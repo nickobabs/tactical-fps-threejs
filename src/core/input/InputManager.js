@@ -1,4 +1,16 @@
 const MOVEMENT_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
+const GAMEPLAY_SHORTCUT_BLOCK_KEYS = new Set([
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'KeyC',
+  'Space',
+  'ShiftLeft',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+]);
 
 export class InputManager {
   constructor(domElement) {
@@ -41,6 +53,10 @@ export class InputManager {
   }
 
   handleKeyDown(event) {
+    if (this.pointerLocked && GAMEPLAY_SHORTCUT_BLOCK_KEYS.has(event.code) && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+    }
+
     if (!this.keys.has(event.code)) {
       this.justPressed.add(event.code);
     }

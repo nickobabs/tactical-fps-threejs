@@ -152,6 +152,22 @@ export function createHud({
     ].join('\n');
   }
 
+  function buildDebugText(networkDebug, movement) {
+    return [
+      'NETDEBUG',
+      `ignore_local_corrections=${Boolean(getIgnoreLocalCorrections?.())}`,
+      `state=${networkDebug.connectionState}`,
+      `seq_local=${networkDebug.latestSequence} seq_ack=${networkDebug.acknowledgedSequence} seq_gap=${networkDebug.sequenceGap}`,
+      `pending_inputs=${networkDebug.pendingInputCount} jump_latched=${networkDebug.pendingJumpSend}`,
+      `snapshot_age_ms=${networkDebug.snapshotAgeMs} auth_per_sec=${networkDebug.authoritativeUpdatesPerSecond}`,
+      `predicted_drift=${networkDebug.lastPredictedDriftDistance.toFixed(3)} corr_per_sec=${movement.correctionRatePerSecond}`,
+      `corr_dist=${movement.lastCorrectionDistance.toFixed(3)} present_offset=${movement.correctionOffsetMagnitude.toFixed(3)}`,
+      `buffered_corr=${(movement.bufferedCanonicalCorrectionMagnitude ?? 0).toFixed(3)} responsive_offset=${(movement.responsiveOffsetMagnitude ?? 0).toFixed(3)}`,
+      `corr_enqueue_per_sec=${(movement.correctionEnqueueRatePerSecond ?? 0).toFixed(3)} corr_active=${movement.correctionActive ? 'yes' : 'no'}`,
+      `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,
+    ].join('\n');
+  }
+
   function handleKeyDown(event) {
     if (event.code !== 'F8') {
       return;
@@ -187,6 +203,7 @@ export function createHud({
       pauseMenu.setPaused(paused);
     },
     update() {
+      const markDebugSnapshotRequested = Boolean(consumeMarkDebugSnapshotRequested?.());
       const movement = playerController?.getDebugState?.() ?? {
         grounded: true,
         crouched: false,
@@ -205,27 +222,29 @@ export function createHud({
         authoritativeUpdatesPerSecond: 0,
         pendingJumpSend: false,
       };
-      const now = performance.now();
-      debugHistory.push({
-        time: now,
-        connectionState: networkDebug.connectionState,
-        latestSequence: networkDebug.latestSequence,
-        acknowledgedSequence: networkDebug.acknowledgedSequence,
-        sequenceGap: networkDebug.sequenceGap,
-        snapshotAgeMs: Math.max(0, networkDebug.snapshotAgeMs),
-        predictedDrift: networkDebug.lastPredictedDriftDistance,
-        correctionDistance: movement.lastCorrectionDistance ?? 0,
-        presentationOffset: movement.correctionOffsetMagnitude ?? 0,
-        bufferedCorrection: movement.bufferedCanonicalCorrectionMagnitude ?? 0,
-        correctionEnqueueRatePerSecond: movement.correctionEnqueueRatePerSecond ?? 0,
-        correctionActive: movement.correctionActive ? 1 : 0,
-        responsiveOffset: movement.responsiveOffsetMagnitude ?? 0,
-        frameMs: getFps?.() > 0 ? 1000 / getFps() : 0,
-        correctionRatePerSecond: movement.correctionRatePerSecond ?? 0,
-        speed: movement.speed ?? 0,
-      });
-      while (debugHistory.length > 0 && now - debugHistory[0].time > DEBUG_HISTORY_WINDOW_MS) {
-        debugHistory.shift();
+      if (showNetDebug || markDebugSnapshotRequested) {
+        const now = performance.now();
+        debugHistory.push({
+          time: now,
+          connectionState: networkDebug.connectionState,
+          latestSequence: networkDebug.latestSequence,
+          acknowledgedSequence: networkDebug.acknowledgedSequence,
+          sequenceGap: networkDebug.sequenceGap,
+          snapshotAgeMs: Math.max(0, networkDebug.snapshotAgeMs),
+          predictedDrift: networkDebug.lastPredictedDriftDistance,
+          correctionDistance: movement.lastCorrectionDistance ?? 0,
+          presentationOffset: movement.correctionOffsetMagnitude ?? 0,
+          bufferedCorrection: movement.bufferedCanonicalCorrectionMagnitude ?? 0,
+          correctionEnqueueRatePerSecond: movement.correctionEnqueueRatePerSecond ?? 0,
+          correctionActive: movement.correctionActive ? 1 : 0,
+          responsiveOffset: movement.responsiveOffsetMagnitude ?? 0,
+          frameMs: getFps?.() > 0 ? 1000 / getFps() : 0,
+          correctionRatePerSecond: movement.correctionRatePerSecond ?? 0,
+          speed: movement.speed ?? 0,
+        });
+        while (debugHistory.length > 0 && now - debugHistory[0].time > DEBUG_HISTORY_WINDOW_MS) {
+          debugHistory.shift();
+        }
       }
       displaySpeed += (movement.speed - displaySpeed) * 0.18;
       const roundText = roundManager
@@ -234,7 +253,7 @@ export function createHud({
       const fpsText = `FPS: ${getFps?.() ?? '--'}`;
       const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}`;
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
-      const remotePlayerCount = networkClient?.getRemotePlayers?.().length ?? 0;
+      const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
       const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
       const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - ${displaySpeed.toFixed(1)} m/s`;
       const pointerText = paused
@@ -282,19 +301,7 @@ export function createHud({
       }
 
       if (showNetDebug) {
-        const debugText = [
-          'NETDEBUG',
-          `ignore_local_corrections=${Boolean(getIgnoreLocalCorrections?.())}`,
-          `state=${networkDebug.connectionState}`,
-          `seq_local=${networkDebug.latestSequence} seq_ack=${networkDebug.acknowledgedSequence} seq_gap=${networkDebug.sequenceGap}`,
-          `pending_inputs=${networkDebug.pendingInputCount} jump_latched=${networkDebug.pendingJumpSend}`,
-          `snapshot_age_ms=${networkDebug.snapshotAgeMs} auth_per_sec=${networkDebug.authoritativeUpdatesPerSecond}`,
-          `predicted_drift=${networkDebug.lastPredictedDriftDistance.toFixed(3)} corr_per_sec=${movement.correctionRatePerSecond}`,
-          `corr_dist=${movement.lastCorrectionDistance.toFixed(3)} present_offset=${movement.correctionOffsetMagnitude.toFixed(3)}`,
-          `buffered_corr=${(movement.bufferedCanonicalCorrectionMagnitude ?? 0).toFixed(3)} responsive_offset=${(movement.responsiveOffsetMagnitude ?? 0).toFixed(3)}`,
-          `corr_enqueue_per_sec=${(movement.correctionEnqueueRatePerSecond ?? 0).toFixed(3)} corr_active=${movement.correctionActive ? 'yes' : 'no'}`,
-          `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,
-        ].join('\n');
+        const debugText = buildDebugText(networkDebug, movement);
 
         if (debugText !== lastNetDebugText) {
           netDebugEl.textContent = debugText;
@@ -305,7 +312,8 @@ export function createHud({
         currentNetDebugText = '';
       }
 
-      if (consumeMarkDebugSnapshotRequested?.()) {
+      if (markDebugSnapshotRequested) {
+        currentNetDebugText = buildDebugText(networkDebug, movement);
         console.log(buildDebugSummary());
       }
 

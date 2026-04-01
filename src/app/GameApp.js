@@ -80,15 +80,18 @@ export class GameApp {
 
     this.onResize = this.onResize.bind(this);
     this.animate = this.animate.bind(this);
+    this.handlePointerLockChange = this.handlePointerLockChange.bind(this);
   }
 
   start() {
     window.addEventListener('resize', this.onResize);
+    document.addEventListener('pointerlockchange', this.handlePointerLockChange);
     this.renderer.setAnimationLoop(this.animate);
   }
 
   stop() {
     window.removeEventListener('resize', this.onResize);
+    document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
     this.renderer.setAnimationLoop(null);
   }
 
@@ -241,6 +244,14 @@ export class GameApp {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  handlePointerLockChange() {
+    const pointerLockedToGame = document.pointerLockElement === this.renderer.domElement;
+
+    if (!pointerLockedToGame && !this.isPaused && !this.isLoadingMap) {
+      this.pauseGame();
+    }
   }
 
   animate() {

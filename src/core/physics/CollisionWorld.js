@@ -49,8 +49,8 @@ export class CollisionWorld {
     return Math.max(this.groundHeight, hit.point.y);
   }
 
-  move(position, radius, height, delta) {
-    const next = position.clone().add(delta);
+  move(position, radius, height, delta, target = position) {
+    const next = target.copy(position).add(delta);
 
     if (!this.collisionGeometry?.boundsTree) {
       return next;

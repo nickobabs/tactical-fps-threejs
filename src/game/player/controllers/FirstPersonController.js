@@ -100,19 +100,16 @@ export class FirstPersonController {
     return this.collider;
   }
 
-  getDebugState() {
+  getDebugState(options = {}) {
+    const includeVectors = Boolean(options.includeVectors);
     const horizontalSpeed = Math.sqrt(
       this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z,
     );
 
-    return {
+    const debugState = {
       grounded: this.isGrounded,
       crouched: this.isCrouched,
       speed: horizontalSpeed,
-      position: this.position.clone(),
-      canonicalPosition: this.position.clone(),
-      presentationPosition: this.presentationPosition.clone(),
-      presentationTargetPosition: this.presentationTargetPosition.clone(),
       responsiveOffsetMagnitude: this.responsivePresentationOffset.length(),
       bufferedCanonicalCorrectionMagnitude: this.bufferedCanonicalCorrection.length(),
       correctionEnqueueRatePerSecond: this.correctionEnqueueEvents.length,
@@ -122,6 +119,15 @@ export class FirstPersonController {
       lastCorrectionDistance: this.lastCorrectionDistance,
       correctionRatePerSecond: this.correctionEvents.length,
     };
+
+    if (includeVectors) {
+      debugState.position = this.position.clone();
+      debugState.canonicalPosition = this.position.clone();
+      debugState.presentationPosition = this.presentationPosition.clone();
+      debugState.presentationTargetPosition = this.presentationTargetPosition.clone();
+    }
+
+    return debugState;
   }
 
   getEyePosition(target = new THREE.Vector3()) {
