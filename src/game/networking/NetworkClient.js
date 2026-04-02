@@ -46,7 +46,14 @@ function getDefaultServerUrl() {
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.hostname}:2567`;
+  const hostname = window.location.hostname;
+  const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+
+  if (isLocalHost) {
+    return `${protocol}//${hostname}:2567`;
+  }
+
+  return `${protocol}//${window.location.host}`;
 }
 
 export class NetworkClient {
