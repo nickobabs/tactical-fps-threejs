@@ -20,7 +20,7 @@ app.get('/health', (_request, response) => {
 
 app.use(express.static(clientDistPath));
 
-app.get('*', (request, response, next) => {
+app.get('/{*splat}', (request, response, next) => {
   if (request.path.startsWith('/matchmake')) {
     next();
     return;
