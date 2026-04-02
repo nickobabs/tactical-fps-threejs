@@ -1,4 +1,6 @@
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Server } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import express from 'express';
@@ -8,17 +10,23 @@ const port = Number(process.env.PORT ?? 2567);
 const host = process.env.HOST ?? '0.0.0.0';
 const app = express();
 const httpServer = http.createServer(app);
-
-app.get('/', (_request, response) => {
-  response.status(200).json({
-    ok: true,
-    service: 'tactical-fps-threejs-server',
-    transport: 'websocket',
-  });
-});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientDistPath = path.resolve(__dirname, '../../dist');
 
 app.get('/health', (_request, response) => {
   response.status(200).json({ ok: true });
+});
+
+app.use(express.static(clientDistPath));
+
+app.get('*', (request, response, next) => {
+  if (request.path.startsWith('/matchmake')) {
+    next();
+    return;
+  }
+
+  response.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
 const gameServer = new Server({
