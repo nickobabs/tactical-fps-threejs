@@ -63,6 +63,7 @@
   - the controller now predicts movement through a full BVH capsule move path shared with server authority
   - ordinary walking now feels correct again and sustained wall pressure no longer phases through geometry
   - the remaining issue is contact jitter when leaning into walls or traversing some sloped surfaces
+  - auto-pausing on pointer-lock loss was removed during current multiplayer testing so inactive local tabs do not constantly interrupt PvP tests
 
 ## Investigation Notes
 
@@ -97,7 +98,7 @@
 - Server authority still does not share the full client map assembly path, so some client/server divergence can remain
 - Local first-person feel in multiplayer is now substantially closer to single-player on flat-ground movement, but it still needs broader validation before the model should be treated as final
 - Wall-contact oscillation when leaning into solid geometry is still unresolved and is not currently considered a controller-level solved problem
-- If the player sustains pressure into a blocker while corrections are active, they can still eventually phase through geometry. Several correction-path fixes were attempted, so the remaining issue may not live purely in the controller.
+- Wall/slope contact jitter remains the main collision-feel issue, even though wall phasing itself is no longer the active blocker
 
 ## Near-Term Direction
 

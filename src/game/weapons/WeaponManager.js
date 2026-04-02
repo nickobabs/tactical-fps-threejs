@@ -33,6 +33,7 @@ export class WeaponManager {
     this.knifeAttackDuration = 0.18;
     this.authoritativeCombatEnabled = false;
     this.onFireRequest = null;
+    this.onWeaponChanged = null;
 
     this.raycaster = new THREE.Raycaster();
     this.temporaryObjects = [];
@@ -54,9 +55,10 @@ export class WeaponManager {
     return this.currentWeapon?.movementSpeedMultiplier ?? 1;
   }
 
-  setCombatNetworking({ authoritativeCombatEnabled = false, onFireRequest = null } = {}) {
+  setCombatNetworking({ authoritativeCombatEnabled = false, onFireRequest = null, onWeaponChanged = null } = {}) {
     this.authoritativeCombatEnabled = authoritativeCombatEnabled;
     this.onFireRequest = onFireRequest;
+    this.onWeaponChanged = onWeaponChanged;
   }
 
   equipWeapon(weaponKey) {
@@ -85,6 +87,7 @@ export class WeaponManager {
     this.viewModel = activeViewModel.group;
     this.muzzle = activeViewModel.muzzle;
     this.muzzleFlash = activeViewModel.muzzleFlash;
+    this.onWeaponChanged?.(weaponKey);
   }
 
   update(delta, frameInput) {

@@ -9,7 +9,7 @@ import { disposeObject3D } from '../../core/three/disposeObject3D.js';
 
 const ALLOW_RUNTIME_NAV_GENERATION = import.meta.env.DEV
   || import.meta.env.VITE_ALLOW_RUNTIME_NAV_GENERATION === 'true';
-const DISABLE_LOCAL_TARGETS_FOR_PVP_TESTING = import.meta.env.VITE_DISABLE_LOCAL_TARGETS_FOR_PVP === 'true';
+const DISABLE_LOCAL_TARGETS_FOR_PVP_TESTING = import.meta.env.VITE_DISABLE_LOCAL_TARGETS_FOR_PVP !== 'false';
 
 function waitForNextFrame() {
   return new Promise((resolve) => {

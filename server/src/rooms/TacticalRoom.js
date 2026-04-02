@@ -13,6 +13,7 @@ import {
   createPlayerInputMessage,
   createPlayerFireMessage,
   createPlayerReadyMessage,
+  createPlayerStatusMessage,
   serializeAuthoritativePlayerState,
 } from '../../../src/shared/netcodeProtocol.js';
 import { createCollisionMapForMapIdAsync } from '../../../src/shared/maps/mapCollision.js';
@@ -30,11 +31,13 @@ const TARGET_SEGMENT = new THREE.Line3();
 const CLOSEST_POINT_ON_RAY = new THREE.Vector3();
 const CLOSEST_POINT_ON_SEGMENT = new THREE.Vector3();
 const SHOT_RAY = new THREE.Ray();
+const PLAYER_MOVE_SPEED_EPSILON = 0.1;
 
 export class TacticalRoom extends Room {
   onCreate() {
     this.setPrivate(false);
     this.players = {};
+    this.nextPlayerNumber = 1;
     this.collisionWorlds = new Map();
     this.collisionWorldPromises = new Map();
     this.setSimulationInterval(() => {
@@ -84,6 +87,7 @@ export class TacticalRoom extends Room {
               )
               : null,
           });
+          player.presentationState = this.getPresentationStateForPlayer(player);
           player.lastProcessedSequence = nextInput.sequence;
           player.lastProcessedTimestamp = nextInput.timestamp;
           hasSimulationChanges = true;
@@ -140,6 +144,11 @@ export class TacticalRoom extends Room {
         player.health = player.maxHealth;
         player.isAlive = true;
         player.respawnAt = 0;
+        player.activeWeaponKey = getSharedWeaponData(readyState.activeWeaponKey)
+          ? readyState.activeWeaponKey
+          : player.activeWeaponKey;
+        player.isScoped = false;
+        player.presentationState = this.getPresentationStateForPlayer(player);
         this.broadcastPlayerState();
       } catch (error) {
         console.error(`[TacticalRoom] Failed to initialize player ${client.sessionId} on map.`, error);
@@ -156,6 +165,26 @@ export class TacticalRoom extends Room {
       this.processPlayerFire(player, fireRequest);
     });
 
+    this.onMessage('player-status', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player) {
+        return;
+      }
+
+      const nextStatus = createPlayerStatusMessage(message);
+      const nextWeaponKey = getSharedWeaponData(nextStatus.activeWeaponKey)
+        ? nextStatus.activeWeaponKey
+        : player.activeWeaponKey;
+      const nextScoped = Boolean(nextStatus.isScoped) && nextWeaponKey !== 'knife';
+      if (nextWeaponKey === player.activeWeaponKey && nextScoped === player.isScoped) {
+        return;
+      }
+
+      player.activeWeaponKey = nextWeaponKey;
+      player.isScoped = nextScoped;
+      this.broadcastPlayerState();
+    });
+
     this.onMessage('request-player-state', (client) => {
       client.send('player-state', { players: this.getSerializablePlayers() });
     });
@@ -167,6 +196,7 @@ export class TacticalRoom extends Room {
   onJoin(client) {
     this.players[client.sessionId] = {
       playerId: client.sessionId,
+      displayName: `Player ${this.nextPlayerNumber}`,
       motionState: createPlayerMovementState(),
       pendingInputs: [],
       mapId: 'training-ground',
@@ -182,7 +212,11 @@ export class TacticalRoom extends Room {
       isAlive: true,
       respawnAt: 0,
       lastFireAt: 0,
+      activeWeaponKey: 'rifle',
+      isScoped: false,
+      presentationState: 'idle',
     };
+    this.nextPlayerNumber += 1;
 
     this.broadcast('player-joined', {
       playerId: client.sessionId,
@@ -284,6 +318,7 @@ export class TacticalRoom extends Room {
       isCrouched: false,
       currentHeight: player.spawnState.currentHeight,
     });
+    player.presentationState = this.getPresentationStateForPlayer(player);
     this.broadcast('combat-event', {
       type: 'player-respawned',
       playerId: player.playerId,
@@ -295,6 +330,7 @@ export class TacticalRoom extends Room {
     if (!weapon) {
       return;
     }
+    player.activeWeaponKey = fireRequest.weaponKey;
 
     const now = Date.now();
     const fireIntervalMs = weapon.fireInterval * 1000;
@@ -302,6 +338,12 @@ export class TacticalRoom extends Room {
       return;
     }
     player.lastFireAt = now;
+
+    this.broadcast('combat-event', {
+      type: 'player-fired',
+      playerId: player.playerId,
+      weaponKey: player.activeWeaponKey,
+    });
 
     PLAYER_EYE.set(
       player.motionState.position.x,
@@ -365,7 +407,7 @@ export class TacticalRoom extends Room {
       );
       TARGET_SEGMENT.end.set(
         target.motionState.position.x,
-        target.motionState.position.y + Math.max(0.35, target.motionState.currentHeight),
+        target.motionState.position.y + Math.max(0.35, target.motionState.currentHeight - 0.35),
         target.motionState.position.z,
       );
 
@@ -398,7 +440,10 @@ export class TacticalRoom extends Room {
       bestTarget.isAlive = false;
       bestTarget.respawnAt = now + PLAYER_RESPAWN_DELAY_MS;
       bestTarget.pendingInputs.length = 0;
+      bestTarget.presentationState = 'dead';
     }
+
+    player.presentationState = this.getPresentationStateForPlayer(player);
 
     this.broadcast('combat-event', {
       type: 'player-hit',
@@ -410,5 +455,33 @@ export class TacticalRoom extends Room {
       respawnAt: bestTarget.respawnAt,
     });
     this.broadcastPlayerState();
+  }
+
+  getPresentationStateForPlayer(player) {
+    if (!player?.isAlive) {
+      return 'dead';
+    }
+
+    if (!player.motionState?.isGrounded) {
+      return 'air';
+    }
+
+    const velocity = player.motionState?.velocity;
+    const horizontalSpeed = Math.hypot(
+      Number(velocity?.x ?? 0),
+      Number(velocity?.z ?? 0),
+    );
+    const moving = horizontalSpeed > PLAYER_MOVE_SPEED_EPSILON;
+    const crouched = Boolean(player.motionState?.isCrouched);
+
+    if (crouched) {
+      return moving ? 'crouch-move' : 'crouch-idle';
+    }
+
+    if (player.isScoped) {
+      return moving ? 'scoped-move' : 'scoped-idle';
+    }
+
+    return moving ? 'move' : 'idle';
   }
 }

@@ -160,6 +160,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - remote placeholders render
   - local prediction and replay-based reconciliation are active
   - authoritative movement now covers `Training Ground`, `Desert Compound`, and `Dust2 Import Test`
+- A first server-authoritative PvP combat slice is now live:
+  - clients send fire requests to the server
+  - the server validates simple player hits from authoritative state
+  - health, death, and respawn replicate back to clients
+  - world geometry can block shots
+  - HUD feedback now covers local health, damage taken/dealt, and respawn countdown
 - Multiplayer correction now uses a deadzone/hysteresis policy and remains the current baseline.
 - HUD shows round state, FPS, weapon, utility, pointer-lock state, movement state, and current position/movement mode.
 - Debug controls are now part of the active workflow:
@@ -201,8 +207,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - sensitivity slider
 - Multiplayer:
   - Colyseus room
-  - remote players shown as placeholders
+  - remote players shown as placeholders with visible weapon and simple label
+  - remote placeholders now also reflect crouch height and basic firing feedback
+  - remote players can now also load a test skinned `.glb` model with `idle` / `run`
   - client prediction with replay/reconciliation
+  - first server-authoritative PvP combat slice for hits, health, death, and respawn
   - debug workflow still active
 
 ## Main Runtime Flow
@@ -272,6 +281,34 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Global fly mode toggle was added.
 - Position/marker debug tools were added.
 - Collision wireframe overlay was added for imported-map debugging.
+- A first server-authoritative PvP combat slice was added:
+  - client fire requests
+  - simple authoritative hit validation
+  - replicated health/death/respawn
+  - world shot blocking against server collision
+- Remote-player presentation was upgraded without introducing full character models yet:
+  - replicated display name
+  - replicated equipped weapon key
+  - simple remote weapon proxy plus name label on placeholders
+  - replicated crouch/current-height posture
+  - lightweight remote firing flash
+  - lightweight air/scoped readability states
+  - lightweight remote hit/death reaction polish
+- A first client-side remote character-model path is now in place for testing:
+  - loads a skinned `.glb` for remote players
+  - drives `idle` / `run` from current replicated presentation state
+  - falls back to the older capsule proxy if the model fails to load
+  - current test asset now faces the correct direction in-game
+  - current test asset restores correctly after remote respawn
+  - current remote weapon proxy can attach to a detected right-hand bone on the model
+  - next work here is not more transport, but better upper-body / weapon hold posing
+- Local combat HUD feedback was added:
+  - stronger damage vignette
+  - hit damage numbers
+  - dark dead overlay
+  - respawn countdown
+- Auto-pause on pointer-lock loss was removed so inactive multiplayer test tabs do not keep interrupting sessions.
+- Local target dummies are now disabled by default for PvP testing unless `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`.
 
 ## Current Pressure Points
 
@@ -283,27 +320,32 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - imported maps like Dust2 now load authoritative collision from manifest-defined glTF assets on the server, but the broader client/server map assembly path is still not one single source of truth
 - Imported-map support is good enough for iteration, but the export pipeline is still manual and Blender-driven.
 - `GameApp` still owns some temporary debug/presentation responsibilities because that is the fastest path while broader runtime boundaries are still settling.
-- The top active blocker after the latest multiplayer pass is still wall-pressure correctness under authority/correction.
+- The top active multiplayer movement blocker after the latest pass is wall/slope contact jitter under authority/correction.
 
 ## Known Issues Or Deliberate Compromises
 
 - Collision is static-world only.
 - No moving platforms, trigger volumes, or dynamic rigid-body interaction.
 - Wall contact still has a known oscillation/shimmer problem when the player leans into solid geometry. Several small mitigations were tried; the issue was not solved cleanly and is intentionally paused for now.
-- Under multiplayer correction/authority pressure, the player can still eventually phase through walls after pushing into blockers for a short time.
 - The latest safe state keeps:
   - ramp sliding fixed
   - ramp floating fixed
   - landing/fall-through fixed
-  - wall-contact oscillation unresolved
+  - wall phasing fixed
+  - wall/slope contact jitter unresolved
 - `Dust2 Import Test` is currently best treated as:
   - traversal testbed
   - collision/scale/lighting/fog validation map
-  - future weapon-feel test space
+  - early multiplayer weapon-feel test space
 - `Dust2 Import Test` is not yet a fully production-ready gameplay map:
   - collision is manually authored
   - server-side authoritative movement now uses the imported collision glTF, but broader gameplay authority is still incomplete
   - export workflow is manual
+- The current PvP combat slice is intentionally thin:
+  - no lag compensation yet
+  - no head/body hit zones
+  - no ammo/reload authority
+  - no killfeed, spectate flow, or round authority yet
 - Runtime nav generation still exists as a fallback and still runs on the main thread when used.
 - `RoundManager` and `UtilityManager` remain early stubs.
 - `PlayerState` still exists but remains unused.
@@ -318,11 +360,25 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - remaining issue at this checkpoint is contact jitter:
     - oscillation when pushing into walls
     - jitter on sloped surfaces
+- Current multiplayer testing checkpoint after the combat pass:
+  - movement is good enough for friend-testing online
+  - wall phasing is no longer the active blocker
+  - first server-authoritative PvP combat slice is working locally
+  - local targets are disabled by default for cleaner PvP testing
+  - current combat feedback includes:
+    - damage numbers when hitting another player
+    - stronger red vignette when taking damage
+    - dark dead overlay plus respawn countdown while waiting to respawn
 - If a later pass regresses movement, the checkpoint implementation lives primarily in:
   - `src/core/physics/CollisionWorld.js`
   - `src/shared/playerMovement.js`
   - `src/game/player/controllers/FirstPersonController.js`
   - `server/src/rooms/TacticalRoom.js`
+  - `src/game/networking/NetworkClient.js`
+  - `src/app/GameApp.js`
+  - `src/game/weapons/WeaponManager.js`
+  - `src/shared/netcodeProtocol.js`
+  - `src/shared/weaponData.js`
 - Recent confirmed improvements:
   - server-side imported-map collision now loads from manifest-defined glTF assets
   - immediate per-step input sending replaced the older "latest input resent at 20 Hz" model
@@ -335,8 +391,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - substepping `CollisionWorld.move()`
   - directional filtering to avoid resolving against the exit face of hollow blockers
 - Current best hypothesis:
-  - the remaining phasing issue is tied to the current hollow / thin-shell collision authoring plus the custom capsule response model in `CollisionWorld`
-  - a more robust next direction may be solid gameplay blocker volumes, a more principled BVH-backed character controller approach, or both
+  - the remaining movement issue is in contact response, not wall phasing
+  - a more principled future pass likely means better wall/slope contact response tuning, more instrumentation, or both
 
 ## Local Multiplayer Feel Baseline
 
@@ -361,4 +417,17 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Formalize gameplay metadata export for imported maps later, likely from Blender or a similar DCC path.
 - Keep baked navmesh as the preferred runtime model.
 - Leave wall-contact oscillation paused until it is worth doing a more principled controller/contact pass.
-- Continue validating multiplayer on jumps, ramps, and future combat authority after the current imported-map movement fixes.
+- Validate the current online multiplayer baseline with a friend using:
+  - authoritative movement
+  - basic PvP hits/health/death/respawn
+  - current HUD combat feedback
+- Next likely multiplayer expansions are:
+  - better combat feedback polish
+  - better player hit validation
+  - round-state / respawn-rule authority
+  - better remote player presentation, staged as:
+      - placeholder plus visible equipped weapon
+      - simple remote labels / readability helpers
+      - current checkpoint now includes a test skinned `.glb` character with hand-bone weapon attachment
+      - immediate next step is per-weapon hand offsets plus small upper-body pose adjustments for rifle / sniper / knife and scoped state
+      - later glTF skinned characters driven by replicated high-level state

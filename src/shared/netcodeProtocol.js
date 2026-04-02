@@ -9,6 +9,7 @@ export function createPlayerInputMessage(inputSnapshot, sequence, timestamp) {
     jump: Boolean(inputSnapshot?.jump),
     yaw: Number(inputSnapshot?.yaw ?? 0),
     speedMultiplier: Number(inputSnapshot?.speedMultiplier ?? 1),
+    activeWeaponKey: String(inputSnapshot?.activeWeaponKey ?? 'rifle'),
     sequence: Number(sequence ?? 0),
     timestamp: Number(timestamp ?? 0),
   };
@@ -48,6 +49,14 @@ export function createPlayerReadyMessage(state) {
     isGrounded: Boolean(state?.isGrounded ?? true),
     isCrouched: Boolean(state?.isCrouched ?? false),
     currentHeight: Number(state?.currentHeight ?? 1.72),
+    activeWeaponKey: String(state?.activeWeaponKey ?? 'rifle'),
+  };
+}
+
+export function createPlayerStatusMessage(state) {
+  return {
+    activeWeaponKey: String(state?.activeWeaponKey ?? 'rifle'),
+    isScoped: Boolean(state?.isScoped ?? false),
   };
 }
 
@@ -74,6 +83,10 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     maxHealth: Number(state?.maxHealth ?? 100),
     isAlive: Boolean(state?.isAlive ?? true),
     respawnAt: Number(state?.respawnAt ?? 0),
+    displayName: String(state?.displayName ?? playerId),
+    activeWeaponKey: String(state?.activeWeaponKey ?? 'rifle'),
+    isScoped: Boolean(state?.isScoped ?? false),
+    presentationState: String(state?.presentationState ?? 'idle'),
   };
 }
 
@@ -100,5 +113,9 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     maxHealth: Number(player?.maxHealth ?? 100),
     isAlive: Boolean(player?.isAlive ?? true),
     respawnAt: Number(player?.respawnAt ?? 0),
+    displayName: String(player?.displayName ?? playerId),
+    activeWeaponKey: String(player?.activeWeaponKey ?? 'rifle'),
+    isScoped: Boolean(player?.isScoped ?? false),
+    presentationState: String(player?.presentationState ?? 'idle'),
   };
 }

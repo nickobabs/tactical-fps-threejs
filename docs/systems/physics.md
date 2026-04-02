@@ -55,6 +55,7 @@
   - this removed the earlier wall-phasing failure under sustained authority/correction pressure
   - floor support is then re-established by a follow-up support probe in shared movement
   - remaining issue at this checkpoint is contact jitter against walls and sloped surfaces, not phasing
+  - the same `CollisionWorld` is now also used by the server for simple PvP shot blocking raycasts in the first authoritative combat slice
 
 ## Limitations
 
@@ -63,5 +64,5 @@
 - No moving bodies
 - No trigger volumes
 - Wall contact still has a known oscillation/shimmer issue when the player leans into solid geometry. Several low-risk mitigations were tried, but the issue is intentionally paused until a more principled contact/controller pass is worth doing.
-- A more severe current blocker exists under multiplayer correction / authority pressure: players can still eventually phase through walls after pushing into blockers for a short time
+- The current movement blocker is wall/slope contact jitter rather than wall phasing
 - Hollow wall / thin shell collision authoring is now a prime suspect. The current response model is much safer with genuinely solid blocker volumes than with thin enclosed shells.

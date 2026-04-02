@@ -8,6 +8,7 @@ import {
   createPlayerFireMessage,
   createPlayerInputMessage,
   createPlayerReadyMessage,
+  createPlayerStatusMessage,
   normalizeAuthoritativePlayerState,
 } from '../../shared/netcodeProtocol.js';
 
@@ -190,7 +191,13 @@ export class NetworkClient {
         && previousSnapshot.position.x === normalizedState.position.x
         && previousSnapshot.position.y === normalizedState.position.y
         && previousSnapshot.position.z === normalizedState.position.z
-        && previousSnapshot.yaw === normalizedState.yaw;
+        && previousSnapshot.yaw === normalizedState.yaw
+        && previousSnapshot.currentHeight === normalizedState.currentHeight
+        && previousSnapshot.isCrouched === normalizedState.isCrouched
+        && previousSnapshot.activeWeaponKey === normalizedState.activeWeaponKey
+        && previousSnapshot.isScoped === normalizedState.isScoped
+        && previousSnapshot.presentationState === normalizedState.presentationState
+        && previousSnapshot.isAlive === normalizedState.isAlive;
 
       if (!isDuplicate) {
         buffer.push({
@@ -266,6 +273,15 @@ export class NetworkClient {
     return true;
   }
 
+  sendPlayerStatus(status) {
+    if (!this.room || !status) {
+      return false;
+    }
+
+    this.room.send('player-status', createPlayerStatusMessage(status));
+    return true;
+  }
+
   consumeLocalCorrection() {
     const correction = this.pendingLocalCorrection;
     this.pendingLocalCorrection = null;
@@ -313,6 +329,13 @@ export class NetworkClient {
           playerId,
           position: { ...snapshot.position },
           yaw: snapshot.yaw,
+          currentHeight: snapshot.currentHeight,
+          isCrouched: snapshot.isCrouched,
+          displayName: snapshot.displayName,
+          activeWeaponKey: snapshot.activeWeaponKey,
+          isScoped: snapshot.isScoped,
+          presentationState: snapshot.presentationState,
+          isAlive: snapshot.isAlive,
         });
         continue;
       }
@@ -336,6 +359,13 @@ export class NetworkClient {
           playerId,
           position: { ...nextSnapshot.position },
           yaw: nextSnapshot.yaw,
+          currentHeight: nextSnapshot.currentHeight,
+          isCrouched: nextSnapshot.isCrouched,
+          displayName: nextSnapshot.displayName,
+          activeWeaponKey: nextSnapshot.activeWeaponKey,
+          isScoped: nextSnapshot.isScoped,
+          presentationState: nextSnapshot.presentationState,
+          isAlive: nextSnapshot.isAlive,
         });
         continue;
       }
@@ -351,6 +381,13 @@ export class NetworkClient {
           z: lerp(previousSnapshot.position.z, nextSnapshot.position.z, alpha),
         },
         yaw: interpolateAngle(previousSnapshot.yaw, nextSnapshot.yaw, alpha),
+        currentHeight: lerp(previousSnapshot.currentHeight, nextSnapshot.currentHeight, alpha),
+        isCrouched: nextSnapshot.isCrouched,
+        displayName: nextSnapshot.displayName,
+        activeWeaponKey: nextSnapshot.activeWeaponKey,
+        isScoped: nextSnapshot.isScoped,
+        presentationState: nextSnapshot.presentationState,
+        isAlive: nextSnapshot.isAlive,
       });
     }
 

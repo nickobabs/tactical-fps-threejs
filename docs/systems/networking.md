@@ -9,10 +9,14 @@ The current networking slice supports:
 - Joining a shared `TacticalRoom`
 - Server-assigned player identity through Colyseus session IDs
 - Client-to-server per-step input snapshots
+- Client-to-server fire requests for PvP combat
 - Server-authoritative player positions derived from those inputs
+- Server-authoritative player health / alive state for PvP
+- Server-broadcast combat events for hit / death / respawn feedback
 - A fixed-rate authoritative room simulation on the server
 - Client-side local movement prediction with replay-based reconciliation and a separate local presentation layer
-- Remote-player placeholder rendering through replicated authoritative state
+- Remote-player placeholder rendering through replicated authoritative state, now including visible weapon and simple labels
+- Remote-player placeholder rendering now also uses replicated crouch / current-height state plus lightweight remote fire events for readability
 
 Multiplayer is still optional. If no Colyseus server is reachable, the game continues to run fully in single-player mode.
 
@@ -28,6 +32,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Connection-state visibility for HUD/debugging
 - Remote player authoritative transforms for rendering
 - Local authoritative corrections for reconciliation
+- Replicated local-player health / respawn timing
+- Combat event stream for local hit / damage feedback
 
 ## Dependencies
 
@@ -50,27 +56,57 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - The client still moves immediately for responsiveness, then reconciles to server authority using the server's last processed input sequence.
 - Reconciliation now updates predicted simulation state directly, while the presented local rig absorbs moderate correction error over time instead of applying every correction straight to the camera.
 - Small local drift is intentionally ignored. Local correction now uses a deadzone and hysteresis model so the client only starts converging once divergence is meaningfully above threshold, and stops once it has settled back into a smaller band.
-- Remote players are currently rendered as simple placeholders rather than full replicated first-person rigs.
+- Remote players are currently rendered as simple placeholders rather than full replicated first-person rigs, but the replicated state now already carries `displayName`, `activeWeaponKey`, and a small `presentationState` enum for later model work.
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
+- The current combat slice is intentionally narrow:
+  - local weapon presentation stays immediate
+  - the server owns PvP hit validation, damage, death, and respawn timing
+  - the client consumes replicated combat state and feedback events
 
 ## Current Status
 
 - Implemented and active
 - Two local browser tabs can join the same `TacticalRoom`
-- Remote players appear as simple blue box proxies
+- Remote players appear as readable placeholders with:
+  - blue box body
+  - visible equipped weapon proxy
+  - simple name label
+  - crouch-height posture changes
+  - remote muzzle flash / firing feedback
+  - air-state tilt/readability
+  - scoped/sniper stance hint through weapon posture
+  - remote hit flinch / flash readability
+  - clearer remote death lean / fall transition
+- Remote presentation can now also load a test skinned `.glb` character model client-side, with the older capsule/weapon proxy kept as a fallback if the asset fails to load
+  - the current test asset now loads, faces the right way, and swaps `idle` / `run` based on replicated state
+  - remote weapon proxy can now attach to a detected right-hand bone on the model
+  - remote model visibility now restores correctly after respawn
+  - the current model path is still a prototype:
+    - only `idle` / `run` are driven
+    - hand attachment works, but the upper-body pose still does not truly sell a proper rifle/sniper hold yet
 - Connection state and remote-player count are visible in the HUD
 - Server authority and reconciliation are wired end-to-end for player movement
 - Server authority now uses shared map collision for `Training Ground` and `Desert Compound`
 - Server authority also loads imported collision glTF data for `Dust2 Import Test`
+- A first server-authoritative PvP combat slice is now live:
+  - clients send fire requests
+  - the server validates hits against authoritative player state
+  - player health / death / respawn are replicated
+  - remote placeholders now reflect alive vs dead state
+  - HUD feedback exists for local damage taken, damage dealt, and respawn countdown
 - `NETDEBUG` instrumentation exists in the HUD/devtools path for local multiplayer diagnosis and is intentionally being kept available while multiplayer expands
 
 ## Limitations
 
 - Server/client movement can still diverge intermittently because the browser map runtime and the server collision runtime are not yet driven from one single source of truth
-- Bots, rounds, weapons, damage, and world interactions are still local-only and are not yet synchronized
+- Bots, rounds, utility, and most world interactions are still local-only and are not yet synchronized
 - Local movement feel is now materially improved by correction deadzone/hysteresis, but this still needs validation across more cases like ramps, jump arcs, and future combat-driven correction
-- A current blocker remains: with corrections enabled, players can still eventually phase through walls after sustained pressure against blockers
-- The earlier sprint-release forward nudge was improved by changing input transport, but wall phasing is still unresolved and now appears to be primarily a collision/authoritative-state problem rather than a simple stale-input problem
+- PvP shot validation is intentionally simple for now:
+  - player hit detection is capsule-like rather than head/body zone based
+  - no lag compensation yet
+  - no ammo/reload state yet
+  - no full killfeed or spectate flow yet
+- Local target dummies are now disabled by default for PvP testing unless explicitly re-enabled through `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`
 
 ## Investigation Notes
 
@@ -110,6 +146,15 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Making buffered and hard-snap corrections collision-aware:
   - Reduced obvious direct correction bypasses.
   - Did not fully eliminate wall phasing.
+- First server-authoritative PvP combat pass:
+  - Passed the basic local test:
+    - two players can damage each other
+    - death/respawn replicate
+    - walls can block shots
+  - Current local feedback includes:
+    - center-screen damage numbers when you hit another player
+    - a stronger red vignette when taking damage
+    - a darkened dead-state overlay and respawn countdown while waiting to respawn
 
 ## Current Conclusion
 
@@ -119,7 +164,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - server authority retained for meaningful divergence
   - tiny correction ignored through deadzone/hysteresis
 - The architecture still benefits from keeping local presentation, predicted canonical state, and authoritative server state separate, but that is now an evolution path from a working baseline rather than an unresolved crisis.
-- However, collision correctness under sustained wall pressure is not solved yet. The most likely remaining issue is the current hollow-shell blocker model plus the custom capsule response in `CollisionWorld`, not basic input cadence or local camera reconciliation.
+- Collision correctness under sustained wall pressure is still not solved yet. The active known issue is wall/slope contact jitter, not wall phasing.
+- Multiplayer is now good enough for real friend-testing of:
+  - movement
+  - presence
+  - basic PvP damage/death/respawn
 
 ## Reset Plan
 
@@ -147,5 +196,13 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 
 - Consolidate map geometry so client visuals/collision and server authority are generated from the same shared layout source
 - Validate the current correction model against more gameplay cases such as jumps, ramps, weapon swaps, and eventual damage/combat correction
-- Move additional gameplay state, starting with round state and combat-relevant actors, toward server authority as needed
+  - Improve the new combat slice incrementally:
+    - better hit validation
+    - better combat feedback
+    - round-state authority
+  - staged remote-player presentation:
+      - first, keep placeholders but replicate equipped weapon and a tiny presentation state
+      - next, improve placeholder readability and weapon presentation as needed
+      - immediate next character-model step is to keep the current hand-bone weapon attachment and add per-weapon hand offsets plus small upper-body pose adjustments for rifle / sniper / knife and scoped state
+      - later, swap placeholders for glTF skinned characters driven by replicated high-level state rather than per-bone networking
 - Keep the current debug instrumentation in place until those validation passes are done, since it is now part of the practical multiplayer workflow
