@@ -1,36 +1,74 @@
 # Tactical FPS Three.js Prototype
 
-Starter scaffold for a Counter-Strike-style tactical FPS in three.js.
+Three.js tactical FPS prototype with first-person movement, procedural viewmodels, imported-map support, additive Colyseus multiplayer, and an active remote third-person playermodel pipeline.
 
-## Included
+## Current Scope
 
-- Basic first-person controller with walk, run, crouch, and jump
-- Minimal training ground map
-- HUD overlay
-- Feature-oriented folders for maps, networking, player, rounds, UI, utility, and weapons
+- Counter-Strike-like first-person movement with walk, sprint, crouch, jump, fly-mode debug, and shared client/server movement logic
+- Procedural first-person weapon presentation for rifle, sniper, and knife
+- Imported-map workflow with separate visual and collision glTF assets plus baked navmesh support
+- Additive multiplayer through Colyseus with prediction, replay/reconciliation, remote players, and a first server-authoritative PvP slice
+- Experimental remote third-person character system using `newtest.glb` plus standalone FBX locomotion clips exported from 3ds Max
 
-## Local Run
+## Current State
+
+Implemented and actively used:
+
+- `Training Ground`
+- `Desert Compound`
+- `Dust2 Import Test`
+- local prediction + server authority for movement
+- server-authoritative player hits, damage, death, and respawn
+- remote player third-person presentation with weapon attachment, crouch/jump state, fire layering, and legacy fallback
+
+Current active remote character content:
+
+- character mesh: `public/models/players/newtest.glb`
+- standalone animation clips: `public/models/players/animations/`
+- rifle asset: `public/models/weapons/ak-47-fixed.glb`
+
+## Local Development
+
+Install dependencies:
 
 ```bash
 npm install
-cd server && npm install && cd ..
+npm --prefix server install
+```
+
+Run the Vite client:
+
+```bash
 npm run dev
 ```
 
-For local multiplayer server testing in a second terminal:
+Run the Colyseus server in a second terminal:
 
 ```bash
 npm run server:start
 ```
 
-Local browser builds still default to `ws://localhost:2567`.
+Local browser builds default to:
 
-## Railway Deploy
+```text
+ws://localhost:2567
+```
+
+Useful scripts:
+
+```bash
+npm run build
+npm run preview
+npm run build:navmesh
+npm run server:dev
+```
+
+## Deployment
 
 The current deploy path is a single Railway service that hosts both:
 
 - the built Vite frontend from `dist/`
-- the Colyseus websocket/matchmaker server from `server/`
+- the Colyseus server from `server/`
 
 Railway settings:
 
@@ -39,21 +77,14 @@ Build Command: npm install && npm --prefix server install && npm run build
 Start Command: npm --prefix server start
 ```
 
-The Railway public domain should target the internal port exposed by `process.env.PORT`. In current Railway deploy logs this appears as:
-
-```text
-[server] Colyseus listening on ws://0.0.0.0:8080
-```
-
-So the Railway public networking target should be `8080`.
-
 Notes:
 
-- The server entrypoint is `server/src/index.js`.
-- The server now serves the built frontend with an SPA fallback and also exposes `/health`.
-- Deployed browser builds default to the current host for websocket connections, so a separate `VITE_COLYSEUS_SERVER_URL` is not required for the one-service Railway setup.
+- server entrypoint: `server/src/index.js`
+- the server serves the built frontend with SPA fallback
+- the server also exposes `/health`
+- deployed browser builds default websocket connections to the current host, so a separate `VITE_COLYSEUS_SERVER_URL` is not required for the one-service Railway setup
 
-## Structure
+## Project Layout
 
 ```text
 src/
@@ -62,16 +93,50 @@ src/
     input/
     loop/
     physics/
+    three/
   game/
+    ai/
+    audio/
     maps/
     networking/
     player/
       controllers/
       state/
     rounds/
+    skyboxes/
+    targets/
     ui/
     utility/
     weapons/
   shared/
   styles/
+server/
+  src/
+docs/
+public/
 ```
+
+## Key Files
+
+- `src/app/GameApp.js`: composition root, map lifecycle, HUD, networking ownership, debug controls
+- `src/game/networking/RemotePlayerPresenter.js`: remote third-person presentation, external animation clip loading, weapon attachment, IK experiment
+- `src/shared/playerMovement.js`: shared movement simulation used by client and server
+- `src/core/physics/CollisionWorld.js`: static collision, ground sampling, and LOS
+- `src/game/maps/mapAssetLoader.js`: imported-map and manifest-driven map assembly
+- `src/shared/maps/mapManifest.js`: map registry and asset metadata
+- `server/src/rooms/TacticalRoom.js`: authoritative multiplayer room
+
+## Docs
+
+Start here for maintained project context:
+
+- `docs/MASTER_CONTEXT.md`
+- `docs/systems/app.md`
+- `docs/systems/networking.md`
+- `docs/remote-weapon-asset-contract.md`
+
+## Notes
+
+- Multiplayer is additive. If the server is unavailable, the browser runtime should still work locally.
+- The legacy remote placeholder/model path is still preserved as fallback while the new remote character pipeline is under active iteration.
+- The current locomotion-quality conclusion is that standalone exported clips from the source DCC are preferred over runtime subclips from one long strip.
