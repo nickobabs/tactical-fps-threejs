@@ -66,6 +66,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
         mapOptions.js
       networking/
         NetworkClient.js
+        RemotePlayerPresenter.js
       player/
         controllers/
           FirstPersonController.js
@@ -136,6 +137,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Graybox maps still render through runtime factories, but imported maps can render from glTF scenes, collide against separate glTF collision scenes, and load baked navmesh assets from the manifest.
 - Navigation prefers baked navmesh binaries at runtime. Runtime nav generation still exists as a dev/fallback path.
 - Imported map support is now a real workflow, not a future placeholder.
+- The Colyseus server in `server/src/index.js` now also serves the built Vite client from `dist/`, so one Railway service can host both the frontend and multiplayer backend on one public URL.
 
 ## What Is Already Built And Confirmed Working
 
@@ -160,6 +162,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - remote placeholders render
   - local prediction and replay-based reconciliation are active
   - authoritative movement now covers `Training Ground`, `Desert Compound`, and `Dust2 Import Test`
+- The current Railway deployment path also works as a one-service setup:
+  - build the client at repo root
+  - start the Colyseus server from `server/`
+  - serve the built frontend and multiplayer backend from the same Railway domain
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests to the server
   - the server validates simple player hits from authoritative state
@@ -207,9 +213,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - sensitivity slider
 - Multiplayer:
   - Colyseus room
-  - remote players shown as placeholders with visible weapon and simple label
-  - remote placeholders now also reflect crouch height and basic firing feedback
-  - remote players can now also load a test skinned `.glb` model with `idle` / `run`
+  - remote players use a remote third-person presentation path with placeholder fallback
+  - the active character-model experiment uses `public/models/players/newtest.glb`
+  - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
+  - crouch, jump, weapon attachment, and fire layering are active in the experimental path
   - client prediction with replay/reconciliation
   - first server-authoritative PvP combat slice for hits, health, death, and respawn
   - debug workflow still active
@@ -220,13 +227,15 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - `MapRuntime.create()` builds the selected map, initializes navigation, creates `CollisionWorld`, creates the player controller, and assembles map-bound systems.
 - `InputManager` gathers browser input and exposes one shared frame snapshot per rendered frame.
 - `FirstPersonController` consumes look input, runs fixed-step movement simulation, and exposes local presentation separately from canonical simulation state.
-- `NetworkClient` samples local inputs, receives authoritative state, exposes corrections, and renders remote placeholders indirectly through `GameApp`.
+- `NetworkClient` samples local inputs, receives authoritative state, and exposes corrections.
+- `RemotePlayerPresenter` renders remote placeholders / remote character models from authoritative state and combat events, and is now the active remote playermodel testbed.
 - `WeaponManager` consumes frame input for swap/scope/fire logic.
 - `TargetManager` updates bots using `CollisionWorld` and `NavigationManager`.
 
 ## High-Value Files
 
 - [`src/app/GameApp.js`](C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js): composition root, map lifecycle, pause flow, HUD wiring, debug controls, collision debug overlay, and app-level networking ownership.
+- [`src/game/networking/RemotePlayerPresenter.js`](C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js): remote player placeholder/model presentation, remote animation selection, external clip loading, experimental IK, and remote weapon attachment.
 - [`src/game/maps/MapRuntime.js`](C:/Users/nicko/tactical-fps-threejs/src/game/maps/MapRuntime.js): map-bound system assembly and lifecycle.
 - [`src/game/maps/mapAssetLoader.js`](C:/Users/nicko/tactical-fps-threejs/src/game/maps/mapAssetLoader.js): manifest-driven map assembly for runtime-factory maps and imported glTF maps.
 - [`src/shared/maps/mapManifest.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/maps/mapManifest.js): map registry including asset paths, spawn defaults, gameplay mode, and baked navmesh metadata.
@@ -262,6 +271,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 ## Important Changes Landed In This Session
 
 - `NetworkClient` ownership was moved to `GameApp`.
+- `NetworkClient` default server URL logic now distinguishes local and deployed environments:
+  - local pages still default to `ws://localhost:2567`
+  - deployed pages default to the current host using `ws:` / `wss:`
 - Graybox map collision authoring was pushed toward shared manifest/layout boundaries.
 - Baked navmesh support was added and is now the preferred runtime path.
 - `recast-navigation`, map modules, and loader-heavy pieces were split/lazy-loaded as part of bundle work.
@@ -286,22 +298,19 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - simple authoritative hit validation
   - replicated health/death/respawn
   - world shot blocking against server collision
-- Remote-player presentation was upgraded without introducing full character models yet:
-  - replicated display name
-  - replicated equipped weapon key
-  - simple remote weapon proxy plus name label on placeholders
-  - replicated crouch/current-height posture
-  - lightweight remote firing flash
-  - lightweight air/scoped readability states
-  - lightweight remote hit/death reaction polish
-- A first client-side remote character-model path is now in place for testing:
-  - loads a skinned `.glb` for remote players
-  - drives `idle` / `run` from current replicated presentation state
-  - falls back to the older capsule proxy if the model fails to load
-  - current test asset now faces the correct direction in-game
-  - current test asset restores correctly after remote respawn
-  - current remote weapon proxy can attach to a detected right-hand bone on the model
-  - next work here is not more transport, but better upper-body / weapon hold posing
+- Remote-player presentation was upgraded into an active remote playermodel workflow:
+  - replicated display name, equipped weapon key, posture, and presentation state all now drive remote visuals
+  - `RemotePlayerPresenter` still falls back to the older capsule proxy if the character model fails to load
+  - the current remote character experiment uses `public/models/players/newtest.glb`
+  - root-motion translation is stripped in code so the server-replicated actor transform stays authoritative
+  - current jump handling still uses the tucked airborne hold behavior
+  - remote rifle presentation still attaches through `weapon_socket_r` on the character plus `grip_socket` / `muzzle_socket` on `public/models/weapons/ak-47-fixed.glb`
+  - remote rifle scaling still compensates for inherited world scale from the socket/bone chain
+  - `F6` still tunes remote model scale and `F7` still tunes socket-relative weapon pose values in-browser through `localStorage`
+  - left-arm CCD IK is now an active experiment, but it still uses a guessed runtime grip target until the rifle gets a proper left-hand helper
+  - runtime subclips from the long `Take 001` strip are usable for many motions, but loop quality was not good enough for locomotion
+  - the first standalone Max-exported run clip, `public/models/players/newtest_run.fbx`, now plays cleanly in-engine and overrides the experimental `run` clip
+  - current conclusion: standalone exported clips from the source DCC are the preferred path for locomotion quality, while the long-strip subclip path remains a temporary bridge
 - Local combat HUD feedback was added:
   - stronger damage vignette
   - hit damage numbers
@@ -309,6 +318,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - respawn countdown
 - Auto-pause on pointer-lock loss was removed so inactive multiplayer test tabs do not keep interrupting sessions.
 - Local target dummies are now disabled by default for PvP testing unless `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`.
+- Railway deployment support was added:
+  - Express now answers `/health`
+  - the server binds on `0.0.0.0`
+  - the built frontend is served from `dist/`
+  - the SPA fallback route was updated to an Express 5 compatible wildcard
 
 ## Current Pressure Points
 
@@ -320,6 +334,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - imported maps like Dust2 now load authoritative collision from manifest-defined glTF assets on the server, but the broader client/server map assembly path is still not one single source of truth
 - Imported-map support is good enough for iteration, but the export pipeline is still manual and Blender-driven.
 - `GameApp` still owns some temporary debug/presentation responsibilities because that is the fastest path while broader runtime boundaries are still settling.
+- Remote character presentation is now out of `GameApp`, but the current weapon/model workflow is still a prototype content pipeline:
+  - remote character experiment uses `newtest.glb`, with the older legacy path still available as a fallback
+  - remote rifle uses `ak-47-fixed.glb`
+  - the character/weapon export path currently depends on a hand-authored `weapon_socket_r` helper on the character and `grip_socket` / `muzzle_socket` helpers on the rifle
+  - the main animation-quality blocker is now the long-strip export/subclip path rather than the source run motion itself
+  - first clean proof for locomotion came from a standalone FBX clip exported from the original 3ds Max source file
 - The top active multiplayer movement blocker after the latest pass is wall/slope contact jitter under authority/correction.
 
 ## Known Issues Or Deliberate Compromises
@@ -421,13 +441,17 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - authoritative movement
   - basic PvP hits/health/death/respawn
   - current HUD combat feedback
+- For the current Railway deploy path use:
+  - build command: `npm install && npm --prefix server install && npm run build`
+  - start command: `npm --prefix server start`
+  - public networking target: the Railway `PORT` shown in logs, currently `8080`
 - Next likely multiplayer expansions are:
   - better combat feedback polish
   - better player hit validation
   - round-state / respawn-rule authority
   - better remote player presentation, staged as:
-      - placeholder plus visible equipped weapon
-      - simple remote labels / readability helpers
-      - current checkpoint now includes a test skinned `.glb` character with hand-bone weapon attachment
-      - immediate next step is per-weapon hand offsets plus small upper-body pose adjustments for rifle / sniper / knife and scoped state
-      - later glTF skinned characters driven by replicated high-level state
+      - maintain placeholder fallback
+      - continue the `newtest.glb` remote character experiment
+      - replace long-strip runtime subclips with standalone exported locomotion clips from Max
+      - add a proper left-hand helper to the rifle and replace the guessed IK target
+      - continue socket-relative rifle pose tuning and per-weapon hand offsets / pose adjustments

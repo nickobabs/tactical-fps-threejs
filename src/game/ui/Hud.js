@@ -287,7 +287,6 @@ export function createHud({
         : input.pointerLocked
           ? 'Pointer locked'
           : 'Click to capture mouse';
-
       lastRoundText = setTextIfChanged(roundEl, roundText, lastRoundText);
       lastFpsText = setTextIfChanged(fpsEl, fpsText, lastFpsText);
       lastHealthText = setTextIfChanged(healthEl, healthText, lastHealthText);

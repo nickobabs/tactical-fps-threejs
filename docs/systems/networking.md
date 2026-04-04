@@ -56,7 +56,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - The client still moves immediately for responsiveness, then reconciles to server authority using the server's last processed input sequence.
 - Reconciliation now updates predicted simulation state directly, while the presented local rig absorbs moderate correction error over time instead of applying every correction straight to the camera.
 - Small local drift is intentionally ignored. Local correction now uses a deadzone and hysteresis model so the client only starts converging once divergence is meaningfully above threshold, and stops once it has settled back into a smaller band.
-- Remote players are currently rendered as simple placeholders rather than full replicated first-person rigs, but the replicated state now already carries `displayName`, `activeWeaponKey`, and a small `presentationState` enum for later model work.
+- Replicated state already carries `displayName`, `activeWeaponKey`, and a small `presentationState` enum, and the active remote third-person playermodel path now consumes that data directly.
+- Remote player presentation is now split between network state in `NetworkClient` and runtime rendering in `RemotePlayerPresenter`.
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 - The current combat slice is intentionally narrow:
   - local weapon presentation stays immediate
@@ -77,13 +78,21 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - scoped/sniper stance hint through weapon posture
   - remote hit flinch / flash readability
   - clearer remote death lean / fall transition
-- Remote presentation can now also load a test skinned `.glb` character model client-side, with the older capsule/weapon proxy kept as a fallback if the asset fails to load
-  - the current test asset now loads, faces the right way, and swaps `idle` / `run` based on replicated state
-  - remote weapon proxy can now attach to a detected right-hand bone on the model
-  - remote model visibility now restores correctly after respawn
-  - the current model path is still a prototype:
-    - only `idle` / `run` are driven
-    - hand attachment works, but the upper-body pose still does not truly sell a proper rifle/sniper hold yet
+- Remote presentation now has an active experimental skinned-character path in `RemotePlayerPresenter`, with the older capsule/weapon proxy kept as a fallback if asset loading fails
+  - the current character asset is `public/models/players/newtest.glb`
+  - the source strip clip is `Take 001`, which is still used for several temporary runtime subclips
+  - imported root-motion translation is stripped in code so the replicated actor transform stays authoritative
+  - current airborne behavior still freezes the jump clip in a tucked-leg pose until landing rather than replaying the tail
+  - remote model visibility restores correctly after respawn
+  - remote rifle presentation still uses `weapon_socket_r` on the character and `grip_socket` / `muzzle_socket` on the rifle asset
+  - the current rifle asset is `public/models/weapons/ak-47-fixed.glb`
+  - remote rifle world scale still compensates for inherited scale from the skinned character/socket chain
+  - live rifle pose tuning still exists through an `F7` panel in the browser and persists via `localStorage`
+  - `F6` still tunes remote model scale only
+  - left-arm CCD IK is now an active experiment, but the current rifle still lacks a proper left-hand helper so the runtime target is only approximate
+  - runtime subclips from the long strip proved visibly jittery for locomotion loops
+  - the first standalone exported locomotion proof, `public/models/players/newtest_run.fbx`, now overrides the experimental `run` clip and plays cleanly in-engine
+  - current direction is to export the rest of the locomotion set as standalone clips from the original 3ds Max source instead of continuing to rely on runtime subclips for loop-critical motions
 - Connection state and remote-player count are visible in the HUD
 - Server authority and reconciliation are wired end-to-end for player movement
 - Server authority now uses shared map collision for `Training Ground` and `Desert Compound`
@@ -107,6 +116,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - no ammo/reload state yet
   - no full killfeed or spectate flow yet
 - Local target dummies are now disabled by default for PvP testing unless explicitly re-enabled through `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`
+- The long-strip subclip path is still a temporary bridge for some motions, but it is no longer the preferred quality path for locomotion
 
 ## Investigation Notes
 
@@ -201,8 +211,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - better combat feedback
     - round-state authority
   - staged remote-player presentation:
-      - first, keep placeholders but replicate equipped weapon and a tiny presentation state
-      - next, improve placeholder readability and weapon presentation as needed
-      - immediate next character-model step is to keep the current hand-bone weapon attachment and add per-weapon hand offsets plus small upper-body pose adjustments for rifle / sniper / knife and scoped state
-      - later, swap placeholders for glTF skinned characters driven by replicated high-level state rather than per-bone networking
+      - keep placeholder fallback
+      - continue the `newtest.glb` remote character experiment
+      - replace long-strip locomotion subclips with standalone exported clips from Max
+      - add a proper left-hand helper to the rifle and replace the guessed IK target
+      - continue socket-relative rifle hold tuning and per-weapon pose offsets for rifle / sniper / knife and scoped state
 - Keep the current debug instrumentation in place until those validation passes are done, since it is now part of the practical multiplayer workflow

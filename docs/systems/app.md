@@ -27,7 +27,7 @@
 - A staged map-loading state with visible loading feedback
 - Active HDR skybox selection
 - Shared audio registration and lifecycle
-- Remote-player placeholder rendering from authoritative network state
+- Remote-player rendering from authoritative network state, with placeholder fallback and an active remote playermodel experiment
 - Local correction toggles and debug snapshot requests for multiplayer diagnosis
 - Collision debug wireframe overlay
 
@@ -41,6 +41,7 @@
 - `SkyboxManager`
 - `AudioManager`
 - `NetworkClient`
+- `RemotePlayerPresenter`
 - `FixedStepLoop`
 
 ## Key Design Decisions
@@ -59,7 +60,7 @@
 - `GameApp` now owns composition and high-level state, while map-bound systems such as collision, targets, navigation, and player spawn live inside `MapRuntime`.
 - `NetworkClient` now lives at the app layer instead of being recreated inside `MapRuntime` on every map swap.
 - Old map scene trees are explicitly disposed during unload to avoid leaking geometry, materials, and textures across repeated map swaps.
-- `GameApp` renders remote multiplayer placeholders directly for now rather than introducing a dedicated replicated-actor layer before the protocol settles.
+- `GameApp` owns app-level multiplayer wiring, but remote-player rendering is now delegated to `RemotePlayerPresenter` instead of staying embedded directly in `GameApp`.
 - Temporary multiplayer diagnostics are also coordinated here:
   - `F9` toggles local correction application for A/B testing
   - `F10` requests an immediate debug summary dump
@@ -71,8 +72,13 @@
 ## Current Status
 
 - Implemented and active
-- HDR skyboxes, pause menu flow, staged map swapping, baked-nav-first map initialization, weapon swapping, sensitivity/volume controls, shared audio registration, imported-map debugging, and additive multiplayer placeholder rendering are all integrated into the active runtime
-- Local multiplayer prediction, reconciliation handoff, and remote placeholder rendering are all wired through the active app loop
+- HDR skyboxes, pause menu flow, staged map swapping, baked-nav-first map initialization, weapon swapping, sensitivity/volume controls, shared audio registration, imported-map debugging, and additive multiplayer remote-player rendering are all integrated into the active runtime
+- Local multiplayer prediction, reconciliation handoff, and remote presentation are all wired through the active app loop
+- The current remote presentation split is:
+  - `GameApp` owns the `NetworkClient` and forwards authoritative snapshots / combat events
+  - `RemotePlayerPresenter` owns remote placeholder fallback, remote model loading, animation selection, external clip loading, and socket-based weapon attachment
+  - `RemotePlayerPresenter` also owns the temporary `F7` remote-weapon tuning panel used to live-tune remote weapon pose values in-browser
+  - the active remote character experiment now uses `newtest.glb`, with a standalone `newtest_run.fbx` clip overriding the experimental `run` animation
 
 ## Near-Term Direction
 
