@@ -34,7 +34,7 @@
 
 - Yaw and pitch are split into separate scene nodes.
 - Camera height is adjusted through stance interpolation instead of instant snapping.
-- Horizontal motion is smoothed using acceleration and lerp-based velocity targets.
+- Horizontal motion currently uses a simple shared target-velocity lerp in `src/shared/playerMovement.js`.
 - Vertical motion uses simple gravity and jump impulse logic.
 - Ground snapping uses sampled floor height plus a small step threshold so authored ramps and raised surfaces can be traversed.
 - Mouse sensitivity scales with current camera FOV, so scoped views feel proportionally slower without a separate sensitivity path.
@@ -78,6 +78,11 @@
   - preserving local yaw/pitch during reconciliation
 - Those experiments improved specific symptoms at different times, and the important outcome was that local deadzone/hysteresis correction produced the first movement baseline that passed the eye test in local multiplayer.
 - Current debugging suggests the biggest remaining risk is now wall-pressure correctness under authority/correction, not just flat-ground feel. The obvious post-sprint forward nudge was improved by fixing stale-input transport, but wall phasing remains unresolved.
+- The next scheduled movement pass is acceleration / deceleration / momentum tuning in shared movement:
+  - fast acceleration to speed
+  - explicit deceleration and opposition braking
+  - no stamina, leaning, or crouch-slide
+  - keep the feel clean and tactical rather than slippery
 
 ## Reset Plan
 
@@ -106,3 +111,7 @@
 - Keep prediction deterministic and replay-friendly while expanding authoritative gameplay
 - Avoid stacking more ad hoc local smoothing unless instrumentation shows a specific need
 - Leave the wall-contact oscillation issue paused unless a more principled controller/contact pass is scheduled
+- Replace the current planar velocity lerp with a more explicit acceleration / braking model in shared movement
+- Preserve the current max-speed model while making starts, stops, and direction changes more intentional
+- Keep counter-strafe behavior meaningful, especially for future sniper use, without making rifles or general movement feel gimmicky
+- See `docs/movement-acceleration-plan.md` for the next-pass implementation outline

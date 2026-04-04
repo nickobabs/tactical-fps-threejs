@@ -311,6 +311,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - runtime subclips from the long `Take 001` strip are usable for many motions, but loop quality was not good enough for locomotion
   - the first standalone Max-exported run clip, `public/models/players/newtest_run.fbx`, now plays cleanly in-engine and overrides the experimental `run` clip
   - current conclusion: standalone exported clips from the source DCC are the preferred path for locomotion quality, while the long-strip subclip path remains a temporary bridge
+- The project README was updated from scaffold-level notes to a current project overview with actual runtime/deploy/architecture context.
 - Local combat HUD feedback was added:
   - stronger damage vignette
   - hit damage numbers
@@ -341,6 +342,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - the main animation-quality blocker is now the long-strip export/subclip path rather than the source run motion itself
   - first clean proof for locomotion came from a standalone FBX clip exported from the original 3ds Max source file
 - The top active multiplayer movement blocker after the latest pass is wall/slope contact jitter under authority/correction.
+- Shared movement feel is still intentionally simple on the planar-velocity side:
+  - current starts, stops, and direction changes still use a target-velocity lerp in `src/shared/playerMovement.js`
+  - the next planned movement pass is explicit acceleration / deceleration / opposition braking
+  - goal is cleaner tactical momentum, not slippery inertia systems
 
 ## Known Issues Or Deliberate Compromises
 
@@ -437,6 +442,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Formalize gameplay metadata export for imported maps later, likely from Blender or a similar DCC path.
 - Keep baked navmesh as the preferred runtime model.
 - Leave wall-contact oscillation paused until it is worth doing a more principled controller/contact pass.
+- Next movement-feel pass:
+  - replace the current planar velocity lerp with a more explicit acceleration / braking model in `src/shared/playerMovement.js`
+  - keep high responsiveness while preventing instant direction flips
+  - preserve deterministic shared simulation for client prediction and server authority
+  - keep counter-strafe meaningful, mainly for sniper timing rather than rifle-spread gimmicks
+  - do not add stamina, leaning, or crouch-slide
 - Validate the current online multiplayer baseline with a friend using:
   - authoritative movement
   - basic PvP hits/health/death/respawn
@@ -455,3 +466,4 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       - replace long-strip runtime subclips with standalone exported locomotion clips from Max
       - add a proper left-hand helper to the rifle and replace the guessed IK target
       - continue socket-relative rifle pose tuning and per-weapon hand offsets / pose adjustments
+- Movement implementation notes for the next pass now live in `docs/movement-acceleration-plan.md`
