@@ -305,8 +305,10 @@ export class NetworkClient {
     return this.localPlayerState;
   }
 
-  suspendGameplaySync() {
-    this.remotePlayerBuffers.clear();
+  suspendGameplaySync(options = {}) {
+    if (!options.preserveRemotePlayers) {
+      this.remotePlayerBuffers.clear();
+    }
     this.pendingLocalCorrection = null;
     this.pendingInitializationState = null;
     this.pendingInputs.length = 0;

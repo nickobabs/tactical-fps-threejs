@@ -271,8 +271,7 @@ export class GameApp {
 
     if (nextMode === 'fly') {
       this.syncCombatNetworkingMode();
-      this.networkClient.suspendGameplaySync();
-      this.remotePlayerPresenter.clear();
+      this.networkClient.suspendGameplaySync({ preserveRemotePlayers: true });
       return;
     }
 

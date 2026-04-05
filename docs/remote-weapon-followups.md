@@ -14,7 +14,10 @@ See also:
 - Remote muzzle flash now uses weapon-side `muzzle_socket` when present.
 - Permanent orange/debug material overrides are out of the normal render path.
 - Permanent directional debug helpers are out of the normal render path.
-- The current cleaned rifle asset contract is `public/models/weapons/ak-47-fixed.glb`.
+- The active remote rifle asset is now `public/models/weapons/newak.glb`.
+- `newak.glb` now exports authored `grip_socket`, `muzzle_socket`, and `left_hand_grip` helpers.
+- The runtime now uses the authored left-hand helper for remote rifle IK when present.
+- The runtime grip/muzzle fallback preset is still kept as a safety net, but the authored-helper contract remains the preferred path.
 
 ## Still Worth Doing
 

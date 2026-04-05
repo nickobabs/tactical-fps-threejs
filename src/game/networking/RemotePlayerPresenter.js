@@ -10,7 +10,7 @@ const REMOTE_DEATH_TRANSITION_DURATION = 0.26;
 const REMOTE_CHARACTER_MODEL_PATH = '/models/players/tester3.glb';
 const REMOTE_EXPERIMENTAL_CHARACTER_MODEL_PATH = '/models/players/newtest.glb';
 const REMOTE_EXPERIMENTAL_ANIMATION_ROOT = '/models/players/animations';
-const REMOTE_RIFLE_MODEL_PATH = '/models/weapons/ak-47-fixed.glb';
+const REMOTE_RIFLE_MODEL_PATH = '/models/weapons/newak.glb';
 const MOVEMENT_DIRECTION_EPSILON = 0.08;
 const REMOTE_JUMP_TIME_SCALE = 0.76;
 const REMOTE_JUMP_END_HOLD_RATIO = 0.58;
@@ -20,6 +20,7 @@ const REMOTE_UPPER_BODY_FADE_DURATION = 0.08;
 const REMOTE_UPPER_BODY_ACTION_DURATION = 0.22;
 const REMOTE_IK_BLEND_FACTOR = 0.9;
 const REMOTE_IK_ITERATIONS = 2;
+const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
 const REMOTE_CHARACTER_VARIANT = import.meta.env.VITE_REMOTE_CHARACTER_VARIANT ?? 'experimental';
 
 const REMOTE_CLIPS = {
@@ -33,6 +34,10 @@ const REMOTE_CLIPS = {
   crouchBackward: 'crouch back',
   jump: 'jump',
   fire: 'fire',
+};
+const DEFAULT_REMOTE_DEBUG_SETTINGS = {
+  freezePose: false,
+  freezeClip: REMOTE_CLIPS.idle,
 };
 
 const REMOTE_CHARACTER_BOX = new THREE.Box3();
@@ -130,11 +135,18 @@ const DEFAULT_REMOTE_SOCKET_POSES = {
   sniperScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 0.92 },
   sniperHip: { position: [-0.03, -0.03, 0.01], rotation: [1.44, 0.12, -1.38], scale: 0.96 },
   knife: { position: [0.01, -0.01, -0.01], rotation: [0.2, -1.2, 0.5], scale: 0.95 },
-  rifleScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 1 },
-  rifleHip: { position: [0, 0, 0], rotation: [2.72, 0, 3.2], scale: 1 },
+  rifleScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 1.08 },
+  rifleHip: { position: [0.011, -0.002, -0.027], rotation: [-2.85, 1.67, 3.01], scale: 1.26 },
 };
 const DEFAULT_REMOTE_CHARACTER_SETTINGS = {
   modelScale: 1.120,
+};
+const REMOTE_RIFLE_FALLBACK_SOCKET_ROTATION = new THREE.Euler(Math.PI / 2, 0, 0);
+const REMOTE_RIFLE_FALLBACK_SOCKET_PRESETS = {
+  '/models/weapons/newak.glb': {
+    grip: { x: -0.006, y: -0.012, z: 0.02 },
+    muzzle: { x: -0.01, y: 0.052, z: -0.618 },
+  },
 };
 
 function clonePose(pose) {
@@ -142,6 +154,13 @@ function clonePose(pose) {
     position: [...pose.position],
     rotation: [...pose.rotation],
     scale: pose.scale,
+  };
+}
+
+function cloneRemoteDebugSettings(settings = DEFAULT_REMOTE_DEBUG_SETTINGS) {
+  return {
+    freezePose: Boolean(settings.freezePose),
+    freezeClip: String(settings.freezeClip ?? DEFAULT_REMOTE_DEBUG_SETTINGS.freezeClip),
   };
 }
 
@@ -164,6 +183,32 @@ function getFallbackRemoteCharacterDefinition(definition) {
     return null;
   }
   return REMOTE_CHARACTER_DEFINITIONS.legacy;
+}
+
+function getRemoteRifleFallbackSocketPreset() {
+  return REMOTE_RIFLE_FALLBACK_SOCKET_PRESETS[REMOTE_RIFLE_MODEL_PATH] ?? null;
+}
+
+function ensureRemoteWeaponSocket(root, socketName, fallbackPosition) {
+  const existingSocket = root.getObjectByName(socketName);
+  if (existingSocket) {
+    return existingSocket;
+  }
+
+  if (!fallbackPosition) {
+    return null;
+  }
+
+  const fallbackSocket = new THREE.Object3D();
+  fallbackSocket.name = socketName;
+  fallbackSocket.position.set(
+    fallbackPosition.x,
+    fallbackPosition.y,
+    fallbackPosition.z,
+  );
+  fallbackSocket.rotation.copy(REMOTE_RIFLE_FALLBACK_SOCKET_ROTATION);
+  root.add(fallbackSocket);
+  return fallbackSocket;
 }
 
 function getTrackTargetName(trackName) {
@@ -368,6 +413,7 @@ function ensureRemoteWeaponTuning() {
     character: {
       modelScale: DEFAULT_REMOTE_CHARACTER_SETTINGS.modelScale,
     },
+    debug: cloneRemoteDebugSettings(),
   };
   for (const [key, pose] of Object.entries(DEFAULT_REMOTE_SOCKET_POSES)) {
     nextCache.weaponPoses[key] = clonePose(pose);
@@ -398,6 +444,9 @@ function ensureRemoteWeaponTuning() {
         } else if (Number.isFinite(Number(parsed.modelScale))) {
           nextCache.character.modelScale = Number(parsed.modelScale);
         }
+        if (parsed.debug) {
+          nextCache.debug = cloneRemoteDebugSettings(parsed.debug);
+        }
       }
     } catch (error) {
       console.warn('[RemotePlayerPresenter] Failed to load remote weapon tuning from localStorage.', error);
@@ -413,6 +462,9 @@ function ensureRemoteWeaponTuning() {
       },
       get character() {
         return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.character));
+      },
+      get debug() {
+        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.debug));
       },
       setPose(key, patch) {
         if (!REMOTE_WEAPON_TUNING_CACHE?.weaponPoses?.[key]) {
@@ -437,6 +489,14 @@ function ensureRemoteWeaponTuning() {
         REMOTE_WEAPON_TUNING_CACHE.character.modelScale = Number(value);
         persistRemoteWeaponTuning();
         return REMOTE_WEAPON_TUNING_CACHE.character.modelScale;
+      },
+      setDebug(patch) {
+        REMOTE_WEAPON_TUNING_CACHE.debug = cloneRemoteDebugSettings({
+          ...REMOTE_WEAPON_TUNING_CACHE.debug,
+          ...patch,
+        });
+        persistRemoteWeaponTuning();
+        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.debug));
       },
       reset() {
         window.localStorage.removeItem(REMOTE_WEAPON_TUNING_STORAGE_KEY);
@@ -508,6 +568,47 @@ function createRemoteWeaponTuningPanel() {
   const controlsHost = document.createElement('div');
   panel.appendChild(controlsHost);
 
+  const freezeRow = document.createElement('label');
+  freezeRow.style.display = 'grid';
+  freezeRow.style.gridTemplateColumns = '1fr auto';
+  freezeRow.style.alignItems = 'center';
+  freezeRow.style.gap = '8px';
+  freezeRow.style.marginBottom = '8px';
+
+  const freezeLabel = document.createElement('span');
+  freezeLabel.textContent = 'Freeze Pose';
+  freezeRow.appendChild(freezeLabel);
+
+  const freezeToggle = document.createElement('input');
+  freezeToggle.type = 'checkbox';
+  freezeRow.appendChild(freezeToggle);
+  panel.appendChild(freezeRow);
+
+  const freezeClipSelect = document.createElement('select');
+  freezeClipSelect.style.width = '100%';
+  freezeClipSelect.style.marginBottom = '12px';
+  freezeClipSelect.style.background = '#0f1720';
+  freezeClipSelect.style.color = '#e5edf7';
+  freezeClipSelect.style.border = '1px solid rgba(148, 163, 184, 0.35)';
+  freezeClipSelect.style.borderRadius = '6px';
+  freezeClipSelect.style.padding = '6px';
+  for (const [label, value] of [
+    ['idle', REMOTE_CLIPS.idle],
+    ['run', REMOTE_CLIPS.runForward],
+    ['run back', REMOTE_CLIPS.runBackward],
+    ['strafe left', REMOTE_CLIPS.strafeLeft],
+    ['strafe right', REMOTE_CLIPS.strafeRight],
+    ['crouch idle', REMOTE_CLIPS.crouchIdle],
+    ['crouch walk', REMOTE_CLIPS.crouchWalk],
+    ['jump', REMOTE_CLIPS.jump],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    freezeClipSelect.appendChild(option);
+  }
+  panel.appendChild(freezeClipSelect);
+
   const resetButton = document.createElement('button');
   resetButton.textContent = 'Reset All';
   resetButton.style.marginTop = '12px';
@@ -575,6 +676,10 @@ function createRemoteWeaponTuningPanel() {
 
   function syncInputsFromPose() {
     const pose = ensureRemoteWeaponTuning().weaponPoses[getCurrentPoseKey()];
+    const debug = ensureRemoteWeaponTuning().debug;
+    freezeToggle.checked = Boolean(debug.freezePose);
+    freezeClipSelect.value = debug.freezeClip ?? DEFAULT_REMOTE_DEBUG_SETTINGS.freezeClip;
+    freezeClipSelect.disabled = !freezeToggle.checked;
     for (const { spec, range, number } of controls.values()) {
       const value = spec.kind === 'scale'
         ? pose.scale
@@ -611,6 +716,17 @@ function createRemoteWeaponTuningPanel() {
   }
 
   poseSelect.addEventListener('change', () => syncInputsFromPose());
+  freezeToggle.addEventListener('change', () => {
+    window.__remoteWeaponTuning.setDebug({
+      freezePose: freezeToggle.checked,
+    });
+    freezeClipSelect.disabled = !freezeToggle.checked;
+  });
+  freezeClipSelect.addEventListener('change', () => {
+    window.__remoteWeaponTuning.setDebug({
+      freezeClip: freezeClipSelect.value,
+    });
+  });
   resetButton.addEventListener('click', () => {
     window.__remoteWeaponTuning.reset();
     syncInputsFromPose();
@@ -645,6 +761,10 @@ function createRemoteWeaponTuningPanel() {
 
 function getRemoteCharacterModelScale() {
   return ensureRemoteWeaponTuning().character.modelScale;
+}
+
+function getRemoteDebugSettings() {
+  return ensureRemoteWeaponTuning().debug;
 }
 
 function createRemoteCharacterTuningPanel() {
@@ -966,6 +1086,7 @@ function createLabelTexture(text) {
 
 function createRemoteWeaponMesh(weaponKey) {
   const group = new THREE.Group();
+  group.rotation.order = REMOTE_WEAPON_ROTATION_ORDER;
   const darkMaterial = new THREE.MeshStandardMaterial({
     color: 0x1b2128,
     roughness: 0.62,
@@ -1084,6 +1205,7 @@ function createRemoteFlashMesh() {
 
 function createRemoteWeaponGroup() {
   const group = new THREE.Group();
+  group.rotation.order = REMOTE_WEAPON_ROTATION_ORDER;
   const flash = createRemoteFlashMesh();
   group.add(flash);
   group.userData.flash = flash;
@@ -1130,7 +1252,8 @@ function createRemoteRifleModelGroup(asset) {
   const group = createRemoteWeaponGroup();
   const rifleRoot = asset.scene.clone(true);
   const flash = group.userData.flash;
-  const leftHandGrip = group.userData.leftHandGrip;
+  const runtimeLeftHandGrip = group.userData.leftHandGrip;
+  const fallbackSocketPreset = getRemoteRifleFallbackSocketPreset();
   rifleRoot.traverse((child) => {
     if (child.isMesh) {
       child.castShadow = true;
@@ -1139,8 +1262,17 @@ function createRemoteRifleModelGroup(asset) {
     }
   });
 
-  const gripSocket = rifleRoot.getObjectByName('grip_socket');
-  const muzzleSocket = rifleRoot.getObjectByName('muzzle_socket');
+  const gripSocket = ensureRemoteWeaponSocket(
+    rifleRoot,
+    'grip_socket',
+    fallbackSocketPreset?.grip,
+  );
+  const muzzleSocket = ensureRemoteWeaponSocket(
+    rifleRoot,
+    'muzzle_socket',
+    fallbackSocketPreset?.muzzle,
+  );
+  const authoredLeftHandGrip = rifleRoot.getObjectByName('left_hand_grip');
   if (gripSocket) {
     alignNodeToOrigin(rifleRoot, gripSocket);
   }
@@ -1157,7 +1289,14 @@ function createRemoteRifleModelGroup(asset) {
   } else {
     flash.position.set(0.46, 0.02, 0);
   }
-  leftHandGrip.position.set(-0.08, -0.005, -0.42);
+  if (authoredLeftHandGrip) {
+    runtimeLeftHandGrip.visible = false;
+    group.userData.leftHandGrip = authoredLeftHandGrip;
+  } else {
+    runtimeLeftHandGrip.visible = true;
+    runtimeLeftHandGrip.position.set(-0.08, -0.005, -0.42);
+    group.userData.leftHandGrip = runtimeLeftHandGrip;
+  }
   return group;
 }
 
@@ -1345,6 +1484,41 @@ function setRemoteCharacterClip(visual, clipName) {
 
   nextAction.reset().fadeIn(0.12).play();
   visual.activeCharacterClip = normalizedClipName;
+}
+
+function freezeRemoteCharacterClip(visual, clipName) {
+  if (!visual.characterMixer || !visual.characterActions?.size) {
+    return;
+  }
+
+  const normalizedClipName = normalizeRemoteClipName(clipName);
+  setRemoteCharacterClip(visual, normalizedClipName);
+  const targetAction = findRemoteClipAction(visual, normalizedClipName);
+  if (!targetAction) {
+    return;
+  }
+
+  for (const action of visual.characterActions.values()) {
+    if (action === targetAction) {
+      action.enabled = true;
+      action.play();
+      action.time = 0;
+      action.paused = true;
+      action.setEffectiveTimeScale(0);
+      action.setEffectiveWeight(1);
+    } else {
+      action.stop();
+      action.paused = true;
+    }
+  }
+
+  for (const action of visual.characterUpperBodyActions.values()) {
+    action.stop();
+    action.paused = true;
+    action.setEffectiveWeight(0);
+  }
+  visual.activeUpperBodyClip = null;
+  visual.upperBodyActionTime = 0;
 }
 
 function playRemoteUpperBodyClip(visual, clipName) {
@@ -1811,11 +1985,18 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   visual.weaponAnchor.visible = isAlive;
 
   if (visual.characterMixer) {
-    const targetClip = selectTargetClip(authoritativeState, presentationState);
-    setRemoteCharacterClip(visual, targetClip);
-    updateClipPlaybackParameters(visual, targetClip);
-    updateRemoteUpperBodyAction(visual, delta);
-    visual.characterMixer.update(delta);
+    const debugSettings = getRemoteDebugSettings();
+    const targetClip = debugSettings.freezePose
+      ? debugSettings.freezeClip
+      : selectTargetClip(authoritativeState, presentationState);
+    if (debugSettings.freezePose) {
+      freezeRemoteCharacterClip(visual, targetClip);
+    } else {
+      setRemoteCharacterClip(visual, targetClip);
+      updateClipPlaybackParameters(visual, targetClip);
+      updateRemoteUpperBodyAction(visual, delta);
+      visual.characterMixer.update(delta);
+    }
     if (visual.characterRoot) {
       const currentModelScaleSetting = getRemoteCharacterModelScale();
       const modelScale = visual.characterScaleBase * currentModelScaleSetting;
@@ -1842,8 +2023,11 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
         Math.abs(REMOTE_WORLD_SCALE.z),
         1e-6,
       );
+      const normalizedRifleScale = (REMOTE_RIFLE_TARGET_LENGTH
+        / Math.max(visual.weaponMesh.userData.rifleLongestDimension ?? 1, 1e-3))
+        / inheritedAnchorScale;
       const rifleScale = visual.weaponKey === 'rifle'
-        ? (REMOTE_RIFLE_TARGET_LENGTH / Math.max(visual.weaponMesh.userData.rifleLongestDimension ?? 1, 1e-3)) / inheritedAnchorScale
+        ? normalizedRifleScale * Math.max(0.001, Number(pose.scale ?? 1))
         : pose.scale;
       visual.weaponMesh.position.set(...pose.position);
       visual.weaponMesh.rotation.set(...pose.rotation);
