@@ -2,7 +2,7 @@
 
 ## Summary
 
-`FirstPersonController` owns camera look, movement velocity, grounded state, crouch interpolation, jump behavior, collision-aware locomotion, movement mode, and the split between predicted simulation state and presented local camera state.
+`FirstPersonController` owns camera look, movement velocity, grounded state, crouch interpolation, jump behavior, collision-aware locomotion, movement mode, and the split between predicted simulation state and presented local camera state. The controller is now partially decomposed so smaller modules own input snapshots, fly-mode landing helpers, presentation smoothing, and collision-safe movement helpers.
 
 ## Inputs
 
@@ -42,6 +42,11 @@
 - Look input is gathered from browser pointer-lock movement events and applied once per render frame, which keeps aiming tied to the same timing as camera/render updates.
 - Movement speed can be scaled externally without changing controller internals, which is now used for weapon-dependent mobility such as the knife.
 - Core locomotion math is now shared with the multiplayer server through `src/shared/playerMovement.js`, while the browser controller still layers local collision queries on top of that shared simulation.
+- `FirstPersonController` is being refactored by responsibility instead of rewritten wholesale:
+  - `playerInputState.js` owns movement input snapshotting and immediate presentation-velocity calculation
+  - `playerFlyMode.js` owns landing-height probing and fly-mode transition decisions
+  - `playerPresentation.js` owns presentation smoothing / target-position math
+  - `playerCollisionMotion.js` owns substepped collision-safe movement and corrected-state application helpers
 - The controller now separates predicted gameplay state from the rendered local rig, so reconciliation can correct simulation without directly jolting the camera every time authoritative state arrives.
 - Local reconciliation now uses a deadzone/hysteresis policy for ordinary movement drift, so tiny disagreement is ignored and only meaningful divergence is allowed to influence the live local path.
 - Local look now stays under client control during ordinary reconciliation. Earlier authoritative yaw application made mouse look oscillate and feel slowed while correction was active.
@@ -58,6 +63,9 @@
 - Jump descent no longer snaps early back to the floor from the apex
 - Exposes compact movement input snapshots for server-authoritative multiplayer
 - Reconciles authoritative server state into the predicted simulation path, while presentation follows that simulation through correction-offset handling and bounded local responsiveness
+- The controller refactor is partially complete:
+  - low-risk helper boundaries have been extracted
+  - the remaining dense core is now concentrated around simulation stepping, buffered correction, and authoritative reconciliation
 - Crouch is `C` only. `Ctrl` crouch was removed to avoid accidental browser shortcut conflicts.
 - Latest stable checkpoint:
   - the controller now predicts movement through a full BVH capsule move path shared with server authority
@@ -104,6 +112,10 @@
 - Local first-person feel in multiplayer is now substantially closer to single-player on flat-ground movement, but it still needs broader validation before the model should be treated as final
 - Wall-contact oscillation when leaning into solid geometry is still unresolved and is not currently considered a controller-level solved problem
 - Wall/slope contact jitter remains the main collision-feel issue, even though wall phasing itself is no longer the active blocker
+- The remaining controller core is the highest-risk refactor target currently left in the gameplay runtime:
+  - `simulateMovementStep`
+  - `applyBufferedCanonicalCorrection`
+  - `reconcileAuthoritativeState`
 
 ## Near-Term Direction
 

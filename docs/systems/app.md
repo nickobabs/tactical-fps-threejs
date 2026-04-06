@@ -2,7 +2,7 @@
 
 ## Summary
 
-`GameApp` is the top-level runtime composition root. It builds the Three.js scene, camera, renderer, HUD, skybox system, app-level networking, map runtime, and update loop, and it distributes one shared frame input snapshot to the systems that need it.
+`GameApp` is the top-level runtime composition root. It builds the Three.js scene, camera, renderer, HUD, skybox system, app-level networking, and update loop, and it delegates specialized app responsibilities to smaller app-layer controllers.
 
 ## Inputs
 
@@ -43,24 +43,33 @@
 - `NetworkClient`
 - `RemotePlayerPresenter`
 - `FixedStepLoop`
+- `GamePauseController`
+- `GameDebugController`
+- `GameplayNetworkingCoordinator`
+- `GameSessionController`
 
 ## Key Design Decisions
 
 - `GameApp` owns composition, not gameplay details.
 - Input is consumed once per frame in `GameApp` and handed to systems that need it.
+- `GameApp` is now intentionally split into app-layer helpers instead of accumulating all orchestration internally:
+  - `GamePauseController` owns pause state, pointer-lock resume, and HUD pause synchronization
+  - `GameDebugController` owns imported-map debug tools, correction toggles, marker logging, and collision debug overlay state
+  - `GameplayNetworkingCoordinator` owns gameplay-sync enablement, local-player network initialization, weapon status sync, and combat-event fanout
+  - `GameSessionController` owns map loading state, runtime swap sequencing, and runtime activation / teardown
 - Map data now comes through the manifest/asset-loader pipeline and can be assembled from runtime factories or imported assets.
-- Map loading is registry-driven, but activation is now staged through `MapRuntime`: `GameApp` requests a map by ID, the runtime builder creates the map payload and navmesh, and only then is the active runtime swapped.
+- Map loading is registry-driven, but activation is now staged through `GameSessionController` and `MapRuntime`: `GameApp` requests a map by ID, the runtime builder creates the map payload and navmesh, and only then is the active runtime swapped.
 - Navigation is initialized per loaded map before activation and now prefers baked navmesh data, with runtime generation remaining only as a fallback path.
-- The render loop currently updates player movement before weapon presentation and HUD refresh.
+- The render loop is now intentionally split into named phases inside `GameApp` rather than remaining as one large `animate()` body.
 - Local multiplayer prediction now runs through a fixed-step loop owned by `GameApp`, while look input and rendering remain frame-rate driven.
 - Pause is coordinated at the app layer by suspending gameplay updates while continuing HUD and render output.
 - In the current multiplayer pass, pause is local UI/input state only. It no longer freezes the broader world simulation or remote-player updates.
 - Skybox selection is delegated to `SkyboxManager`, keeping HDR loading and disposal out of the rest of the runtime.
-- Audio registration and browser audio-context lifecycle are coordinated in `GameApp`, while playback remains encapsulated in `AudioManager`.
+- Audio registration and browser audio-context lifecycle are coordinated through a small app helper, while playback remains encapsulated in `AudioManager`.
 - `GameApp` now owns composition and high-level state, while map-bound systems such as collision, targets, navigation, and player spawn live inside `MapRuntime`.
 - `NetworkClient` now lives at the app layer instead of being recreated inside `MapRuntime` on every map swap.
 - Old map scene trees are explicitly disposed during unload to avoid leaking geometry, materials, and textures across repeated map swaps.
-- `GameApp` owns app-level multiplayer wiring, but remote-player rendering is now delegated to `RemotePlayerPresenter` instead of staying embedded directly in `GameApp`.
+- `GameApp` owns app-level multiplayer composition, but remote-player rendering is delegated to `RemotePlayerPresenter` and gameplay-network wiring is delegated to `GameplayNetworkingCoordinator`.
 - Temporary multiplayer diagnostics are also coordinated here:
   - `F3` toggles remote hit-volume debug
   - `F9` toggles local correction application for A/B testing
@@ -79,6 +88,12 @@
 - Implemented and active
 - HDR skyboxes, pause menu flow, staged map swapping, baked-nav-first map initialization, weapon swapping, sensitivity/volume controls, shared audio registration, imported-map debugging, and additive multiplayer remote-player rendering are all integrated into the active runtime
 - Local multiplayer prediction, reconciliation handoff, and remote presentation are all wired through the active app loop
+- The current app-layer split is:
+  - `GameApp` owns composition and frame-phase ordering
+  - `GamePauseController` owns pause/resume state transitions
+  - `GameDebugController` owns imported-map and correction debug tools
+  - `GameplayNetworkingCoordinator` owns gameplay networking orchestration
+  - `GameSessionController` owns map/session lifecycle
 - The current remote presentation split is:
   - `GameApp` owns the `NetworkClient` and forwards authoritative snapshots / combat events
   - `RemotePlayerPresenter` owns remote placeholder fallback, remote model loading, animation selection, external clip loading, and socket-based weapon attachment
@@ -89,6 +104,7 @@
 ## Near-Term Direction
 
 - Keep `GameApp` as the composition root, not the long-term home for deeper replicated-actor presentation logic
+- Keep the app-layer controller split stable while deeper gameplay systems continue to be refactored beneath it
 - Retain the current debug toggles until jumping, ramps, and combat authority have been validated under multiplayer
 - Keep the imported-map debug controls available until the asset/export pipeline stops being manual
 - Eventually move remote-player rendering and multiplayer-specific presentation responsibilities behind a more dedicated replicated-runtime layer once the protocol stabilizes

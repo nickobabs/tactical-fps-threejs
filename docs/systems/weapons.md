@@ -2,7 +2,7 @@
 
 ## Summary
 
-`WeaponManager` coordinates equipped weapon state, while `weaponFiring.js`, `weaponPresentation.js`, and `weaponEffects.js` own shot resolution, viewmodel presentation math, and temporary shot effects respectively.
+`WeaponManager` now acts as the runtime shell for weapon state and per-frame orchestration, while smaller weapon modules own tuning UI, action execution, policy/state helpers, selection/application helpers, shot resolution, presentation math, and temporary shot effects.
 
 ## Inputs
 
@@ -34,6 +34,14 @@
   - sniper still uses a procedural fallback viewmodel
 - Viewmodel is rendered on a separate camera layer to avoid self-hits during raycasts
 - Weapon behavior is split between a runtime manager, config data, viewmodel builder helpers, shot-resolution helpers, presentation helpers, and temporary shot-effect helpers
+- `WeaponManager` has been explicitly decomposed so future weapon work does not accumulate back into one large class:
+  - `createViewModelTuningPanel.js` owns the temporary `F4` tuning UI
+  - `weaponActions.js` owns shot / knife execution wiring around the lower-level firing helpers
+  - `weaponState.js` owns swap selection, scope-state derivation, scope-sound decisions, and fire eligibility policy
+  - `weaponSelection.js` owns active-weapon state payload derivation and active viewmodel selection/application
+  - `weaponFiring.js` still owns hit resolution and fire audio primitives
+  - `weaponPresentation.js` still owns viewmodel presentation math
+  - `weaponEffects.js` still owns temporary shot effects
 - The rifle is automatic and supports ADS with a centered sight picture
 - The pistol is a semi-auto sidearm with a lighter ADS profile than the rifle
 - The sniper is semi-auto and supports scoped zoom with a full overlay
@@ -42,7 +50,7 @@
 - Shot feedback is intentionally lightweight and readable: flash, tracer, and impact marker rather than full decal or particle systems
 - Weapon swapping is slot-driven through config data, so adding new number-key weapons does not require another hardcoded branch in `WeaponManager`
 - Slot lookup now comes from config data rather than a per-frame scan across all weapons, which keeps input handling simpler as the arsenal grows
-- `WeaponManager` now coordinates weapon runtime state while delegating hitscan/melee resolution and viewmodel presentation math to smaller helpers, which lowers the cost of adding more weapons or expanding animation logic later
+- `WeaponManager` now coordinates weapon runtime state while delegating hitscan/melee resolution, viewmodel presentation math, weapon policy, and active-viewmodel selection to smaller helpers, which lowers the cost of adding more weapons or expanding animation logic later
 - The active base FOV is now exposed to the player as horizontal FOV and is configurable from the pause menu
 - The current first-person prototype path includes a temporary `F4` live-tuning panel for viewmodel and muzzle alignment
 - Borrowed animated viewmodel weapons are now prevented from firing until their equip animation has completed
@@ -54,6 +62,7 @@
 - Rifle, pistol, and knife now play imported equip / hold / fire clips from the borrowed prototype viewmodel pack
 - Knife equip now uses the authored full draw animation instead of only the earlier procedural stab-style presentation
 - Rifle, pistol, and knife now respect equip completion before they can fire
+- The manager itself is now significantly smaller and is primarily responsible for owned mutable weapon state plus update sequencing
 
 ## Limitations
 

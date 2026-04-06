@@ -4,8 +4,12 @@ import { NETCODE_SIMULATION_STEP } from '../../../shared/netcode.js';
 import { getImmediatePresentationVelocity, getMovementInputSnapshot } from './playerInputState.js';
 import { findLandingHeightAtCurrentPosition, getNextFlyMode } from './playerFlyMode.js';
 import { updatePresentationState } from './playerPresentation.js';
+import { applyMotionStateCollisionSafe, movePositionCollisionSafe } from './playerCollisionMotion.js';
+import { getBufferedCorrectionStep, shouldDropBufferedCorrection } from './playerBufferedCorrection.js';
+import { recordRecentCorrectionEvent } from './playerCorrectionMetrics.js';
+import { getReconciliationOutcome, replayAuthoritativeState } from './playerReconciliation.js';
 
-const NEXT_POSITION = new THREE.Vector3();
+const RESOLVED_POSITION = new THREE.Vector3();
 const HORIZONTAL_DELTA = new THREE.Vector3();
 const SOFT_CORRECTION_DELTA = new THREE.Vector3();
 const BUFFERED_CANONICAL_CORRECTION = new THREE.Vector3();
@@ -16,13 +20,10 @@ const CANONICAL_CORRECTION_BLEND = 9;
 const MAX_CANONICAL_CORRECTION_PER_STEP = 0.035;
 const LOCAL_CORRECTION_START_DISTANCE = 0.18;
 const LOCAL_CORRECTION_STOP_DISTANCE = 0.06;
-const MAX_CORRECTION_HORIZONTAL_SUBSTEP = 0.08;
 const FLY_PRESENTATION_VELOCITY = new THREE.Vector3();
 const BUFFERED_CORRECTION_START = new THREE.Vector3();
 const BUFFERED_CORRECTION_TARGET = new THREE.Vector3();
 const BUFFERED_CORRECTION_APPLIED = new THREE.Vector3();
-const BUFFERED_CORRECTION_MOVE = new THREE.Vector3();
-const CORRECTION_STEP_TARGET = new THREE.Vector3();
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
     return performance.now();
@@ -318,91 +319,53 @@ export class FirstPersonController {
   movePositionCollisionSafe(targetPosition, {
     targetHeight = this.currentHeight,
   } = {}) {
-    if (this.movementMode === 'fly' || !this.collisionWorld) {
-      this.position.copy(targetPosition);
-      return;
-    }
-
-    const startX = this.position.x;
-    const startY = this.position.y;
-    const startZ = this.position.z;
-    const deltaX = targetPosition.x - startX;
-    const deltaY = targetPosition.y - startY;
-    const deltaZ = targetPosition.z - startZ;
-    const horizontalDistance = Math.hypot(deltaX, deltaZ);
-    const steps = Math.max(1, Math.ceil(horizontalDistance / MAX_CORRECTION_HORIZONTAL_SUBSTEP));
-
-    for (let stepIndex = 1; stepIndex <= steps; stepIndex += 1) {
-      const alpha = stepIndex / steps;
-      const nextTargetX = startX + deltaX * alpha;
-      const nextTargetY = startY + deltaY * alpha;
-      const nextTargetZ = startZ + deltaZ * alpha;
-
-      const moved = this.collisionWorld.move(
-        this.position,
-        this.radius,
-        targetHeight,
-        BUFFERED_CORRECTION_MOVE.set(
-          nextTargetX - this.position.x,
-          nextTargetY - this.position.y,
-          nextTargetZ - this.position.z,
-        ),
-        NEXT_POSITION,
-      );
-
-      this.position.copy(moved);
-    }
+    movePositionCollisionSafe({
+      position: this.position,
+      movementMode: this.movementMode,
+      collisionWorld: this.collisionWorld,
+      radius: this.radius,
+      currentHeight: this.currentHeight,
+      targetPosition,
+      targetHeight,
+    });
   }
 
   applyMotionStateCollisionSafe(nextState) {
-    if (this.movementMode === 'fly' || !this.collisionWorld) {
-      this.applyMotionState(nextState);
-      return;
-    }
-
-    BUFFERED_CORRECTION_START.copy(this.position);
-    CORRECTION_STEP_TARGET.set(
-      nextState.position.x,
-      nextState.position.y,
-      nextState.position.z,
-    );
-    this.movePositionCollisionSafe(CORRECTION_STEP_TARGET, {
-      targetHeight: nextState.currentHeight ?? this.currentHeight,
-    });
-
-    this.applyMotionState({
-      ...nextState,
-      position: {
-        x: this.position.x,
-        y: this.position.y,
-        z: this.position.z,
+    applyMotionStateCollisionSafe({
+      movementMode: this.movementMode,
+      collisionWorld: this.collisionWorld,
+      position: this.position,
+      currentHeight: this.currentHeight,
+      nextState,
+      applyMotionState: (resolvedState) => {
+        this.applyMotionState(resolvedState);
+      },
+      applyMotionStatePreservingLook: (resolvedState) => {
+        this.applyMotionStatePreservingLook(resolvedState);
+      },
+      movePosition: (targetPosition, options) => {
+        this.movePositionCollisionSafe(targetPosition, options);
       },
     });
   }
 
   applyMotionStateCollisionSafePreservingLook(nextState) {
-    if (this.movementMode === 'fly' || !this.collisionWorld) {
-      this.applyMotionStatePreservingLook(nextState);
-      return;
-    }
-
-    BUFFERED_CORRECTION_START.copy(this.position);
-    CORRECTION_STEP_TARGET.set(
-      nextState.position.x,
-      nextState.position.y,
-      nextState.position.z,
-    );
-    this.movePositionCollisionSafe(CORRECTION_STEP_TARGET, {
-      targetHeight: nextState.currentHeight ?? this.currentHeight,
-    });
-
-    this.applyMotionStatePreservingLook({
-      ...nextState,
-      position: {
-        x: this.position.x,
-        y: this.position.y,
-        z: this.position.z,
+    applyMotionStateCollisionSafe({
+      movementMode: this.movementMode,
+      collisionWorld: this.collisionWorld,
+      position: this.position,
+      currentHeight: this.currentHeight,
+      nextState,
+      applyMotionState: (resolvedState) => {
+        this.applyMotionState(resolvedState);
       },
+      applyMotionStatePreservingLook: (resolvedState) => {
+        this.applyMotionStatePreservingLook(resolvedState);
+      },
+      movePosition: (targetPosition, options) => {
+        this.movePositionCollisionSafe(targetPosition, options);
+      },
+      preserveLook: true,
     });
   }
 
@@ -429,9 +392,9 @@ export class FirstPersonController {
       speedMultiplier,
       resolvePosition: this.collisionWorld
         ? (position, radius, height, movementDelta) => {
-          NEXT_POSITION.set(position.x, position.y, position.z);
+          RESOLVED_POSITION.set(position.x, position.y, position.z);
           const moved = this.collisionWorld.move(
-            NEXT_POSITION,
+            RESOLVED_POSITION,
             radius,
             height,
             HORIZONTAL_DELTA.set(movementDelta.x, movementDelta.y, movementDelta.z),
@@ -456,15 +419,17 @@ export class FirstPersonController {
   }
 
   applyBufferedCanonicalCorrection(delta) {
-    if (this.bufferedCanonicalCorrection.lengthSq() <= CORRECTION_OFFSET_EPSILON * CORRECTION_OFFSET_EPSILON) {
+    const hasBufferedStep = getBufferedCorrectionStep({
+      bufferedCorrection: this.bufferedCanonicalCorrection,
+      delta,
+      blendRate: CANONICAL_CORRECTION_BLEND,
+      maxCorrectionPerStep: MAX_CANONICAL_CORRECTION_PER_STEP,
+      epsilon: CORRECTION_OFFSET_EPSILON,
+      stepTarget: BUFFERED_CANONICAL_CORRECTION,
+    });
+    if (!hasBufferedStep) {
       this.bufferedCanonicalCorrection.set(0, 0, 0);
       return;
-    }
-
-    const alpha = 1 - Math.exp(-CANONICAL_CORRECTION_BLEND * delta);
-    BUFFERED_CANONICAL_CORRECTION.copy(this.bufferedCanonicalCorrection).multiplyScalar(alpha);
-    if (BUFFERED_CANONICAL_CORRECTION.lengthSq() > MAX_CANONICAL_CORRECTION_PER_STEP * MAX_CANONICAL_CORRECTION_PER_STEP) {
-      BUFFERED_CANONICAL_CORRECTION.setLength(MAX_CANONICAL_CORRECTION_PER_STEP);
     }
 
     BUFFERED_CORRECTION_START.copy(this.position);
@@ -479,10 +444,11 @@ export class FirstPersonController {
 
     // If collision blocks most of the buffered correction, drop the remainder so
     // reconciliation cannot keep grinding the local capsule through thin blockers.
-    if (
-      BUFFERED_CORRECTION_APPLIED.lengthSq() <= CORRECTION_OFFSET_EPSILON * CORRECTION_OFFSET_EPSILON
-      && BUFFERED_CANONICAL_CORRECTION.lengthSq() > CORRECTION_OFFSET_EPSILON * CORRECTION_OFFSET_EPSILON
-    ) {
+    if (shouldDropBufferedCorrection({
+      appliedCorrection: BUFFERED_CORRECTION_APPLIED,
+      requestedCorrection: BUFFERED_CANONICAL_CORRECTION,
+      epsilon: CORRECTION_OFFSET_EPSILON,
+    })) {
       this.bufferedCanonicalCorrection.set(0, 0, 0);
     }
 
@@ -514,50 +480,44 @@ export class FirstPersonController {
       return;
     }
 
-    let replayState = createPlayerMovementState({
-      position: correction.authoritativeState.position,
-      velocity: correction.authoritativeState.velocity,
-      yaw: correction.authoritativeState.yaw ?? this.yawAngle,
-      isGrounded: correction.authoritativeState.isGrounded ?? true,
-      isCrouched: correction.authoritativeState.isCrouched ?? false,
-      currentHeight: correction.authoritativeState.currentHeight ?? this.currentHeight,
+    const replayState = replayAuthoritativeState({
+      correction,
+      fallbackYaw: this.yawAngle,
+      fallbackCurrentHeight: this.currentHeight,
+      simulateMovementStep: (baseState, movementInput, delta, speedMultiplier) => this.simulateMovementStep(
+        baseState,
+        movementInput,
+        delta,
+        speedMultiplier,
+      ),
     });
-
-    for (const replayInput of correction.replayInputs ?? []) {
-      replayState = this.simulateMovementStep(
-        replayState,
-        replayInput.input,
-        replayInput.simulationStep ?? NETCODE_SIMULATION_STEP,
-        replayInput.input?.speedMultiplier,
-      );
-    }
-
-    SOFT_CORRECTION_DELTA.set(
-      replayState.position.x - this.position.x,
-      replayState.position.y - this.position.y,
-      replayState.position.z - this.position.z,
-    );
-
-    const correctionDistance = SOFT_CORRECTION_DELTA.length();
+    const reconciliationOutcome = getReconciliationOutcome({
+      replayState,
+      currentPosition: this.position,
+      isCorrectionActive: this.isCorrectionActive,
+      softCorrectionMinDistance: SOFT_CORRECTION_MIN_DISTANCE,
+      softCorrectionMaxDistance: SOFT_CORRECTION_MAX_DISTANCE,
+      localCorrectionStartDistance: LOCAL_CORRECTION_START_DISTANCE,
+      localCorrectionStopDistance: LOCAL_CORRECTION_STOP_DISTANCE,
+      correctionDeltaTarget: SOFT_CORRECTION_DELTA,
+    });
+    const { action, correctionDistance } = reconciliationOutcome;
     this.lastCorrectionDistance = correctionDistance;
-    if (correctionDistance <= SOFT_CORRECTION_MIN_DISTANCE) {
+    if (action === 'apply_exact') {
       this.isCorrectionActive = false;
       this.bufferedCanonicalCorrection.set(0, 0, 0);
       this.applyMotionStateCollisionSafePreservingLook(replayState);
       return;
     }
 
-    if (!this.isCorrectionActive && correctionDistance < LOCAL_CORRECTION_START_DISTANCE) {
+    if (action === 'ignore') {
       return;
     }
 
     const now = getNow();
-    this.correctionEvents.push(now);
-    while (this.correctionEvents.length > 0 && now - this.correctionEvents[0] > 1000) {
-      this.correctionEvents.shift();
-    }
+    recordRecentCorrectionEvent(this.correctionEvents, now);
 
-    if (correctionDistance >= SOFT_CORRECTION_MAX_DISTANCE) {
+    if (action === 'snap_exact') {
       this.isCorrectionActive = false;
       this.bufferedCanonicalCorrection.set(0, 0, 0);
       this.applyMotionStateCollisionSafePreservingLook(replayState);
@@ -568,17 +528,14 @@ export class FirstPersonController {
       return;
     }
 
-    if (this.isCorrectionActive && correctionDistance <= LOCAL_CORRECTION_STOP_DISTANCE) {
+    if (action === 'stop') {
       this.isCorrectionActive = false;
       this.bufferedCanonicalCorrection.set(0, 0, 0);
       return;
     }
 
     this.isCorrectionActive = true;
-    this.correctionEnqueueEvents.push(now);
-    while (this.correctionEnqueueEvents.length > 0 && now - this.correctionEnqueueEvents[0] > 1000) {
-      this.correctionEnqueueEvents.shift();
-    }
+    recordRecentCorrectionEvent(this.correctionEnqueueEvents, now);
     this.bufferedCanonicalCorrection.copy(SOFT_CORRECTION_DELTA);
   }
 }
