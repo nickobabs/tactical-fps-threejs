@@ -83,8 +83,8 @@
   - `GameApp` owns the `NetworkClient` and forwards authoritative snapshots / combat events
   - `RemotePlayerPresenter` owns remote placeholder fallback, remote model loading, animation selection, external clip loading, and socket-based weapon attachment
   - `RemotePlayerPresenter` also owns the temporary `F3`/`F6`/`F7` remote debug and tuning surfaces used during current animation/hitbox work
-  - the active remote character experiment now uses `newtest.glb`, with a standalone `newtest_run.fbx` clip overriding the experimental `run` animation
-  - the current remote hitbox branch is still unresolved and documented separately in `docs/remote-hitbox-audit.md`
+  - `RemotePlayerPresenter` currently supports both a legacy remote character path (`tester3.glb`) and an experimental path (`newtest.glb` plus standalone FBX overrides such as `newtest_run.fbx`)
+  - the remote hitbox branch is now functionally resolved enough for live authoritative PvP use and documented in `docs/remote-hitbox-audit.md`
 
 ## Near-Term Direction
 

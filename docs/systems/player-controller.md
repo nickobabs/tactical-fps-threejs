@@ -77,7 +77,7 @@
   - a temporary local-only `120 Hz` prediction-step experiment
   - preserving local yaw/pitch during reconciliation
 - Those experiments improved specific symptoms at different times, and the important outcome was that local deadzone/hysteresis correction produced the first movement baseline that passed the eye test in local multiplayer.
-- Current debugging suggests the biggest remaining risk is now wall-pressure correctness under authority/correction, not just flat-ground feel. The obvious post-sprint forward nudge was improved by fixing stale-input transport, but wall phasing remains unresolved.
+- Current debugging suggests the biggest remaining risk is now wall-pressure correctness under authority/correction, not just flat-ground feel. The obvious post-sprint forward nudge was improved by fixing stale-input transport, and wall phasing is no longer the active blocker.
 - The next scheduled movement pass is acceleration / deceleration / momentum tuning in shared movement:
   - fast acceleration to speed
   - explicit deceleration and opposition braking

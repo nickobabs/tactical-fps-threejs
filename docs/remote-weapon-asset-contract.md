@@ -34,7 +34,7 @@ Important:
 - Character animation root motion is stripped in code
 - Character scale is normalized in runtime, then multiplied by a live remote-model scale setting
 - The current remote character experiment now mixes asset sources:
-  - the character mesh still comes from `newtest.glb`
+  - the experimental character mesh path uses `newtest.glb`, while the runtime still retains a legacy fallback path
   - the first clean locomotion proof came from a standalone Max-exported `newtest_run.fbx` clip
   - this confirmed that standalone exported clips are the preferred path for locomotion quality, while long-strip runtime subclips remain only a temporary bridge
 

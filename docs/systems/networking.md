@@ -80,8 +80,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - scoped/sniper stance hint through weapon posture
   - remote hit flinch / flash readability
   - clearer remote death lean / fall transition
-- Remote presentation now has an active experimental skinned-character path in `RemotePlayerPresenter`, with the older capsule/weapon proxy kept as a fallback if asset loading fails
-  - the current character asset is `public/models/players/newtest.glb`
+- Remote presentation now has an active skinned-character path in `RemotePlayerPresenter`, with the older capsule/weapon proxy kept as a fallback if asset loading fails
+  - the runtime supports both a legacy remote character asset (`public/models/players/tester3.glb`) and an experimental character asset (`public/models/players/newtest.glb`)
   - the source strip clip is `Take 001`, which is still used for several temporary runtime subclips
   - imported root-motion translation is stripped in code so the replicated actor transform stays authoritative
   - current airborne behavior still freezes the jump clip in a tucked-leg pose until landing rather than replaying the tail
@@ -260,7 +260,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - round-state authority
   - staged remote-player presentation:
       - keep placeholder fallback
-      - continue the `newtest.glb` remote character experiment
+      - continue iterating on the experimental `newtest.glb` remote character path while keeping the legacy fallback available
       - replace long-strip locomotion subclips with standalone exported clips from Max
       - keep the authored rifle helpers and the current stable full-body locomotion baseline
       - continue socket-relative rifle hold tuning and per-weapon pose offsets for rifle / sniper / knife and scoped state

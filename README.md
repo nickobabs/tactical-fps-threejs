@@ -249,7 +249,7 @@ The main lesson from that feature:
 
 ### Remote Character / Animation Systems
 
-- `newtest.glb` remote character path
+- Legacy and experimental remote character paths (`tester3.glb` and `newtest.glb`)
 - Standalone FBX locomotion clip support
 - Authored rifle socket/grip/muzzle helpers
 - Runtime remote weapon pose tuning

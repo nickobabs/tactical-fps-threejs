@@ -219,7 +219,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Multiplayer:
   - Colyseus room
   - remote players use a remote third-person presentation path with placeholder fallback
-  - the active character-model experiment uses `public/models/players/newtest.glb`
+  - `RemotePlayerPresenter` currently supports both a legacy remote character path (`public/models/players/tester3.glb`) and an experimental path (`public/models/players/newtest.glb`)
   - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
   - remote rifle presentation still uses authored socket helpers plus a stable full-body locomotion path
   - standing fire now uses the full-body `newtest_fire.fbx` clip
@@ -319,7 +319,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Remote-player presentation was upgraded into an active remote playermodel workflow:
   - replicated display name, equipped weapon key, posture, and presentation state all now drive remote visuals
   - `RemotePlayerPresenter` still falls back to the older capsule proxy if the character model fails to load
-  - the current remote character experiment uses `public/models/players/newtest.glb`
+  - the current remote presentation path supports both `public/models/players/tester3.glb` as a legacy fallback and `public/models/players/newtest.glb` as the experimental branch
   - root-motion translation is stripped in code so the server-replicated actor transform stays authoritative
   - current jump handling still uses the tucked airborne hold behavior
   - remote rifle presentation still attaches through `weapon_socket_r` on the character plus `grip_socket` / `muzzle_socket` on `public/models/weapons/newak.glb`
@@ -385,7 +385,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Imported-map support is good enough for iteration, but the export pipeline is still manual and Blender-driven.
 - `GameApp` still owns some temporary debug/presentation responsibilities because that is the fastest path while broader runtime boundaries are still settling.
 - Remote character presentation is now out of `GameApp`, but the current weapon/model workflow is still a prototype content pipeline:
-  - remote character experiment uses `newtest.glb`, with the older legacy path still available as a fallback
+  - remote character presentation supports both the legacy `tester3.glb` path and the experimental `newtest.glb` path
   - remote rifle now uses `newak.glb`
   - the character/weapon export path currently depends on a hand-authored `weapon_socket_r` helper on the character and `grip_socket` / `muzzle_socket` / `left_hand_grip` helpers on the rifle
   - the main animation-quality blocker is now the long-strip export/subclip path rather than the source run motion itself
@@ -523,7 +523,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - round-state / respawn-rule authority
   - better remote player presentation, staged as:
       - maintain placeholder fallback
-      - continue the `newtest.glb` remote character experiment
+      - continue iterating on the experimental `newtest.glb` remote character path while retaining the legacy fallback
       - replace long-strip runtime subclips with standalone exported locomotion clips from Max
       - build on the new authored rifle helpers and the new rifle upper-body base clip
       - continue socket-relative rifle pose tuning and per-weapon hand offsets / pose adjustments
