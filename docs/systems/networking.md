@@ -17,6 +17,7 @@ The current networking slice supports:
 - Client-side local movement prediction with replay-based reconciliation and a separate local presentation layer
 - Remote-player placeholder rendering through replicated authoritative state, now including visible weapon and simple labels
 - Remote-player placeholder rendering now also uses replicated crouch / current-height state plus lightweight remote fire events for readability
+- A server-authoritative remote-hitbox snapshot path now exists for PvP debug and hit validation work
 
 Multiplayer is still optional. If no Colyseus server is reachable, the game continues to run fully in single-player mode.
 
@@ -63,6 +64,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - local weapon presentation stays immediate
   - the server owns PvP hit validation, damage, death, and respawn timing
   - the client consumes replicated combat state and feedback events
+- The current remote-hitbox path has moved from coarse fallback gameplay capsules to server-authoritative bone-driven segmented hit volumes.
 
 ## Current Status
 
@@ -114,6 +116,17 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - player health / death / respawn are replicated
   - remote placeholders now reflect alive vs dead state
   - HUD feedback exists for local damage taken, damage dealt, and respawn countdown
+- A server-authoritative bone-driven hitbox path is now active:
+  - shared constants now exist in `src/shared/remoteCharacterConfig.js`
+  - shared hitbox snapshot construction now exists in `src/shared/remoteHitboxes.js`
+  - the server owns a dedicated remote skeleton evaluator in `server/src/remoteHitboxRig.js`
+  - `F3` can render remote hit volumes for inspection
+  - hit validation now prefers the authoritative segmented hitbox snapshot path
+  - left-hand IK is intentionally disabled in the authoritative rig because it caused upper-body pose drift relative to the visible remote mesh
+  - `F6` includes a local hitbox debug mode for visual tuning without changing authoritative hitreg
+  - the baked shared head tuning baseline is:
+    - `headOffset = { x: 0, y: 0.035, z: -0.005 }`
+    - `headRadius = 0.15`
 - `NETDEBUG` instrumentation exists in the HUD/devtools path for local multiplayer diagnosis and is intentionally being kept available while multiplayer expands
 
 ## Limitations
@@ -122,7 +135,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Bots, rounds, utility, and most world interactions are still local-only and are not yet synchronized
 - Local movement feel is now materially improved by correction deadzone/hysteresis, but this still needs validation across more cases like ramps, jump arcs, and future combat-driven correction
 - PvP shot validation is intentionally simple for now:
-  - player hit detection is capsule-like rather than head/body zone based
+  - player hit detection is currently split between:
+    - older coarse fallback volumes
+    - newer server-authoritative segmented bone-driven hit volumes
   - no lag compensation yet
   - no ammo/reload state yet
   - no full killfeed or spectate flow yet
@@ -135,6 +150,10 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - crouch body aiming is intentionally disabled because it conflicted with the authored crouch set
   - standing fire now uses the full-body `newtest_fire.fbx` clip again
   - stable left-hand IK is still not solved
+- Remote hitboxes are now in a usable state, but still deserve normal gameplay validation over time:
+  - the authoritative path now follows the visible remote mesh closely enough for current PvP use
+  - head placement depends on the shared tuned defaults and should be revalidated if the playermodel, skeleton, or aim-readability pass changes
+  - `F3` remains an important diagnostic tool, and `F6` local hitbox debug should be used for future visual tuning before baking new shared defaults
 
 ## Investigation Notes
 
@@ -148,6 +167,10 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - presentation offset usually small as well
 - The most useful A/B check was toggling local correction off entirely. With correction disabled, local movement felt effectively correct, which confirmed that the remaining issue was correction policy rather than render cadence.
 - The current working baseline is to trust local prediction for tiny drift and only begin convergence once the correction clears a meaningful threshold.
+- For hitboxes, the important lesson is:
+  - building useful authoritative volumes from the remote skeleton is possible
+  - parity improved once the authoritative rig was simplified instead of trying to preserve every experimental upper-body post-process
+  - left-hand IK was the major pose-parity failure in this branch
 
 ## Tried And Observed
 
@@ -183,6 +206,12 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - center-screen damage numbers when you hit another player
     - a stronger red vignette when taking damage
     - a darkened dead-state overlay and respawn countdown while waiting to respawn
+- Bone-driven hitbox follow-up:
+  - splitting limbs into smaller segments improved shape quality
+  - the original client-local bone-driven debug proved the concept
+  - promoting that path to the server exposed deeper parity issues
+  - the decisive fix was removing authoritative left-hand IK
+  - head follow then needed a pose-relative anchor plus tuned shared head offset/radius values
 
 ## Current Conclusion
 
@@ -197,6 +226,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - movement
   - presence
   - basic PvP damage/death/respawn
+- The bone-driven authoritative hitbox path is now the active baseline for PvP validation, though it should still be regression-checked when remote animation presentation changes.
 
 ## Reset Plan
 
@@ -240,3 +270,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - weapon/socket pitch
   - narrow neck/head aim readability where it behaves well
   - later, revisit authored aim poses or stronger IK only if the remote playermodel path becomes important enough
+- For hitboxes, the next session should start from a clean audit:
+  - compare final client-presented remote pose vs authoritative server pose
+  - verify exactly which post-processing steps affect the visible skeleton
+  - preserve the simpler authoritative pose contract unless there is a clear need to add more post-processing to the server rig

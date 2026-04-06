@@ -130,7 +130,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - The player controller owns look, movement state, prediction/reconciliation, movement mode, and the split between canonical gameplay state and presented first-person state.
 - `CollisionWorld` owns static mesh-based collision resolution, downward ground sampling, and line-of-sight checks using `three-mesh-bvh`.
 - First-person weapons now use a mixed camera-attached presentation path:
-  - rifle and knife currently use a borrowed animated prototype viewmodel pack
+  - rifle, pistol, and knife currently use a borrowed animated prototype viewmodel pack
   - sniper still uses the older procedural fallback path
 - HUD and pause menu are DOM/CSS, not world-space UI.
 - Shared locomotion math lives in `src/shared/playerMovement.js` and is used by both the browser controller and the Colyseus room.
@@ -152,11 +152,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - `Ctrl` is no longer used for crouch. Crouch is `C` only, specifically to avoid accidental browser shortcut conflicts such as `Ctrl+W`.
 - Mouse look, walk, sprint, crouch, and jump work.
 - The player is blocked by merged static collision meshes.
-- Three weapon slots are available:
+- Four weapon slots are available:
   - `1`: Rifle
-  - `2`: Sniper
+  - `2`: Pistol
   - `3`: Knife
-- Rifle, sniper, and knife all have functioning presentation/effects/audio paths.
+  - `4`: Sniper
+- Rifle, pistol, sniper, and knife all have functioning presentation/effects/audio paths.
 - The sniper scope overlay works and is still HUD-driven.
 - HDR skyboxes can be swapped at runtime.
 - Additive multiplayer still works locally through Colyseus:
@@ -200,6 +201,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `Dust2 Import Test`
 - Weapons:
   - `Rifle`: full auto, ADS, low damage hitscan
+  - `Pistol`: semi-auto sidearm, ADS, lighter recoil/spread profile than the sniper
   - `Sniper`: semi-auto, scoped overlay, high damage hitscan, hipfire spread
   - `Knife`: fast movement, melee thrust
 - Bots:
@@ -227,6 +229,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - crouch body aiming is intentionally disabled
   - client prediction with replay/reconciliation
   - first server-authoritative PvP combat slice for hits, health, death, and respawn
+  - server-authoritative segmented remote hitboxes are now active:
+    - `F3` can show authoritative remote hit volumes
+    - the decisive parity fix was removing authoritative left-hand IK
+    - head follow now uses a pose-relative anchor plus tuned shared defaults
+    - `F6` includes `Local Hitbox Debug` for future visual tuning without changing real hitreg
   - debug workflow still active
 
 ## Main Runtime Flow
@@ -253,6 +260,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - [`src/game/ai/NavigationManager.js`](C:/Users/nicko/tactical-fps-threejs/src/game/ai/NavigationManager.js): navmesh query runtime.
 - [`scripts/build-navmeshes.mjs`](C:/Users/nicko/tactical-fps-threejs/scripts/build-navmeshes.mjs): offline navmesh builder for shared-layout and glTF collision maps.
 - [`server/src/rooms/TacticalRoom.js`](C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js): current authoritative Colyseus room.
+- [`server/src/remoteHitboxRig.js`](C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js): authoritative remote skeleton evaluation for segmented remote hitboxes.
+- [`src/shared/remoteHitboxes.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/remoteHitboxes.js): shared hitbox snapshot construction from named remote bones.
+- [`src/shared/remoteCharacterConfig.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/remoteCharacterConfig.js): shared remote clip/aim/skeleton constants used by both client and server.
 
 ## Imported Map Workflow Snapshot
 
@@ -312,10 +322,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - the current remote character experiment uses `public/models/players/newtest.glb`
   - root-motion translation is stripped in code so the server-replicated actor transform stays authoritative
   - current jump handling still uses the tucked airborne hold behavior
-  - remote rifle presentation still attaches through `weapon_socket_r` on the character plus `grip_socket` / `muzzle_socket` on `public/models/weapons/ak-47-fixed.glb`
+  - remote rifle presentation still attaches through `weapon_socket_r` on the character plus `grip_socket` / `muzzle_socket` on `public/models/weapons/newak.glb`
   - remote rifle scaling still compensates for inherited world scale from the socket/bone chain
   - `F6` still tunes remote model scale and `F7` still tunes socket-relative weapon pose values in-browser through `localStorage`
-  - left-arm CCD IK is now an active experiment, but it still uses a guessed runtime grip target until the rifle gets a proper left-hand helper
+  - left-arm CCD IK still exists as a client-side experiment, but it is intentionally disabled in the authoritative hitbox rig because it caused upper-body pose drift
   - runtime subclips from the long `Take 001` strip are usable for many motions, but loop quality was not good enough for locomotion
   - the first standalone Max-exported run clip, `public/models/players/newtest_run.fbx`, now plays cleanly in-engine and overrides the experimental `run` clip
   - current conclusion: standalone exported clips from the source DCC are the preferred path for locomotion quality, while the long-strip subclip path remains a temporary bridge
@@ -335,8 +345,13 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - First remote vertical-aim readability pass landed:
   - player pitch now replicates through the multiplayer protocol
   - remote weapon pitch and experimental body-aim runtime pass were wired end to end
+- Remote hitbox authority was completed:
+  - server-authoritative segmented remote hitboxes now drive live PvP validation
+  - removing authoritative left-hand IK solved the major upper-body parity issue
+  - head follow was finished with a pose-relative anchor, pivot compensation, and baked tuned head defaults
+  - `F6` local hitbox debug now exists for future safe tuning
 - First-person weapon presentation moved off the all-procedural baseline:
-  - active rifle and knife now use the borrowed animated `public/models/viewmodels/cube-gunman/hand_base.glb` prototype pack
+  - active rifle, pistol, and knife now use the borrowed animated `public/models/viewmodels/cube-gunman/hand_base.glb` prototype pack
   - current borrowed prototype textures live under `public/models/viewmodels/cube-gunman/textures/`
   - sniper still uses the procedural fallback path
   - the pause menu now includes a horizontal FOV slider, with the active baseline set to `103` horizontal

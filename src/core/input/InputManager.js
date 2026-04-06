@@ -10,6 +10,7 @@ const GAMEPLAY_SHORTCUT_BLOCK_KEYS = new Set([
   'Digit1',
   'Digit2',
   'Digit3',
+  'Digit4',
 ]);
 
 export class InputManager {

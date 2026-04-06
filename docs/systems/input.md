@@ -41,3 +41,8 @@
 
 - Implemented and active
 - Supports movement keys, jump, sprint, crouch, look, left/right mouse buttons, weapon swapping, pause detection via `Escape`, and pointer lock state tracking
+- Current gameplay slot bindings are:
+  - `1` rifle
+  - `2` pistol
+  - `3` knife
+  - `4` sniper

@@ -90,6 +90,7 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     activeWeaponKey: String(state?.activeWeaponKey ?? 'rifle'),
     isScoped: Boolean(state?.isScoped ?? false),
     presentationState: String(state?.presentationState ?? 'idle'),
+    hitboxes: state?.hitboxes ?? null,
   };
 }
 
@@ -121,5 +122,6 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     activeWeaponKey: String(player?.activeWeaponKey ?? 'rifle'),
     isScoped: Boolean(player?.isScoped ?? false),
     presentationState: String(player?.presentationState ?? 'idle'),
+    hitboxes: player?.authoritativeHitboxes ?? null,
   };
 }

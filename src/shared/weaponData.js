@@ -11,6 +11,15 @@ export const SHARED_WEAPON_DATA = {
     hipfireSpread: 0,
     movementSpeedMultiplier: 1,
   },
+  pistol: {
+    key: 'pistol',
+    damage: 14,
+    fireInterval: 0.24,
+    automatic: false,
+    canScope: true,
+    hipfireSpread: 0.012,
+    movementSpeedMultiplier: 1.04,
+  },
   sniper: {
     key: 'sniper',
     damage: 35,

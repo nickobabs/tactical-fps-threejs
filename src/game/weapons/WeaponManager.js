@@ -416,7 +416,8 @@ export class WeaponManager {
     this.camera.updateProjectionMatrix();
 
     const leftHeld = frameInput.mouseButtons.has(0);
-    const shouldFire = this.currentWeapon.canFire !== false && (this.currentWeapon.automatic
+    const canViewModelFire = this.viewModelController?.canFire?.() ?? true;
+    const shouldFire = this.currentWeapon.canFire !== false && canViewModelFire && (this.currentWeapon.automatic
       ? leftHeld
       : leftHeld && !this.triggerHeld);
 

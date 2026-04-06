@@ -22,6 +22,19 @@ import {
   PLAYER_MAX_HEALTH,
   PLAYER_RESPAWN_DELAY_MS,
 } from '../../../src/shared/weaponData.js';
+import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../../src/shared/playerHitboxes.js';
+import {
+  buildRemoteHitboxSnapshotFromPoints,
+  createRemoteHitboxSnapshot,
+  REMOTE_HITBOX_HEAD_OFFSET,
+  REMOTE_HITBOX_RADII,
+} from '../../../src/shared/remoteHitboxes.js';
+import {
+  createRemoteHitboxRig,
+  triggerRemoteHitboxRigFire,
+  updateRemoteHitboxRig,
+} from '../remoteHitboxRig.js';
+import { REMOTE_CHARACTER_HITBOX_SETTINGS } from '../../../src/shared/remoteCharacterConfig.js';
 
 const SERVER_MOVE_POSITION = new THREE.Vector3();
 const SHOT_ORIGIN = new THREE.Vector3();
@@ -30,8 +43,210 @@ const PLAYER_EYE = new THREE.Vector3();
 const TARGET_SEGMENT = new THREE.Line3();
 const CLOSEST_POINT_ON_RAY = new THREE.Vector3();
 const CLOSEST_POINT_ON_SEGMENT = new THREE.Vector3();
+const TARGET_POINT = new THREE.Vector3();
+const TARGET_RIGHT = new THREE.Vector3();
+const TARGET_FORWARD = new THREE.Vector3();
+const TARGET_SHOULDER = new THREE.Vector3();
+const TARGET_HAND = new THREE.Vector3();
+const TARGET_LEG_START = new THREE.Vector3();
+const TARGET_LEG_END = new THREE.Vector3();
+const TARGET_TEST_VECTOR = new THREE.Vector3();
 const SHOT_RAY = new THREE.Ray();
 const PLAYER_MOVE_SPEED_EPSILON = 0.1;
+const TARGET_HITBOX_LAYOUT = createPlayerHitboxLayout();
+function buildAuthoritativeHitboxes(player) {
+  const bones = player.hitboxRig?.bones;
+  const hitboxPoints = player.hitboxRig?.hitboxPoints ?? null;
+  if (!bones?.head || !bones?.neck || !bones?.spine || !bones?.pelvis) {
+    const layout = computePlayerHitboxLayout({
+      position: player.motionState.position,
+      yaw: player.motionState?.yaw ?? 0,
+      currentHeight: player.motionState?.currentHeight ?? 1.72,
+      isCrouched: player.motionState?.isCrouched ?? false,
+      activeWeaponKey: player.activeWeaponKey ?? 'rifle',
+    }, createPlayerHitboxLayout());
+    return {
+      head: layout.head,
+      torso: layout.torso,
+      pelvis: layout.pelvis,
+      arms: layout.arms,
+      hands: [],
+      legs: layout.legs,
+    };
+  }
+
+  return buildRemoteHitboxSnapshotFromPoints({
+    points: hitboxPoints,
+    headOffset: REMOTE_CHARACTER_HITBOX_SETTINGS.headOffset ?? REMOTE_HITBOX_HEAD_OFFSET,
+    headRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.headRadius,
+  }, player.authoritativeHitboxes ?? createRemoteHitboxSnapshot());
+}
+
+function getRayDistanceAlong(ray, point) {
+  return TARGET_TEST_VECTOR.copy(point).sub(ray.origin).dot(ray.direction);
+}
+
+function getRaySphereHitDistance(ray, center, radius, maxDistance) {
+  const projectedDistance = getRayDistanceAlong(ray, center);
+  if (projectedDistance < -radius || projectedDistance >= maxDistance + radius) {
+    return Infinity;
+  }
+
+  const distanceSq = ray.distanceSqToPoint(center);
+  if (distanceSq > radius * radius) {
+    return Infinity;
+  }
+
+  return Math.max(0, projectedDistance);
+}
+
+function getRayCapsuleHitDistance(ray, start, end, radius, maxDistance) {
+  const distanceSq = ray.distanceSqToSegment(
+    start,
+    end,
+    CLOSEST_POINT_ON_RAY,
+    CLOSEST_POINT_ON_SEGMENT,
+  );
+  if (distanceSq > radius * radius) {
+    return Infinity;
+  }
+
+  const hitDistance = getRayDistanceAlong(ray, CLOSEST_POINT_ON_RAY);
+  if (hitDistance < 0 || hitDistance >= maxDistance) {
+    return Infinity;
+  }
+
+  return hitDistance;
+}
+
+function getPlayerHitDistance(ray, target, maxDistance, currentBestDistance) {
+  const layout = computePlayerHitboxLayout({
+    position: target.motionState.position,
+    yaw: target.motionState?.yaw ?? 0,
+    currentHeight: target.motionState?.currentHeight ?? 1.72,
+    isCrouched: target.motionState?.isCrouched ?? false,
+    activeWeaponKey: target.activeWeaponKey ?? 'rifle',
+  }, TARGET_HITBOX_LAYOUT);
+
+  let bestDistance = currentBestDistance;
+
+  TARGET_POINT.set(layout.head.center.x, layout.head.center.y, layout.head.center.z);
+  bestDistance = Math.min(
+    bestDistance,
+    getRaySphereHitDistance(ray, TARGET_POINT, layout.head.radius, bestDistance),
+  );
+
+  TARGET_SEGMENT.start.set(layout.torso.start.x, layout.torso.start.y, layout.torso.start.z);
+  TARGET_SEGMENT.end.set(layout.torso.end.x, layout.torso.end.y, layout.torso.end.z);
+  bestDistance = Math.min(
+    bestDistance,
+    getRayCapsuleHitDistance(ray, TARGET_SEGMENT.start, TARGET_SEGMENT.end, layout.torso.radius, bestDistance),
+  );
+
+  TARGET_SEGMENT.start.set(layout.pelvis.start.x, layout.pelvis.start.y, layout.pelvis.start.z);
+  TARGET_SEGMENT.end.set(layout.pelvis.end.x, layout.pelvis.end.y, layout.pelvis.end.z);
+  bestDistance = Math.min(
+    bestDistance,
+    getRayCapsuleHitDistance(ray, TARGET_SEGMENT.start, TARGET_SEGMENT.end, layout.pelvis.radius, bestDistance),
+  );
+
+  for (const arm of layout.arms) {
+    TARGET_SHOULDER.set(arm.start.x, arm.start.y, arm.start.z);
+    TARGET_HAND.set(arm.end.x, arm.end.y, arm.end.z);
+    bestDistance = Math.min(
+      bestDistance,
+      getRayCapsuleHitDistance(ray, TARGET_SHOULDER, TARGET_HAND, arm.radius, bestDistance),
+    );
+  }
+
+  for (const leg of layout.legs) {
+    TARGET_LEG_START.set(leg.start.x, leg.start.y, leg.start.z);
+    TARGET_LEG_END.set(leg.end.x, leg.end.y, leg.end.z);
+    bestDistance = Math.min(
+      bestDistance,
+      getRayCapsuleHitDistance(ray, TARGET_LEG_START, TARGET_LEG_END, leg.radius, bestDistance),
+    );
+  }
+
+  return bestDistance;
+}
+
+function getAuthoritativeHitboxSnapshotDistance(ray, hitboxes, maxDistance, currentBestDistance) {
+  if (!hitboxes?.head || !hitboxes?.torso || !hitboxes?.pelvis) {
+    return Infinity;
+  }
+
+  let bestDistance = currentBestDistance;
+
+  TARGET_POINT.set(hitboxes.head.center.x, hitboxes.head.center.y, hitboxes.head.center.z);
+    bestDistance = Math.min(
+      bestDistance,
+      getRaySphereHitDistance(ray, TARGET_POINT, Number(hitboxes.head.radius ?? REMOTE_HITBOX_RADII.head), bestDistance),
+    );
+
+  TARGET_SEGMENT.start.set(hitboxes.torso.start.x, hitboxes.torso.start.y, hitboxes.torso.start.z);
+  TARGET_SEGMENT.end.set(hitboxes.torso.end.x, hitboxes.torso.end.y, hitboxes.torso.end.z);
+  bestDistance = Math.min(
+    bestDistance,
+    getRayCapsuleHitDistance(
+      ray,
+      TARGET_SEGMENT.start,
+      TARGET_SEGMENT.end,
+        Number(hitboxes.torso.radius ?? REMOTE_HITBOX_RADII.torso),
+        bestDistance,
+      ),
+    );
+
+  TARGET_SEGMENT.start.set(hitboxes.pelvis.start.x, hitboxes.pelvis.start.y, hitboxes.pelvis.start.z);
+  TARGET_SEGMENT.end.set(hitboxes.pelvis.end.x, hitboxes.pelvis.end.y, hitboxes.pelvis.end.z);
+  bestDistance = Math.min(
+    bestDistance,
+    getRayCapsuleHitDistance(
+      ray,
+      TARGET_SEGMENT.start,
+      TARGET_SEGMENT.end,
+        Number(hitboxes.pelvis.radius ?? REMOTE_HITBOX_RADII.pelvis),
+        bestDistance,
+      ),
+    );
+
+  for (const arm of hitboxes.arms ?? []) {
+    if (!arm?.start || !arm?.end) {
+      continue;
+    }
+    TARGET_SHOULDER.set(arm.start.x, arm.start.y, arm.start.z);
+    TARGET_HAND.set(arm.end.x, arm.end.y, arm.end.z);
+    bestDistance = Math.min(
+      bestDistance,
+      getRayCapsuleHitDistance(ray, TARGET_SHOULDER, TARGET_HAND, Number(arm.radius ?? REMOTE_HITBOX_RADII.arm), bestDistance),
+    );
+  }
+
+  for (const hand of hitboxes.hands ?? []) {
+    if (!hand?.center) {
+      continue;
+    }
+    TARGET_POINT.set(hand.center.x, hand.center.y, hand.center.z);
+    bestDistance = Math.min(
+      bestDistance,
+      getRaySphereHitDistance(ray, TARGET_POINT, Number(hand.radius ?? REMOTE_HITBOX_RADII.hand), bestDistance),
+    );
+  }
+
+  for (const leg of hitboxes.legs ?? []) {
+    if (!leg?.start || !leg?.end) {
+      continue;
+    }
+    TARGET_LEG_START.set(leg.start.x, leg.start.y, leg.start.z);
+    TARGET_LEG_END.set(leg.end.x, leg.end.y, leg.end.z);
+    bestDistance = Math.min(
+      bestDistance,
+      getRayCapsuleHitDistance(ray, TARGET_LEG_START, TARGET_LEG_END, Number(leg.radius ?? REMOTE_HITBOX_RADII.leg), bestDistance),
+    );
+  }
+
+  return bestDistance;
+}
 
 export class TacticalRoom extends Room {
   onCreate() {
@@ -40,6 +255,9 @@ export class TacticalRoom extends Room {
     this.nextPlayerNumber = 1;
     this.collisionWorlds = new Map();
     this.collisionWorldPromises = new Map();
+    void createRemoteHitboxRig().catch((error) => {
+      console.warn('[TacticalRoom] Failed to preload remote hitbox rig.', error);
+    });
     this.setSimulationInterval(() => {
       let hasSimulationChanges = false;
 
@@ -53,6 +271,10 @@ export class TacticalRoom extends Room {
         }
 
         if (!player.pendingInputs.length) {
+          if (player.hitboxRig) {
+            updateRemoteHitboxRig(player.hitboxRig, player, NETCODE_SIMULATION_STEP);
+          }
+          player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
           continue;
         }
 
@@ -93,11 +315,14 @@ export class TacticalRoom extends Room {
           player.lastProcessedTimestamp = nextInput.timestamp;
           hasSimulationChanges = true;
         }
+
+        if (player.hitboxRig) {
+          updateRemoteHitboxRig(player.hitboxRig, player, NETCODE_SIMULATION_STEP);
+        }
+        player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
       }
 
-      if (hasSimulationChanges) {
-        this.broadcastPlayerState();
-      }
+      this.broadcastPlayerState();
     }, 1000 / NETCODE_SIMULATION_RATE);
 
     this.onMessage('player-input', (client, message) => {
@@ -221,8 +446,23 @@ export class TacticalRoom extends Room {
       activeWeaponKey: 'rifle',
       isScoped: false,
       presentationState: 'idle',
+      hitboxRig: null,
+      authoritativeHitboxes: null,
     };
     this.nextPlayerNumber += 1;
+    void createRemoteHitboxRig()
+      .then((rig) => {
+        const player = this.players[client.sessionId];
+        if (!player) {
+          return;
+        }
+        player.hitboxRig = rig;
+        updateRemoteHitboxRig(player.hitboxRig, player, 0);
+        player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
+      })
+      .catch((error) => {
+        console.warn(`[TacticalRoom] Failed to create hitbox rig for ${client.sessionId}.`, error);
+      });
 
     this.broadcast('player-joined', {
       playerId: client.sessionId,
@@ -351,6 +591,7 @@ export class TacticalRoom extends Room {
       playerId: player.playerId,
       weaponKey: player.activeWeaponKey,
     });
+    triggerRemoteHitboxRigFire(player.hitboxRig);
 
     PLAYER_EYE.set(
       player.motionState.position.x,
@@ -407,30 +648,16 @@ export class TacticalRoom extends Room {
         continue;
       }
 
-      TARGET_SEGMENT.start.set(
-        target.motionState.position.x,
-        target.motionState.position.y + 0.35,
-        target.motionState.position.z,
+      const authoritativeHitDistance = getAuthoritativeHitboxSnapshotDistance(
+        SHOT_RAY,
+        target.authoritativeHitboxes,
+        maxDistance,
+        bestDistance,
       );
-      TARGET_SEGMENT.end.set(
-        target.motionState.position.x,
-        target.motionState.position.y + Math.max(0.35, target.motionState.currentHeight - 0.35),
-        target.motionState.position.z,
-      );
-
-      const distanceSq = SHOT_RAY.distanceSqToSegment(
-        TARGET_SEGMENT.start,
-        TARGET_SEGMENT.end,
-        CLOSEST_POINT_ON_RAY,
-        CLOSEST_POINT_ON_SEGMENT,
-      );
-
-      if (distanceSq > 0.35 * 0.35) {
-        continue;
-      }
-
-      const hitDistance = CLOSEST_POINT_ON_RAY.distanceTo(SHOT_ORIGIN);
-      if (hitDistance < 0 || hitDistance >= bestDistance) {
+      const hitDistance = Number.isFinite(authoritativeHitDistance)
+        ? authoritativeHitDistance
+        : getPlayerHitDistance(SHOT_RAY, target, maxDistance, bestDistance);
+      if (!Number.isFinite(hitDistance) || hitDistance >= bestDistance) {
         continue;
       }
 

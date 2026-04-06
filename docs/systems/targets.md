@@ -45,6 +45,7 @@
 - Headshots deal double damage
 - The target respawns after a short delay
 - `TargetManager` now owns cleanup as well as updates, so map unloads can tear target runtime state down cleanly
+- Local target dummies are now disabled by default during PvP testing unless explicitly re-enabled
 
 ## Limitations
 

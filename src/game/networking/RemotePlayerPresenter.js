@@ -1,4 +1,25 @@
 import * as THREE from 'three';
+import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../shared/playerHitboxes.js';
+import {
+  buildRemoteHitboxSnapshotFromPoints,
+  createRemoteHitboxPointCache,
+  createRemoteHitboxSnapshot,
+  REMOTE_HITBOX_HEAD_OFFSET,
+} from '../../shared/remoteHitboxes.js';
+import {
+  DEFAULT_REMOTE_SOCKET_POSES,
+  REMOTE_CHARACTER_AIM_SETTINGS,
+  REMOTE_CHARACTER_HITBOX_SETTINGS,
+  REMOTE_CHARACTER_MODEL_SCALE,
+  REMOTE_AIM_BONE_SIGN,
+  REMOTE_AIM_BONE_SPECS,
+  REMOTE_AIM_CLIP_FACTORS,
+  REMOTE_AIM_PITCH_MAX,
+  REMOTE_AIM_PITCH_MIN,
+  REMOTE_AIM_STATE_FACTORS,
+  REMOTE_CLIPS,
+  getRemoteSocketPoseKey,
+} from '../../shared/remoteCharacterConfig.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_PLAYER_BODY_RADIUS = 0.35;
@@ -23,55 +44,15 @@ const REMOTE_IK_BLEND_FACTOR = 0.9;
 const REMOTE_IK_ITERATIONS = 2;
 const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
 const REMOTE_CHARACTER_VARIANT = import.meta.env.VITE_REMOTE_CHARACTER_VARIANT ?? 'experimental';
-const REMOTE_AIM_PITCH_MIN = -0.9;
-const REMOTE_AIM_PITCH_MAX = 0.7;
 const REMOTE_AIM_WEAPON_FACTOR = 0.9;
 const REMOTE_AIM_PROXY_WEAPON_FACTOR = 0.75;
 const REMOTE_AIM_WEAPON_AXIS = 'y';
 const REMOTE_AIM_PROXY_WEAPON_AXIS = 'y';
-const REMOTE_AIM_BONE_SIGN = -1;
 const REMOTE_AIM_BONE_LOCAL_AXIS = new THREE.Vector3(0, 0, 1);
-const REMOTE_AIM_STATE_FACTORS = {
-  idle: { bones: 2.4, weapon: 0.92 },
-  scopedIdle: { bones: 2.8, weapon: 0.98 },
-  move: { bones: 1.15, weapon: 0.62 },
-  scopedMove: { bones: 1.35, weapon: 0.7 },
-  crouch: { bones: 0.8, weapon: 0.44 },
-  air: { bones: 0.45, weapon: 0.3 },
-  dead: { bones: 0, weapon: 0 },
-};
-const REMOTE_AIM_BONE_SPECS = [
-  { names: ['Bip01_Neck', 'Bip01 Neck'], fallbackPattern: /neck/i, weight: 0.42 },
-  { names: ['Bip01_Head', 'Bip01 Head'], fallbackPattern: /head/i, weight: 0.2 },
-];
-
-const REMOTE_CLIPS = {
-  idle: 'idle',
-  runForward: 'run',
-  runBackward: 'run back',
-  strafeLeft: 'strafe left',
-  strafeRight: 'strafe right',
-  crouchIdle: 'crouch idle',
-  crouchWalk: 'crouch walk',
-  crouchBackward: 'crouch back',
-  jump: 'jump',
-  fire: 'fire',
-};
-const REMOTE_AIM_CLIP_FACTORS = {
-  [REMOTE_CLIPS.idle]: 1,
-  [REMOTE_CLIPS.runForward]: 0.7,
-  [REMOTE_CLIPS.runBackward]: 0.7,
-  [REMOTE_CLIPS.strafeLeft]: 0.5,
-  [REMOTE_CLIPS.strafeRight]: 0.5,
-  [REMOTE_CLIPS.crouchIdle]: 0,
-  [REMOTE_CLIPS.crouchWalk]: 0,
-  [REMOTE_CLIPS.crouchBackward]: 0,
-  [REMOTE_CLIPS.jump]: 0,
-  [REMOTE_CLIPS.fire]: 1,
-};
 const DEFAULT_REMOTE_DEBUG_SETTINGS = {
   freezePose: false,
   freezeClip: REMOTE_CLIPS.idle,
+  localHitboxDebug: false,
 };
 
 const REMOTE_CHARACTER_BOX = new THREE.Box3();
@@ -88,6 +69,16 @@ const REMOTE_WORLD_SCALE = new THREE.Vector3();
 const REMOTE_IK_TARGET_WORLD = new THREE.Vector3();
 const REMOTE_IK_TARGET_LOCAL = new THREE.Vector3();
 const REMOTE_AIM_BONE_QUATERNION = new THREE.Quaternion();
+const REMOTE_HITBOX_SEGMENT_START = new THREE.Vector3();
+const REMOTE_HITBOX_SEGMENT_END = new THREE.Vector3();
+const REMOTE_HITBOX_SEGMENT_CENTER = new THREE.Vector3();
+const REMOTE_HITBOX_SEGMENT_DIRECTION = new THREE.Vector3();
+const REMOTE_HITBOX_UP_AXIS = new THREE.Vector3(0, 1, 0);
+const REMOTE_HITBOX_LAYOUT = createPlayerHitboxLayout();
+const REMOTE_HITBOX_WORLD_POINT_A = new THREE.Vector3();
+const REMOTE_HITBOX_WORLD_POINT_B = new THREE.Vector3();
+const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
+const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 const REMOTE_CHARACTER_ASSET_PROMISES = new Map();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
 let REMOTE_WEAPON_TUNING_CACHE = null;
@@ -166,29 +157,18 @@ const REMOTE_CHARACTER_DEFINITIONS = {
     },
   },
 };
-const DEFAULT_REMOTE_SOCKET_POSES = {
-  sniperScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 0.92 },
-  sniperHip: { position: [-0.03, -0.03, 0.01], rotation: [1.44, 0.12, -1.38], scale: 0.96 },
-  knife: { position: [0.01, -0.01, -0.01], rotation: [0.2, -1.2, 0.5], scale: 0.95 },
-  rifleScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 1.08 },
-  rifleHip: { position: [0.011, -0.002, -0.027], rotation: [-2.85, 1.67, 3.01], scale: 1.26 },
-};
-const DEFAULT_REMOTE_CHARACTER_SETTINGS = {
-  modelScale: 1.120,
-  aim: {
-    weaponAxis: 'z',
-    proxyWeaponAxis: 'z',
-    boneAxis: 'z',
-    boneStrength: 0.75,
-    weaponStrength: 0.30,
-  },
-};
 const REMOTE_RIFLE_FALLBACK_SOCKET_ROTATION = new THREE.Euler(Math.PI / 2, 0, 0);
 const REMOTE_RIFLE_FALLBACK_SOCKET_PRESETS = {
   '/models/weapons/newak.glb': {
     grip: { x: -0.006, y: -0.012, z: 0.02 },
     muzzle: { x: -0.01, y: 0.052, z: -0.618 },
   },
+};
+
+const DEFAULT_REMOTE_CHARACTER_SETTINGS = {
+  modelScale: REMOTE_CHARACTER_MODEL_SCALE,
+  aim: REMOTE_CHARACTER_AIM_SETTINGS,
+  hitboxes: REMOTE_CHARACTER_HITBOX_SETTINGS,
 };
 
 function clonePose(pose) {
@@ -203,6 +183,7 @@ function cloneRemoteDebugSettings(settings = DEFAULT_REMOTE_DEBUG_SETTINGS) {
   return {
     freezePose: Boolean(settings.freezePose),
     freezeClip: String(settings.freezeClip ?? DEFAULT_REMOTE_DEBUG_SETTINGS.freezeClip),
+    localHitboxDebug: Boolean(settings.localHitboxDebug),
   };
 }
 
@@ -221,14 +202,18 @@ function cloneRemoteAimSettings(settings = DEFAULT_REMOTE_CHARACTER_SETTINGS.aim
   };
 }
 
-function getSocketPoseKey(weaponKey, isScoped) {
-  if (weaponKey === 'sniper') {
-    return isScoped ? 'sniperScoped' : 'sniperHip';
-  }
-  if (weaponKey === 'knife') {
-    return 'knife';
-  }
-  return isScoped ? 'rifleScoped' : 'rifleHip';
+function cloneRemoteHitboxSettings(settings = DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes) {
+  const headOffset = settings?.headOffset ?? DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset;
+  return {
+    headOffset: {
+      x: Number.isFinite(Number(headOffset.x)) ? Number(headOffset.x) : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset.x,
+      y: Number.isFinite(Number(headOffset.y)) ? Number(headOffset.y) : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset.y,
+      z: Number.isFinite(Number(headOffset.z)) ? Number(headOffset.z) : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset.z,
+    },
+    headRadius: Number.isFinite(Number(settings?.headRadius))
+      ? Number(settings.headRadius)
+      : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headRadius,
+  };
 }
 
 function getRequestedRemoteCharacterDefinition() {
@@ -473,6 +458,7 @@ function ensureRemoteWeaponTuning() {
     character: {
       modelScale: DEFAULT_REMOTE_CHARACTER_SETTINGS.modelScale,
       aim: cloneRemoteAimSettings(),
+      hitboxes: cloneRemoteHitboxSettings(),
     },
     debug: cloneRemoteDebugSettings(),
   };
@@ -507,6 +493,9 @@ function ensureRemoteWeaponTuning() {
         }
         if (parsed.character?.aim) {
           nextCache.character.aim = cloneRemoteAimSettings(parsed.character.aim);
+        }
+        if (parsed.character?.hitboxes) {
+          nextCache.character.hitboxes = cloneRemoteHitboxSettings(parsed.character.hitboxes);
         }
         if (parsed.debug) {
           nextCache.debug = cloneRemoteDebugSettings(parsed.debug);
@@ -561,6 +550,14 @@ function ensureRemoteWeaponTuning() {
         });
         persistRemoteWeaponTuning();
         return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.character.aim));
+      },
+      setHitboxes(patch) {
+        REMOTE_WEAPON_TUNING_CACHE.character.hitboxes = cloneRemoteHitboxSettings({
+          ...REMOTE_WEAPON_TUNING_CACHE.character.hitboxes,
+          ...patch,
+        });
+        persistRemoteWeaponTuning();
+        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.character.hitboxes));
       },
       setDebug(patch) {
         REMOTE_WEAPON_TUNING_CACHE.debug = cloneRemoteDebugSettings({
@@ -839,6 +836,10 @@ function getRemoteAimSettings() {
   return ensureRemoteWeaponTuning().character.aim;
 }
 
+function getRemoteHitboxSettings() {
+  return ensureRemoteWeaponTuning().character.hitboxes;
+}
+
 function getRemoteDebugSettings() {
   return ensureRemoteWeaponTuning().debug;
 }
@@ -1060,6 +1061,24 @@ function createRemoteCharacterTuningPanel() {
   const boneAxisSelect = createSelectRow('Bone Axis', ['x', 'y', 'z']);
   const boneStrengthControl = createRow({ label: 'Bone Str', min: 0, max: 4, step: 0.05 });
   const weaponStrengthControl = createRow({ label: 'Weap Str', min: 0, max: 3, step: 0.05 });
+  const headOffsetXControl = createRow({ label: 'Head X', min: -0.3, max: 0.3, step: 0.005 });
+  const headOffsetYControl = createRow({ label: 'Head Y', min: -0.3, max: 0.3, step: 0.005 });
+  const headOffsetZControl = createRow({ label: 'Head Z', min: -0.3, max: 0.3, step: 0.005 });
+  const headRadiusControl = createRow({ label: 'Head Rad', min: 0.04, max: 0.25, step: 0.005 });
+
+  const localHitboxDebugRow = document.createElement('label');
+  localHitboxDebugRow.style.display = 'flex';
+  localHitboxDebugRow.style.alignItems = 'center';
+  localHitboxDebugRow.style.gap = '8px';
+  localHitboxDebugRow.style.marginTop = '12px';
+  localHitboxDebugRow.style.marginBottom = '8px';
+  const localHitboxDebugToggle = document.createElement('input');
+  localHitboxDebugToggle.type = 'checkbox';
+  const localHitboxDebugLabel = document.createElement('span');
+  localHitboxDebugLabel.textContent = 'Local Hitbox Debug';
+  localHitboxDebugRow.appendChild(localHitboxDebugToggle);
+  localHitboxDebugRow.appendChild(localHitboxDebugLabel);
+  panel.appendChild(localHitboxDebugRow);
 
   const resetButton = document.createElement('button');
   resetButton.textContent = 'Reset All';
@@ -1090,6 +1109,21 @@ function createRemoteCharacterTuningPanel() {
     const weaponStrengthText = String(Number(aim.weaponStrength).toFixed(2));
     weaponStrengthControl.range.value = weaponStrengthText;
     weaponStrengthControl.number.value = weaponStrengthText;
+    const hitboxes = getRemoteHitboxSettings();
+    const headOffsetXText = String(Number(hitboxes.headOffset.x).toFixed(3));
+    headOffsetXControl.range.value = headOffsetXText;
+    headOffsetXControl.number.value = headOffsetXText;
+    const headOffsetYText = String(Number(hitboxes.headOffset.y).toFixed(3));
+    headOffsetYControl.range.value = headOffsetYText;
+    headOffsetYControl.number.value = headOffsetYText;
+    const headOffsetZText = String(Number(hitboxes.headOffset.z).toFixed(3));
+    headOffsetZControl.range.value = headOffsetZText;
+    headOffsetZControl.number.value = headOffsetZText;
+    const headRadiusText = String(Number(hitboxes.headRadius).toFixed(3));
+    headRadiusControl.range.value = headRadiusText;
+    headRadiusControl.number.value = headRadiusText;
+    const debug = getRemoteDebugSettings();
+    localHitboxDebugToggle.checked = Boolean(debug.localHitboxDebug);
   }
 
   const applyModelScale = (rawValue) => {
@@ -1125,6 +1159,53 @@ function createRemoteCharacterTuningPanel() {
 
   bindAimStrength(boneStrengthControl, 'boneStrength');
   bindAimStrength(weaponStrengthControl, 'weaponStrength');
+
+  const bindHeadOffset = (control, axis) => {
+    const applyValue = (rawValue) => {
+      const nextValue = Number(rawValue);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      const current = getRemoteHitboxSettings();
+      window.__remoteWeaponTuning.setHitboxes({
+        headOffset: {
+          ...current.headOffset,
+          [axis]: nextValue,
+        },
+      });
+      const text = String(Number(nextValue).toFixed(3));
+      control.range.value = text;
+      control.number.value = text;
+    };
+    control.range.addEventListener('input', (event) => applyValue(event.target.value));
+    control.number.addEventListener('input', (event) => applyValue(event.target.value));
+  };
+
+  bindHeadOffset(headOffsetXControl, 'x');
+  bindHeadOffset(headOffsetYControl, 'y');
+  bindHeadOffset(headOffsetZControl, 'z');
+
+  const applyHeadRadius = (rawValue) => {
+    const nextValue = Number(rawValue);
+    if (!Number.isFinite(nextValue)) {
+      return;
+    }
+    const current = getRemoteHitboxSettings();
+    window.__remoteWeaponTuning.setHitboxes({
+      ...current,
+      headRadius: nextValue,
+    });
+    const text = String(Number(nextValue).toFixed(3));
+    headRadiusControl.range.value = text;
+    headRadiusControl.number.value = text;
+  };
+  headRadiusControl.range.addEventListener('input', (event) => applyHeadRadius(event.target.value));
+  headRadiusControl.number.addEventListener('input', (event) => applyHeadRadius(event.target.value));
+  localHitboxDebugToggle.addEventListener('change', () => {
+    window.__remoteWeaponTuning.setDebug({
+      localHitboxDebug: localHitboxDebugToggle.checked,
+    });
+  });
 
   resetButton.addEventListener('click', () => {
     window.__remoteWeaponTuning.reset();
@@ -1598,6 +1679,9 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
   labelSprite.scale.set(1.6, 0.4, 1);
   root.add(labelSprite);
 
+  const hitVolumeDebugGroup = createRemoteHitVolumeDebugGroup();
+  hitVolumeDebugGroup.visible = false;
+
   return {
     root,
     body,
@@ -1608,6 +1692,8 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     weaponMesh: null,
     weaponKey: null,
     labelSprite,
+    hitVolumeDebugGroup,
+    showHitVolumeDebug: false,
     flashTime: 0,
     hitReactionTime: 0,
     deathTransitionTime: 0,
@@ -1631,10 +1717,265 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     leftHandIkSolver: null,
     leftHandIkTargetBone: null,
     characterAimBones: [],
+    characterHitBones: null,
     characterScaleBase: 1,
     characterModelScaleAtAttach: 1,
     characterBasePosition: new THREE.Vector3(),
   };
+}
+
+function createRemoteHitCapsuleDebugMesh(color) {
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  });
+  const group = new THREE.Group();
+  const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12, 1, true), material);
+  const top = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), material);
+  const bottom = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), material);
+  group.add(cylinder, top, bottom);
+  return { group, cylinder, top, bottom };
+}
+
+function createRemoteHitSphereDebugMesh(color) {
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), material);
+  return mesh;
+}
+
+function updateRemoteHitCapsuleDebugMesh(debugMesh, segment) {
+  REMOTE_HITBOX_SEGMENT_START.set(segment.start.x, segment.start.y, segment.start.z);
+  REMOTE_HITBOX_SEGMENT_END.set(segment.end.x, segment.end.y, segment.end.z);
+  REMOTE_HITBOX_SEGMENT_CENTER.copy(REMOTE_HITBOX_SEGMENT_START).add(REMOTE_HITBOX_SEGMENT_END).multiplyScalar(0.5);
+  REMOTE_HITBOX_SEGMENT_DIRECTION.copy(REMOTE_HITBOX_SEGMENT_END).sub(REMOTE_HITBOX_SEGMENT_START);
+  const length = Math.max(0.001, REMOTE_HITBOX_SEGMENT_DIRECTION.length());
+  REMOTE_HITBOX_SEGMENT_DIRECTION.normalize();
+
+  debugMesh.group.position.copy(REMOTE_HITBOX_SEGMENT_CENTER);
+  debugMesh.group.quaternion.setFromUnitVectors(REMOTE_HITBOX_UP_AXIS, REMOTE_HITBOX_SEGMENT_DIRECTION);
+  debugMesh.cylinder.scale.set(segment.radius, length, segment.radius);
+  debugMesh.top.position.set(0, length * 0.5, 0);
+  debugMesh.bottom.position.set(0, -length * 0.5, 0);
+  debugMesh.top.scale.setScalar(segment.radius);
+  debugMesh.bottom.scale.setScalar(segment.radius);
+}
+
+function createRemoteHitVolumeDebugGroup() {
+  const group = new THREE.Group();
+  group.renderOrder = 1200;
+
+  const head = createRemoteHitSphereDebugMesh(0xff5d5d);
+  const torso = createRemoteHitCapsuleDebugMesh(0x6bd3ff);
+  const pelvis = createRemoteHitCapsuleDebugMesh(0x8cff7a);
+  const arms = [
+    createRemoteHitCapsuleDebugMesh(0xffd166),
+    createRemoteHitCapsuleDebugMesh(0xffd166),
+    createRemoteHitCapsuleDebugMesh(0xffd166),
+    createRemoteHitCapsuleDebugMesh(0xffd166),
+    createRemoteHitCapsuleDebugMesh(0xffd166),
+    createRemoteHitCapsuleDebugMesh(0xffd166),
+  ];
+  const hands = [
+    createRemoteHitSphereDebugMesh(0xffd166),
+    createRemoteHitSphereDebugMesh(0xffd166),
+  ];
+  const legs = [
+    createRemoteHitCapsuleDebugMesh(0xc792ff),
+    createRemoteHitCapsuleDebugMesh(0xc792ff),
+    createRemoteHitCapsuleDebugMesh(0xc792ff),
+    createRemoteHitCapsuleDebugMesh(0xc792ff),
+  ];
+
+  group.add(
+    head,
+    torso.group,
+    pelvis.group,
+    arms[0].group,
+    arms[1].group,
+    arms[2].group,
+    arms[3].group,
+    arms[4].group,
+    arms[5].group,
+    hands[0],
+    hands[1],
+    legs[0].group,
+    legs[1].group,
+    legs[2].group,
+    legs[3].group,
+  );
+  return { group, head, torso, pelvis, arms, hands, legs };
+}
+
+function findRemoteBoneByHints(root, names = [], fallbackPattern = null) {
+  for (const name of names) {
+    const match = root.getObjectByName(name);
+    if (match?.isBone) {
+      return match;
+    }
+  }
+
+  if (!fallbackPattern) {
+    return null;
+  }
+
+  let resolved = null;
+  root.traverse((child) => {
+    if (!resolved && child.isBone && fallbackPattern.test(child.name)) {
+      resolved = child;
+    }
+  });
+  return resolved;
+}
+
+function findRemoteHitBones(root, definition) {
+  const skeleton = definition?.skeleton ?? {};
+  return {
+    head: findRemoteBoneByHints(root, ['Bip01 Head', 'Bip01_Head', skeleton.head].filter(Boolean), /head/i),
+    neck: findRemoteBoneByHints(root, ['Bip01 Neck', 'Bip01_Neck', skeleton.neck].filter(Boolean), /neck/i),
+    spine: findRemoteBoneByHints(root, ['Bip01 Spine', 'Bip01_Spine', skeleton.spine].filter(Boolean), /^bip01[\s_]?spine$/i),
+    pelvis: findRemoteBoneByHints(root, ['Bip01 Pelvis', 'Bip01_Pelvis', skeleton.pelvis, skeleton.rootJoint].filter(Boolean), /pelvis|hips|^bip01$/i),
+    leftClavicle: findRemoteBoneByHints(root, ['Bip01 L Clavicle', 'Bip01_L_Clavicle', skeleton.leftClavicle].filter(Boolean), /(left|l).*clavicle|clavicle.*(left|l)/i),
+    leftUpperArm: findRemoteBoneByHints(root, ['Bip01 L UpperArm', 'Bip01_L_UpperArm', skeleton.leftUpperArm].filter(Boolean), /(left|l).*upper.*arm|upper.*arm.*(left|l)/i),
+    leftForearm: findRemoteBoneByHints(root, ['Bip01 L Forearm', 'Bip01_L_Forearm', skeleton.leftForearm].filter(Boolean), /(left|l).*forearm|forearm.*(left|l)/i),
+    leftHand: findRemoteBoneByHints(root, ['Bip01 L Hand', 'Bip01_L_Hand', skeleton.leftHand].filter(Boolean), /(left|l).*hand|hand.*(left|l)/i),
+    rightClavicle: findRemoteBoneByHints(root, ['Bip01 R Clavicle', 'Bip01_R_Clavicle', skeleton.rightClavicle].filter(Boolean), /(right|r).*clavicle|clavicle.*(right|r)/i),
+    rightUpperArm: findRemoteBoneByHints(root, ['Bip01 R UpperArm', 'Bip01_R_UpperArm', skeleton.rightUpperArm].filter(Boolean), /(right|r).*upper.*arm|upper.*arm.*(right|r)/i),
+    rightForearm: findRemoteBoneByHints(root, ['Bip01 R Forearm', 'Bip01_R_Forearm', skeleton.rightForearm].filter(Boolean), /(right|r).*forearm|forearm.*(right|r)/i),
+    rightHand: findRemoteBoneByHints(root, ['Bip01 R Hand', 'Bip01_R_Hand', skeleton.rightHand].filter(Boolean), /(right|r).*hand|hand.*(right|r)/i),
+    leftThigh: findRemoteBoneByHints(root, ['Bip01 L Thigh', 'Bip01_L_Thigh', skeleton.leftThigh].filter(Boolean), /(left|l).*(thigh|upleg)|(thigh|upleg).*(left|l)/i),
+    leftCalf: findRemoteBoneByHints(root, ['Bip01 L Calf', 'Bip01_L_Calf', skeleton.leftCalf].filter(Boolean), /(left|l).*calf|calf.*(left|l)/i),
+    leftFoot: findRemoteBoneByHints(root, ['Bip01 L Foot', 'Bip01_L_Foot', skeleton.leftFoot].filter(Boolean), /(left|l).*foot|foot.*(left|l)/i),
+    rightThigh: findRemoteBoneByHints(root, ['Bip01 R Thigh', 'Bip01_R_Thigh', skeleton.rightThigh].filter(Boolean), /(right|r).*(thigh|upleg)|(thigh|upleg).*(right|r)/i),
+    rightCalf: findRemoteBoneByHints(root, ['Bip01 R Calf', 'Bip01_R_Calf', skeleton.rightCalf].filter(Boolean), /(right|r).*calf|calf.*(right|r)/i),
+    rightFoot: findRemoteBoneByHints(root, ['Bip01 R Foot', 'Bip01_R_Foot', skeleton.rightFoot].filter(Boolean), /(right|r).*foot|foot.*(right|r)/i),
+  };
+}
+
+function hasCompleteRemoteHitBones(bones) {
+  return Boolean(
+    bones?.head
+    && bones?.neck
+    && bones?.spine
+    && bones?.pelvis
+    && bones?.leftClavicle
+    && bones?.leftUpperArm
+    && bones?.leftForearm
+    && bones?.leftHand
+    && bones?.rightClavicle
+    && bones?.rightUpperArm
+    && bones?.rightForearm
+    && bones?.rightHand
+    && bones?.leftThigh
+    && bones?.leftCalf
+    && bones?.leftFoot
+    && bones?.rightThigh
+    && bones?.rightCalf
+    && bones?.rightFoot
+  );
+}
+
+function updateRemoteHitVolumeDebugGroup(debugGroup, player) {
+  if (!debugGroup) {
+    return;
+  }
+
+  const layout = computePlayerHitboxLayout({
+    position: player.position,
+    yaw: player.yaw ?? 0,
+    currentHeight: player.currentHeight ?? REMOTE_PLAYER_STAND_HEIGHT,
+    isCrouched: player.isCrouched ?? false,
+    activeWeaponKey: player.activeWeaponKey ?? 'rifle',
+  }, REMOTE_HITBOX_LAYOUT);
+
+  debugGroup.head.position.set(layout.head.center.x, layout.head.center.y, layout.head.center.z);
+  debugGroup.head.scale.setScalar(layout.head.radius);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.torso, layout.torso);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.pelvis, layout.pelvis);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[0], layout.arms[0]);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[1], layout.arms[1]);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[2], layout.arms[2]);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[3], layout.arms[3]);
+  debugGroup.arms[4].group.visible = false;
+  debugGroup.arms[5].group.visible = false;
+  debugGroup.hands[0].visible = false;
+  debugGroup.hands[1].visible = false;
+  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[0], layout.legs[0]);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[1], layout.legs[1]);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[2], layout.legs[2]);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[3], layout.legs[3]);
+}
+
+function updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, hitboxes) {
+  if (!debugGroup || !hitboxes?.head || !hitboxes?.torso || !hitboxes?.pelvis) {
+    return false;
+  }
+
+  debugGroup.head.position.set(hitboxes.head.center.x, hitboxes.head.center.y, hitboxes.head.center.z);
+  debugGroup.head.scale.setScalar(hitboxes.head.radius);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.torso, hitboxes.torso);
+  updateRemoteHitCapsuleDebugMesh(debugGroup.pelvis, hitboxes.pelvis);
+
+  for (let index = 0; index < debugGroup.arms.length; index += 1) {
+    const arm = hitboxes.arms?.[index] ?? null;
+    debugGroup.arms[index].group.visible = Boolean(arm);
+    if (arm) {
+      updateRemoteHitCapsuleDebugMesh(debugGroup.arms[index], arm);
+    }
+  }
+
+  for (let index = 0; index < debugGroup.hands.length; index += 1) {
+    const hand = hitboxes.hands?.[index] ?? null;
+    debugGroup.hands[index].visible = Boolean(hand);
+    if (hand) {
+      debugGroup.hands[index].position.set(hand.center.x, hand.center.y, hand.center.z);
+      debugGroup.hands[index].scale.setScalar(hand.radius);
+    }
+  }
+
+  for (let index = 0; index < debugGroup.legs.length; index += 1) {
+    const leg = hitboxes.legs?.[index] ?? null;
+    debugGroup.legs[index].group.visible = Boolean(leg);
+    if (leg) {
+      updateRemoteHitCapsuleDebugMesh(debugGroup.legs[index], leg);
+    }
+  }
+
+  return true;
+}
+
+function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones) {
+  if (!debugGroup || !hasCompleteRemoteHitBones(bones)) {
+    return false;
+  }
+
+  for (const [key, point] of Object.entries(REMOTE_LOCAL_HITBOX_POINTS)) {
+    const bone = bones[key];
+    if (!bone?.getWorldPosition) {
+      return false;
+    }
+    bone.getWorldPosition(REMOTE_HITBOX_WORLD_POINT_A);
+    point.x = REMOTE_HITBOX_WORLD_POINT_A.x;
+    point.y = REMOTE_HITBOX_WORLD_POINT_A.y;
+    point.z = REMOTE_HITBOX_WORLD_POINT_A.z;
+  }
+
+  const hitboxSettings = getRemoteHitboxSettings();
+  const localSnapshot = buildRemoteHitboxSnapshotFromPoints({
+    points: REMOTE_LOCAL_HITBOX_POINTS,
+    headOffset: hitboxSettings.headOffset,
+    headRadius: hitboxSettings.headRadius,
+  }, REMOTE_LOCAL_HITBOX_SNAPSHOT);
+
+  return updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, localSnapshot);
 }
 
 function getRemoteWeaponParent(visual) {
@@ -1960,6 +2301,7 @@ function disposeRemoteCharacterModel(visual) {
   visual.leftHandIkSolver = null;
   visual.leftHandIkTargetBone = null;
   visual.characterAimBones = [];
+  visual.characterHitBones = null;
   visual.characterScaleBase = 1;
   visual.characterModelScaleAtAttach = 1;
   visual.characterBasePosition.set(0, 0, 0);
@@ -2006,6 +2348,7 @@ function attachRemoteCharacterModel(visual, asset) {
   visual.characterRoot = characterRoot;
   visual.characterDefinition = definition;
   visual.characterAimBones = findRemoteAimBones(characterRoot);
+  visual.characterHitBones = findRemoteHitBones(characterRoot, definition);
   visual.characterScaleBase = REMOTE_PLAYER_STAND_HEIGHT / baseHeight;
   visual.characterModelScaleAtAttach = getRemoteCharacterModelScale();
   visual.characterMixer = new THREE.AnimationMixer(characterRoot);
@@ -2172,7 +2515,7 @@ function getCharacterWeaponPose(weaponKey, isScoped) {
 
 function getSocketWeaponPose(weaponKey, isScoped) {
   const tuning = ensureRemoteWeaponTuning();
-  return tuning.weaponPoses[getSocketPoseKey(weaponKey, isScoped)];
+  return tuning.weaponPoses[getRemoteSocketPoseKey(weaponKey, isScoped)];
 }
 
 function selectTargetClip(authoritativeState, presentationState) {
@@ -2281,7 +2624,6 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   visual.weaponAnchor.userData.baseRotationY = visual.weaponAnchor.rotation.y;
   visual.weaponAnchor.userData.baseRotationZ = visual.weaponAnchor.rotation.z;
   visual.weaponAnchor.visible = isAlive;
-
   if (visual.characterMixer) {
     const debugSettings = getRemoteDebugSettings();
     const targetClip = debugSettings.freezePose
@@ -2344,6 +2686,31 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
 
   updateRemoteLeftHandIk(visual);
 
+  visual.hitVolumeDebugGroup.group.visible = visual.showHitVolumeDebug === true;
+  if (visual.showHitVolumeDebug) {
+    const debugSettings = getRemoteDebugSettings();
+    const preferLocalHitboxDebug = Boolean(debugSettings.localHitboxDebug);
+    const usedAuthoritativeHitboxes = !preferLocalHitboxDebug && updateRemoteAuthoritativeHitVolumeDebugGroup(
+      visual.hitVolumeDebugGroup,
+      authoritativeState?.hitboxes,
+    );
+    if (!usedAuthoritativeHitboxes) {
+      const usedBoneDrivenHitboxes = updateRemoteBoneDrivenHitVolumeDebugGroup(
+        visual.hitVolumeDebugGroup,
+        visual.characterHitBones,
+      );
+      if (!usedBoneDrivenHitboxes) {
+        updateRemoteHitVolumeDebugGroup(visual.hitVolumeDebugGroup, {
+          position: player.position,
+          yaw: player.yaw,
+          currentHeight: player.currentHeight ?? authoritativeState?.currentHeight,
+          isCrouched: player.isCrouched ?? authoritativeState?.isCrouched,
+          activeWeaponKey: authoritativeState?.activeWeaponKey ?? player.activeWeaponKey,
+        });
+      }
+    }
+  }
+
   if (visual.flashTime > 0) {
     visual.flashTime = Math.max(0, visual.flashTime - delta);
   }
@@ -2360,6 +2727,10 @@ function disposeRemotePlayerVisual(visual) {
   visual.weaponMesh?.parent?.remove(visual.weaponMesh);
   visual.weaponMesh?.userData.dispose?.();
   disposeRemoteCharacterModel(visual);
+  visual.hitVolumeDebugGroup?.group?.traverse((child) => {
+    child.geometry?.dispose?.();
+    child.material?.dispose?.();
+  });
   visual.bodyCylinder.geometry.dispose();
   visual.bodyTop.geometry.dispose();
   visual.bodyBottom.geometry.dispose();
@@ -2371,6 +2742,7 @@ export class RemotePlayerPresenter {
   constructor(scene) {
     this.scene = scene;
     this.remotePlayerMeshes = new Map();
+    this.showHitVolumeDebug = false;
     this.weaponTuningPanel = createRemoteWeaponTuningPanel();
     this.characterTuningPanel = createRemoteCharacterTuningPanel();
     this.remotePlayerMaterial = new THREE.MeshStandardMaterial({
@@ -2405,6 +2777,15 @@ export class RemotePlayerPresenter {
     }
   }
 
+  toggleHitVolumeDebug() {
+    this.showHitVolumeDebug = !this.showHitVolumeDebug;
+    for (const visual of this.remotePlayerMeshes.values()) {
+      visual.showHitVolumeDebug = this.showHitVolumeDebug;
+      visual.hitVolumeDebugGroup.group.visible = this.showHitVolumeDebug;
+    }
+    return this.showHitVolumeDebug;
+  }
+
   syncPlayers(remotePlayers, authoritativeBuffers, delta = 0) {
     const activeIds = new Set();
 
@@ -2419,13 +2800,31 @@ export class RemotePlayerPresenter {
         );
         this.remotePlayerMeshes.set(player.playerId, visual);
         this.scene.add(visual.root);
+        this.scene.add(visual.hitVolumeDebugGroup.group);
+        visual.showHitVolumeDebug = this.showHitVolumeDebug;
+        visual.hitVolumeDebugGroup.group.visible = this.showHitVolumeDebug;
         ensureRemoteCharacterModel(visual);
       }
 
       const authoritativeState = authoritativeBuffers.get(player.playerId)?.at?.(-1) ?? null;
-      setRemotePlayerWeapon(visual, authoritativeState?.activeWeaponKey ?? player.activeWeaponKey);
+      const renderPlayer = this.showHitVolumeDebug && authoritativeState
+        ? {
+          playerId: player.playerId,
+          displayName: player.displayName ?? authoritativeState.displayName ?? player.playerId,
+          position: { ...authoritativeState.position },
+          yaw: authoritativeState.yaw,
+          pitch: authoritativeState.pitch,
+          currentHeight: authoritativeState.currentHeight,
+          isCrouched: authoritativeState.isCrouched,
+          activeWeaponKey: authoritativeState.activeWeaponKey,
+          isScoped: authoritativeState.isScoped,
+          presentationState: authoritativeState.presentationState,
+          isAlive: authoritativeState.isAlive,
+        }
+        : player;
+      setRemotePlayerWeapon(visual, authoritativeState?.activeWeaponKey ?? renderPlayer.activeWeaponKey);
       visual.labelSprite.visible = true;
-      updateRemotePlayerVisual(visual, player, delta, authoritativeState, {
+      updateRemotePlayerVisual(visual, renderPlayer, delta, authoritativeState, {
         alive: this.remotePlayerMaterial,
         dead: this.remotePlayerDeadMaterial,
       });
@@ -2437,6 +2836,7 @@ export class RemotePlayerPresenter {
       }
 
       this.scene.remove(visual.root);
+      this.scene.remove(visual.hitVolumeDebugGroup.group);
       disposeRemotePlayerVisual(visual);
       this.remotePlayerMeshes.delete(playerId);
     }
@@ -2445,6 +2845,7 @@ export class RemotePlayerPresenter {
   clear() {
     for (const visual of this.remotePlayerMeshes.values()) {
       this.scene.remove(visual.root);
+      this.scene.remove(visual.hitVolumeDebugGroup.group);
       disposeRemotePlayerVisual(visual);
     }
 

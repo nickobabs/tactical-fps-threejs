@@ -6,6 +6,7 @@ const BORROWED_VIEWMODEL_PATH = '/models/viewmodels/cube-gunman/hand_base.glb';
 const BORROWED_ARM_TEXTURE_PATH = '/models/viewmodels/cube-gunman/textures/role.TF2.heavy.png';
 const BORROWED_WEAPON_TEXTURES = {
   rifle: '/models/viewmodels/cube-gunman/textures/weapon.AK47.jpg',
+  pistol: '/models/viewmodels/cube-gunman/textures/weapon.USP.jpg',
   knife: '/models/viewmodels/cube-gunman/textures/weapon.M9.jpg',
 };
 
@@ -149,6 +150,9 @@ function createBorrowedAnimatedViewModel({
   let mixer = null;
   let actions = null;
   let equipFinishedHandlerAttached = false;
+  let isLoaded = false;
+  let isEquipping = true;
+  let pendingEquip = false;
 
   const ensureActions = () => {
     if (!actions) {
@@ -202,17 +206,22 @@ function createBorrowedAnimatedViewModel({
   const playEquipSequence = () => {
     const liveActions = ensureActions();
     if (!liveActions) {
+      pendingEquip = true;
+      isEquipping = true;
       return;
     }
 
+    pendingEquip = false;
     liveActions.hold?.stop();
     liveActions.fire?.stop();
 
     if (!liveActions.equip) {
+      isEquipping = false;
       playLoop(liveActions.hold);
       return;
     }
 
+    isEquipping = true;
     playOneShot(liveActions.equip);
   };
 
@@ -269,6 +278,7 @@ function createBorrowedAnimatedViewModel({
           if (event.action !== actions?.equip) {
             return;
           }
+          isEquipping = false;
           if ((actions?.hold?.getClip?.().duration ?? 0) <= 0.0001) {
             actions?.equip?.stop();
             playLoop(actions?.hold);
@@ -286,7 +296,9 @@ function createBorrowedAnimatedViewModel({
         equipFinishedHandlerAttached = true;
       }
 
-      if (group.visible) {
+      isLoaded = true;
+
+      if (group.visible || pendingEquip) {
         content.visible = false;
         playEquipSequence();
         mixer.update(1 / 120);
@@ -307,6 +319,7 @@ function createBorrowedAnimatedViewModel({
       }
     },
     onSelected() {
+      isEquipping = true;
       content.visible = false;
       playEquipSequence();
       mixer?.update(1 / 120);
@@ -332,6 +345,9 @@ function createBorrowedAnimatedViewModel({
         nextOffset?.y ?? muzzle.position.y,
         nextOffset?.z ?? muzzle.position.z,
       );
+    },
+    canFire() {
+      return isLoaded && !isEquipping;
     },
   };
 }
@@ -416,6 +432,9 @@ function createSniperViewModel() {
         nextOffset?.z ?? muzzle.position.z,
       );
     },
+    canFire() {
+      return true;
+    },
   };
 }
 
@@ -449,9 +468,25 @@ function createKnifeViewModel() {
   });
 }
 
+function createPistolViewModel() {
+  return createBorrowedAnimatedViewModel({
+    weaponKey: 'pistol',
+    meshName: 'USP_1',
+    animationPrefix: 'USP',
+    muzzlePosition: new THREE.Vector3(0.21, 0.02, -0.92),
+    muzzleFlashFactory: createMuzzleFlash,
+    rootOffset: {
+      position: new THREE.Vector3(0.16, -0.98, -0.08),
+      rotation: { x: 0, y: Math.PI / 2, z: 0 },
+      scale: 1,
+    },
+  });
+}
+
 export function createWeaponViewModels() {
   return {
     rifle: createRifleViewModel(),
+    pistol: createPistolViewModel(),
     sniper: createSniperViewModel(),
     knife: createKnifeViewModel(),
   };

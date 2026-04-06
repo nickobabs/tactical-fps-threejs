@@ -499,6 +499,10 @@ export class GameApp {
         this.markDebugSnapshotRequested = true;
       }
 
+      if (frameInput.justPressed.has('F3')) {
+        this.remotePlayerPresenter.toggleHitVolumeDebug();
+      }
+
       if (frameInput.justPressed.has('KeyV')) {
         this.toggleFlyMode();
       }

@@ -1,176 +1,291 @@
 # Tactical FPS Prototype
 
-`Tactical FPS Prototype` is a browser-based tactical shooter built with `Three.js`, `Vite`, and `Colyseus`. The project is aiming for grounded Counter-Strike-like handling rather than arcade movement: fast first-person response, low time-to-kill hitscan combat, readable spaces, and multiplayer that is increasingly authoritative instead of purely cosmetic.
+`Tactical FPS Prototype` is a browser-based tactical shooter built with `Three.js`, `Vite`, and `Colyseus`.
 
-This repository is not a tech demo in the narrow sense. It is a playable game foundation with active work across movement, weapons, imported maps, navigation, remote player presentation, and multiplayer combat authority.
+The project is aiming for a Counter-Strike-like feel:
 
-## What The Project Is Trying To Be
+- grounded first-person movement
+- low time-to-kill hitscan combat
+- readable lanes and long sightlines
+- authored map spaces instead of only procedural grayboxes
+- server-authoritative multiplayer instead of cosmetic peer-state sync
 
-The current design direction is:
+This repo should be read as a playable game-tech showcase, not just a rendering demo.
 
-- grounded first-person movement with walk, sprint, crouch, jump, and tactical pacing
-- hitscan weapons with readable feedback and clear lane control
-- imported map support instead of only hardcoded graybox scenes
-- server-authoritative multiplayer for movement, combat, damage, death, and respawn
-- a game structure that can keep evolving in-place instead of being thrown away after prototyping
+## What The Game Is
 
-## Current Playable Feature Set
+The current prototype is a multiplayer-capable tactical FPS foundation with:
 
-### Weapons
+- first-person weapons and combat
+- imported maps with separate visual and collision assets
+- baked navmesh support
+- local prediction plus server authority
+- remote third-person player presentation
+- authoritative PvP hit validation
+- segmented server-authoritative remote hit volumes
+
+It already supports real play loops:
+
+- spawn into a map
+- move, sprint, crouch, jump, and fight
+- switch weapons
+- shoot through a server-authoritative PvP path
+- die and respawn
+- inspect and tune systems live with in-browser debug tooling
+
+## Showroom
+
+### Core Gameplay
+
+- Tactical first-person movement with walk, sprint, crouch, jump, and fly/debug mode
+- Hitscan rifle, pistol, sniper, and knife slots
+- ADS / scoped state
+- Weapon-dependent movement speed
+- World-geometry shot blocking
+- Replicated damage, death, and respawn
+
+### Multiplayer
+
+- Colyseus authoritative room simulation
+- Client-side prediction
+- Replay-based reconciliation
+- Remote player interpolation
+- Server-authoritative fire requests and hit validation
+- Replicated health, alive state, respawn timing, pitch, stance, weapon, and presentation state
+
+### Remote Character Tech
+
+- Third-person remote playermodels driven from authoritative state
+- Full-body locomotion clips with imported FBX overrides
+- Remote weapon sockets and authored rifle helpers
+- Remote pitch readability through weapon plus narrow neck/head aiming
+- Server-authoritative segmented hit volumes for head, torso, pelvis, arms, hands, and legs
+- `F3` hit volume debug and `F6` local hitbox debug workflow
+
+### World / Map Tech
+
+- Runtime map switching
+- Imported visual `.glb` map scenes
+- Separate imported collision `.glb` scenes
+- Baked navmesh binaries
+- Shared manifest-driven map metadata
+- HDR skybox switching
+- Collision debug overlays and traversal debugging tools
+
+### UI / Feedback
+
+- HUD with round state, FPS, weapon, utility, movement state, pointer lock state, and position
+- Scope overlay and reticle handling
+- Pause menu for map/skybox/sensitivity/volume/FOV
+- Damage feedback, damage numbers, death overlay, respawn countdown
+- Multiplayer debug instrumentation in the active HUD workflow
+
+### Tooling / Live Tuning
+
+- `F4` first-person weapon/viewmodel tuning
+- `F6` remote body and hitbox tuning
+- `F7` remote weapon/socket tuning
+- `F8` network debug toggle
+- `F9` ignore-local-corrections toggle
+- `F10` debug snapshot dump
+- Offline navmesh generation script
+
+## Technology Stack
+
+### Rendering And App Runtime
+
+- `Three.js`
+- `Vite`
+- ES module JavaScript
+
+### Multiplayer And Authority
+
+- `Colyseus`
+- Shared client/server movement and netcode protocol modules
+
+### Collision And Spatial Queries
+
+- `three-mesh-bvh`
+- Custom `CollisionWorld` capsule-vs-triangle movement resolution
+- Server-side world raycasts for shot blocking
+
+### Navigation
+
+- `recast-navigation`
+- Baked navmesh workflow with offline generation
+
+### Assets And Content
+
+- glTF map and character assets
+- FBX locomotion/action clip imports
+- Authored helper sockets for remote weapon attachment and remote pose tuning
+
+## How The Systems Work
+
+### 1. Game Composition
+
+[`GameApp.js`](/C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js) is the composition root.
+
+It owns:
+
+- renderer, scene, and camera
+- HUD and pause menu
+- map lifecycle
+- skybox lifecycle
+- app-level networking
+- remote player presentation
+- top-level debug workflow
+
+Map-bound systems are assembled under [`MapRuntime.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/maps/MapRuntime.js), which keeps collision, navigation, controller, weapons, rounds, targets, and utility scoped to the active map.
+
+### 2. Movement
+
+Movement is not a purely local controller.
+
+The project uses shared movement logic in [`playerMovement.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js), so the browser and the server evolve around the same locomotion rules.
+
+The current movement stack:
+
+- local fixed-step prediction for immediate feel
+- authoritative server simulation for truth
+- replay-based reconciliation rather than direct hard replacement
+- deadzone/hysteresis correction policy so tiny disagreement is not constantly visible
+
+Collision comes from [`CollisionWorld.js`](/C:/Users/nicko/tactical-fps-threejs/src/core/physics/CollisionWorld.js), which uses `three-mesh-bvh` against authored static collision geometry.
+
+### 3. Weapons
+
+Weapons are split into smaller modules instead of one large weapon script:
+
+- manager/state orchestration
+- firing and shot resolution
+- first-person presentation
+- effects/audio
+- weapon config data
+
+The current weapon set:
 
 - `Rifle`
-  - automatic fire
-  - ADS
-  - imported animated first-person prototype viewmodel
+- `Pistol`
 - `Sniper`
-  - scoped overlay
-  - high-damage hitscan
-  - hipfire spread
-  - procedural first-person fallback viewmodel
 - `Knife`
-  - faster movement slot
-  - melee thrust
-  - imported animated first-person prototype viewmodel
 
-### Movement And Combat
+Rifle, pistol, and knife use imported animated prototype viewmodels. Sniper still uses a procedural fallback path.
 
-- shared client/server movement simulation
-- local prediction with replay/reconciliation
-- server-authoritative fire requests and hit validation
-- replicated health, death, and respawn
-- world geometry shot blocking
-- movement-speed differences by weapon slot
+### 4. Maps, Collision, And Navigation
 
-### Maps And World Systems
+The repo supports both graybox-style runtime maps and imported authored maps.
 
-- runtime map switching
-- imported glTF visual scenes
-- separate glTF collision scenes
-- baked navmesh support
-- runtime skybox switching
-- collision debug and traversal debugging workflows
-
-### Multiplayer Presentation
-
-- remote player labels and alive/dead state
-- remote character presentation with placeholder fallback
-- remote weapon attachment and locomotion playback
-- replicated remote posture, pitch, weapon, and presentation state
-- current remote aim readability using weapon pitch plus a modest neck/head pass
-
-### UI And Debugging
-
-- pause menu with map, skybox, sensitivity, volume, and horizontal FOV controls
-- HUD reticles, scope overlay, FPS, and combat state
-- map loading overlay
-- multiplayer debug controls and correction inspection
-- live first-person viewmodel tuning panel
-- live remote model / weapon tuning panels
-
-## Architecture Overview
-
-### Client
-
-The browser client is organized around a few strong ownership boundaries:
-
-- [`GameApp.js`](/C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js)
-  - app composition root
-  - owns renderer, scene, camera, HUD, pause flow, map lifecycle, skybox state, and top-level networking
-- [`MapRuntime.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/maps/MapRuntime.js)
-  - creates and owns map-bound systems
-  - collision, navigation, player controller, weapons, rounds, utility, and targets
-- [`FirstPersonController.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/player/controllers/FirstPersonController.js)
-  - local movement, look, prediction, movement state, and first-person presentation state
-- [`WeaponManager.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/weapons/WeaponManager.js)
-  - weapon slot state, scope/fire input handling, viewmodel updates, and shot orchestration
-- [`RemotePlayerPresenter.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
-  - remote characters, remote animation choice, remote weapon placement, and remote combat presentation
-- [`Hud.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/ui/Hud.js)
-  - DOM HUD shell, pause menu integration, scope/reticle states, and dev-facing overlays
-
-### Shared Simulation
-
-Shared logic is intentionally kept in `src/shared/` so the browser and server stay aligned:
-
-- [`playerMovement.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js)
-  - locomotion math and shared movement rules
-- [`netcodeProtocol.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/netcodeProtocol.js)
-  - multiplayer message/state protocol helpers
-- [`mapManifest.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/maps/mapManifest.js)
-  - map registry, metadata, imported-asset paths, navmesh metadata, and gameplay defaults
-
-### Server
-
-The multiplayer backend is a Colyseus room hosted from the same repository:
-
-- [`server/src/index.js`](/C:/Users/nicko/tactical-fps-threejs/server/src/index.js)
-  - boots the Colyseus server
-  - serves the built frontend in deployed mode
-- [`TacticalRoom.js`](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
-  - authoritative room simulation
-  - player state, inputs, movement, fire requests, hit validation, damage, death, and respawn
-
-## Core Systems
-
-### Movement
-
-Movement is designed around deterministic shared simulation instead of a purely client-only controller. The browser predicts immediately for responsiveness, while the server remains authoritative. Reconciliation uses replay instead of hard replacement, which keeps local control snappy while still allowing correction.
-
-The current feel target is tactical responsiveness, not heavy inertia. Walk, sprint, crouch, jump, and fly/debug modes all live in the same broader controller stack.
-
-### Weapons
-
-The weapon system is split between manager, config, presentation, firing, and effects modules so weapon behavior is not trapped in a single monolith. Rifle and knife currently use a borrowed animated first-person prototype pack, while sniper still uses the older procedural fallback. Viewmodels render on a separate layer to avoid self-hits during shot tests.
-
-There is also an `F4` live tuning panel for first-person weapon placement and muzzle alignment. It supports hip/ADS transforms, per-pose muzzle offsets, forced ADS preview, and a muzzle preview toggle, with values stored in `localStorage` during iteration.
-
-### Maps, Collision, And Navigation
-
-The project supports both runtime-built graybox maps and imported maps. Imported maps use:
+Imported maps are built around a clean asset contract:
 
 - one visual `.glb`
 - one collision `.glb`
 - one baked navmesh binary
-- one manifest entry tying those assets to gameplay defaults
+- one shared manifest entry
 
-Collision is handled through static mesh queries backed by `three-mesh-bvh`. Navigation prefers baked navmesh data through `recast-navigation`, with runtime generation left as a fallback/dev path rather than the default.
+The clearest live example is `Dust2 Import Test`, which is not just a visual import. It is a real testbed for:
 
-### Multiplayer
+- traversal scale
+- collision correctness
+- navmesh queries
+- multiplayer combat space
 
-Multiplayer is no longer treated as a thin add-on. The active baseline includes:
+### 5. Multiplayer
 
-- Colyseus room-based authority
-- local prediction
-- replay/reconciliation
-- authoritative player hits
-- replicated health/death/respawn
-- remote character presentation instead of only capsules/placeholders
+Multiplayer is now a real gameplay system, not just replicated transforms.
 
-The active correctness pressure point is no longer basic hit replication. It is controller/contact quality under authority and correction, especially around wall and slope contact.
+The active baseline includes:
 
-### Remote Character Presentation
+- authoritative room simulation in [`TacticalRoom.js`](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
+- shared protocol helpers in [`netcodeProtocol.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/netcodeProtocol.js)
+- input snapshots from the browser
+- authoritative movement/state on the server
+- fire requests validated on the server
+- replicated damage, death, and respawn
 
-Remote third-person presentation is an active workstream. The current baseline favors stable full-body locomotion and modest readability cues over more ambitious layered animation experiments. Pitch replication is wired through the multiplayer path, and remote aiming currently reads through weapon pitch plus a narrower neck/head pass where it behaves safely.
+### 6. Remote Player Presentation
 
-The repo also contains work-in-progress character/weapon asset experiments, authored sockets, standalone locomotion clips, and debug panels for in-browser tuning.
+[`RemotePlayerPresenter.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js) is the remote playermodel presentation layer.
 
-## Maps In The Project
+It is doing real runtime work:
 
-Current playable/test maps:
+- loading the remote character asset
+- choosing locomotion clips
+- applying remote pitch readability
+- attaching the remote weapon to authored sockets
+- showing hit volume debug
+- handling remote fire/hit/death presentation feedback
+
+### 7. Authoritative Remote Hitboxes
+
+The project now has a working server-authoritative segmented hitbox pipeline.
+
+The important pieces are:
+
+- shared skeleton/hitbox constants in [`remoteCharacterConfig.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteCharacterConfig.js)
+- shared hitbox snapshot construction in [`remoteHitboxes.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteHitboxes.js)
+- authoritative remote rig evaluation in [`remoteHitboxRig.js`](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
+
+The main lesson from that feature:
+
+- the authoritative rig worked once it was simplified to match the visible remote pose
+- left-hand IK was removed from the authoritative hitbox rig because it was the major upper-body parity bug
+
+## What Is Already Implemented
+
+### Playable Systems
+
+- First-person controller
+- Four-weapon loadout
+- Multiplayer room connection
+- Authoritative PvP combat
+- Remote third-person player rendering
+- Map switching
+- Skybox switching
+- HUD and pause menu
+- AI/navmesh target sandbox
+- Imported-map workflow
+- Baked navmesh generation
+
+### Remote Character / Animation Systems
+
+- `newtest.glb` remote character path
+- Standalone FBX locomotion clip support
+- Authored rifle socket/grip/muzzle helpers
+- Runtime remote weapon pose tuning
+- Runtime remote body/hitbox tuning
+- Authoritative segmented remote hit volumes
+
+### Debug And Developer Workflow
+
+- Collision wireframe overlay
+- Position and marker logging
+- Multiplayer correction inspection
+- Freeze-pose remote tuning
+- First-person muzzle/viewmodel tuning
+- Remote hitbox visual tuning without affecting live hitreg
+
+## Current Content Snapshot
+
+### Maps
 
 - `Training Ground`
 - `Desert Compound`
 - `Dust2 Import Test`
 
-`Dust2 Import Test` is the clearest example of the imported-map workflow. It exists as a real traversal, scale, collision, navmesh, and multiplayer test environment rather than a cosmetic environment import.
+### Weapons
 
-## Tech Stack
+- `Rifle`
+- `Pistol`
+- `Sniper`
+- `Knife`
 
-- `Three.js`
-- `Vite`
-- `Colyseus`
-- `three-mesh-bvh`
-- `recast-navigation`
+### Multiplayer State
+
+- Multiple local tabs can join the same room
+- Remote players render with weapons and posture state
+- Server validates hits and replicates combat state
+- Respawn loop is active
 
 ## Local Development
 
@@ -210,16 +325,19 @@ ws://localhost:2567
 
 ## Deployment
 
-The current deployment model is a single service hosting both frontend and backend. The server serves the built Vite client from `dist/` and exposes the Colyseus endpoint on the same public host.
+The current deployment model is one service serving both:
 
-Current Railway-style configuration:
+- the built frontend
+- the Colyseus multiplayer backend
+
+Current deployment shape:
 
 ```text
 Build Command: npm install && npm --prefix server install && npm run build
 Start Command: npm --prefix server start
 ```
 
-## Repository Structure
+## Repo Structure
 
 ```text
 src/
@@ -235,13 +353,14 @@ docs/
 scripts/
 ```
 
-## Where To Read Next
+## Docs
 
-For a deeper walkthrough of the live systems, the maintained docs are:
+If you want the deeper system writeups, start with:
 
-- [`docs/MASTER_CONTEXT.md`](/C:/Users/nicko/tactical-fps-threejs/docs/MASTER_CONTEXT.md)
-- [`docs/systems/app.md`](/C:/Users/nicko/tactical-fps-threejs/docs/systems/app.md)
-- [`docs/systems/networking.md`](/C:/Users/nicko/tactical-fps-threejs/docs/systems/networking.md)
-- [`docs/systems/weapons.md`](/C:/Users/nicko/tactical-fps-threejs/docs/systems/weapons.md)
-- [`docs/systems/ui-hud.md`](/C:/Users/nicko/tactical-fps-threejs/docs/systems/ui-hud.md)
-- [`docs/remote-weapon-asset-contract.md`](/C:/Users/nicko/tactical-fps-threejs/docs/remote-weapon-asset-contract.md)
+- [MASTER_CONTEXT.md](/C:/Users/nicko/tactical-fps-threejs/docs/MASTER_CONTEXT.md)
+- [networking.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/networking.md)
+- [weapons.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/weapons.md)
+- [physics.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/physics.md)
+- [player-controller.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/player-controller.md)
+- [ui-hud.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/ui-hud.md)
+- [remote-hitbox-audit.md](/C:/Users/nicko/tactical-fps-threejs/docs/remote-hitbox-audit.md)

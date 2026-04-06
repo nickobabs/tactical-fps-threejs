@@ -62,12 +62,17 @@
 - Old map scene trees are explicitly disposed during unload to avoid leaking geometry, materials, and textures across repeated map swaps.
 - `GameApp` owns app-level multiplayer wiring, but remote-player rendering is now delegated to `RemotePlayerPresenter` instead of staying embedded directly in `GameApp`.
 - Temporary multiplayer diagnostics are also coordinated here:
+  - `F3` toggles remote hit-volume debug
   - `F9` toggles local correction application for A/B testing
   - `F10` requests an immediate debug summary dump
 - Additional imported-map diagnostics are also coordinated here:
   - `V` toggles fly mode
   - `J`, `K`, `L` support coordinate/marker dumping
   - `B` toggles collision wireframe overlay
+- Additional runtime tuning panels are also reachable from the active app flow:
+  - `F4` first-person viewmodel and muzzle tuning
+  - `F6` remote body/aim/hitbox tuning
+  - `F7` remote weapon/socket tuning
 
 ## Current Status
 
@@ -77,8 +82,9 @@
 - The current remote presentation split is:
   - `GameApp` owns the `NetworkClient` and forwards authoritative snapshots / combat events
   - `RemotePlayerPresenter` owns remote placeholder fallback, remote model loading, animation selection, external clip loading, and socket-based weapon attachment
-  - `RemotePlayerPresenter` also owns the temporary `F7` remote-weapon tuning panel used to live-tune remote weapon pose values in-browser
+  - `RemotePlayerPresenter` also owns the temporary `F3`/`F6`/`F7` remote debug and tuning surfaces used during current animation/hitbox work
   - the active remote character experiment now uses `newtest.glb`, with a standalone `newtest_run.fbx` clip overriding the experimental `run` animation
+  - the current remote hitbox branch is still unresolved and documented separately in `docs/remote-hitbox-audit.md`
 
 ## Near-Term Direction
 

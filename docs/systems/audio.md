@@ -34,7 +34,7 @@
 ## Current Status
 
 - Implemented and active
-- Rifle fire, sniper fire, sniper zoom, and knife slash are registered through the shared manager
+- Rifle fire, pistol fire, sniper fire, sniper zoom, and knife slash are registered through the shared manager
 - Pause-menu master volume feeds directly into the master gain node
 
 ## Limitations
