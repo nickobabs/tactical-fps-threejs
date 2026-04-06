@@ -59,6 +59,7 @@ export class TacticalRoom extends Room {
         const collisionWorld = this.getCollisionWorldForMap(player.mapId);
         while (player.pendingInputs.length > 0) {
           const nextInput = player.pendingInputs.shift();
+          player.pitch = Number(nextInput.pitch ?? player.pitch ?? 0);
           player.motionState = simulatePlayerMovement(player.motionState, nextInput, NETCODE_SIMULATION_STEP, {
             groundHeight: collisionWorld?.getGroundHeight() ?? 0,
             speedMultiplier: Number(nextInput.speedMultiplier ?? 1),
@@ -114,6 +115,7 @@ export class TacticalRoom extends Room {
       const normalizedInput = createPlayerInputMessage({
         ...message,
         yaw: Number(message?.yaw ?? player.motionState.yaw),
+        pitch: Number(message?.pitch ?? player.pitch ?? 0),
       }, sequence, Number(message?.timestamp ?? Date.now()));
       player.pendingInputs.push(normalizedInput);
     });
@@ -131,6 +133,7 @@ export class TacticalRoom extends Room {
         player.spawnState = {
           position: { ...readyState.position },
           yaw: readyState.yaw,
+          pitch: readyState.pitch,
           currentHeight: readyState.currentHeight,
         };
         player.motionState = createPlayerMovementState({
@@ -144,6 +147,7 @@ export class TacticalRoom extends Room {
         player.health = player.maxHealth;
         player.isAlive = true;
         player.respawnAt = 0;
+        player.pitch = readyState.pitch;
         player.activeWeaponKey = getSharedWeaponData(readyState.activeWeaponKey)
           ? readyState.activeWeaponKey
           : player.activeWeaponKey;
@@ -203,6 +207,7 @@ export class TacticalRoom extends Room {
       spawnState: {
         position: { x: 0, y: 0, z: 0 },
         yaw: 0,
+        pitch: 0,
         currentHeight: 1.72,
       },
       lastProcessedSequence: 0,
@@ -212,6 +217,7 @@ export class TacticalRoom extends Room {
       isAlive: true,
       respawnAt: 0,
       lastFireAt: 0,
+      pitch: 0,
       activeWeaponKey: 'rifle',
       isScoped: false,
       presentationState: 'idle',
@@ -318,6 +324,7 @@ export class TacticalRoom extends Room {
       isCrouched: false,
       currentHeight: player.spawnState.currentHeight,
     });
+    player.pitch = Number(player.spawnState?.pitch ?? 0);
     player.presentationState = this.getPresentationStateForPlayer(player);
     this.broadcast('combat-event', {
       type: 'player-respawned',

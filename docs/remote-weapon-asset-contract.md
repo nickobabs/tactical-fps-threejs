@@ -95,12 +95,12 @@ That means future weapon imports should not reintroduce old ad-hoc normalization
 Current dev tools:
 
 - `F7`: remote weapon pose tuning
-- `F6`: remote model scale tuning
+- `F6`: remote model scale plus temporary remote aim-debug tuning
 
 Current status:
 
 - `F7` is the active tool for weapon hold tuning
-- `F6` was reduced to model-scale only after the first upper-body correction experiment proved unstable
+- `F6` now also exposes temporary weapon/proxy/bone axis and strength controls for remote aim debugging
 - Left-arm IK is now an active experiment, but the current rifle still does not have a proper left-hand helper, so the runtime grip target is only approximate
 
 ## What Worked

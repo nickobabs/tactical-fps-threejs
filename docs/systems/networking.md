@@ -84,15 +84,26 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - imported root-motion translation is stripped in code so the replicated actor transform stays authoritative
   - current airborne behavior still freezes the jump clip in a tucked-leg pose until landing rather than replaying the tail
   - remote model visibility restores correctly after respawn
-  - remote rifle presentation still uses `weapon_socket_r` on the character and `grip_socket` / `muzzle_socket` on the rifle asset
-  - the current rifle asset is `public/models/weapons/ak-47-fixed.glb`
+  - remote rifle presentation still uses `weapon_socket_r` on the character and authored helpers on the rifle asset
+  - the current rifle asset is `public/models/weapons/newak.glb`
+  - the active rifle helpers are:
+    - `grip_socket`
+    - `muzzle_socket`
+    - `left_hand_grip`
   - remote rifle world scale still compensates for inherited scale from the skinned character/socket chain
   - live rifle pose tuning still exists through an `F7` panel in the browser and persists via `localStorage`
-  - `F6` still tunes remote model scale only
-  - left-arm CCD IK is now an active experiment, but the current rifle still lacks a proper left-hand helper so the runtime target is only approximate
+  - `F6` now also exposes temporary remote aim-debug controls:
+    - model scale
+    - weapon / proxy / bone axis selection
+    - bone and weapon strength
+  - left-arm CCD IK still exists only as an experimental runtime path and is not yet a solved production system
   - runtime subclips from the long strip proved visibly jittery for locomotion loops
   - the first standalone exported locomotion proof, `public/models/players/newtest_run.fbx`, now overrides the experimental `run` clip and plays cleanly in-engine
   - current direction is to export the rest of the locomotion set as standalone clips from the original 3ds Max source instead of continuing to rely on runtime subclips for loop-critical motions
+  - remote pitch is now replicated
+  - a new authored rifle upper-body base clip still exists for the experimental remote path:
+    - `public/models/players/animations/newtest_rifle_upper_idle.fbx`
+  - that broader upper/lower-body locomotion layering path is currently paused and is not the active runtime baseline
 - Connection state and remote-player count are visible in the HUD
 - Server authority and reconciliation are wired end-to-end for player movement
 - Server authority now uses shared map collision for `Training Ground` and `Desert Compound`
@@ -117,6 +128,13 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - no full killfeed or spectate flow yet
 - Local target dummies are now disabled by default for PvP testing unless explicitly re-enabled through `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`
 - The long-strip subclip path is still a temporary bridge for some motions, but it is no longer the preferred quality path for locomotion
+- Remote aim presentation is still under active iteration:
+  - pitch replication is wired
+  - weapon/socket pitch is the main always-on readability cue
+  - a narrow neck/head-only procedural aim-readability pass is the current active body layer
+  - crouch body aiming is intentionally disabled because it conflicted with the authored crouch set
+  - standing fire now uses the full-body `newtest_fire.fbx` clip again
+  - stable left-hand IK is still not solved
 
 ## Investigation Notes
 
@@ -214,6 +232,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
       - keep placeholder fallback
       - continue the `newtest.glb` remote character experiment
       - replace long-strip locomotion subclips with standalone exported clips from Max
-      - add a proper left-hand helper to the rifle and replace the guessed IK target
+      - keep the authored rifle helpers and the current stable full-body locomotion baseline
       - continue socket-relative rifle hold tuning and per-weapon pose offsets for rifle / sniper / knife and scoped state
 - Keep the current debug instrumentation in place until those validation passes are done, since it is now part of the practical multiplayer workflow
+- Continue the current remote-aim compromise until there is enough justification for a larger animation-state-machine pass:
+  - stable full-body locomotion
+  - weapon/socket pitch
+  - narrow neck/head aim readability where it behaves well
+  - later, revisit authored aim poses or stronger IK only if the remote playermodel path becomes important enough

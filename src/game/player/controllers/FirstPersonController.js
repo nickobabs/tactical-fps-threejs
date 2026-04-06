@@ -170,6 +170,7 @@ export class FirstPersonController {
         z: this.position.z,
       },
       yaw: this.yawAngle,
+      pitch: this.pitchAngle,
     };
   }
 
@@ -341,6 +342,7 @@ export class FirstPersonController {
         descend: this.input.isPressed('KeyC'),
         jump: Boolean(options.jumpPressed),
         yaw: this.yawAngle,
+        pitch: this.pitchAngle,
       };
     }
 
@@ -353,6 +355,7 @@ export class FirstPersonController {
       crouch: this.input.isPressed('KeyC'),
       jump: Boolean(options.jumpPressed),
       yaw: this.yawAngle,
+      pitch: this.pitchAngle,
     };
   }
 

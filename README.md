@@ -1,31 +1,84 @@
-# Tactical FPS Three.js Prototype
+# Tactical FPS Prototype
 
-Three.js tactical FPS prototype with first-person movement, procedural viewmodels, imported-map support, additive Colyseus multiplayer, and an active remote third-person playermodel pipeline.
+Three.js tactical FPS prototype focused on readable lanes, fast first-person handling, low time-to-kill hitscan combat, imported map support, and additive server-authoritative multiplayer.
 
-## Current Scope
+## Highlights
 
-- Counter-Strike-like first-person movement with walk, sprint, crouch, jump, fly-mode debug, and shared client/server movement logic
-- Procedural first-person weapon presentation for rifle, sniper, and knife
-- Imported-map workflow with separate visual and collision glTF assets plus baked navmesh support
-- Additive multiplayer through Colyseus with prediction, replay/reconciliation, remote players, and a first server-authoritative PvP slice
-- Experimental remote third-person character system using `newtest.glb` plus standalone FBX locomotion clips exported from 3ds Max
+- Counter-Strike-inspired grounded movement with walk, sprint, crouch, jump, and shared client/server locomotion logic
+- First-person rifle, sniper, and knife with procedural viewmodel presentation
+- Server-authoritative multiplayer hits, damage, death, and respawn over Colyseus
+- Remote third-person players with skinned characters, weapon attachment, locomotion clips, and active aiming/pose iteration
+- Imported map workflow with separate visual and collision glTF assets plus baked navmesh support
+- Runtime map switching, skybox switching, pause menu, HUD, debug overlays, and multiplayer diagnostics
 
-## Current State
+## Current Game Features
 
-Implemented and actively used:
+### Maps
 
 - `Training Ground`
 - `Desert Compound`
 - `Dust2 Import Test`
-- local prediction + server authority for movement
-- server-authoritative player hits, damage, death, and respawn
-- remote player third-person presentation with weapon attachment, crouch/jump state, fire layering, and legacy fallback
 
-Current active remote character content:
+### Weapons
 
-- character mesh: `public/models/players/newtest.glb`
-- standalone animation clips: `public/models/players/animations/`
-- rifle asset: `public/models/weapons/ak-47-fixed.glb`
+- `Rifle`
+  - automatic fire
+  - ADS
+  - remote third-person weapon model path
+- `Sniper`
+  - scoped overlay
+  - high-damage hitscan
+  - hipfire spread
+- `Knife`
+  - faster movement slot
+  - melee thrust attack
+
+### Movement And Combat
+
+- Shared movement simulation on client and server
+- Local prediction with replay/reconciliation
+- Deadzone/hysteresis correction for better local multiplayer feel
+- Server-authoritative PvP hit validation
+- Replicated health, death, and respawn
+- World geometry shot blocking
+
+### Multiplayer Presentation
+
+- Remote player labels and alive/dead state
+- Remote crouch, jump, and locomotion presentation
+- Experimental skinned remote character pipeline using `newtest.glb`
+- External standalone locomotion clips loaded from `public/models/players/animations/`
+- Authored remote rifle sockets on `newak.glb`:
+  - `grip_socket`
+  - `muzzle_socket`
+  - `left_hand_grip`
+
+### Tools And Workflow
+
+- Map loading overlay and staged map initialization
+- Collision debug overlay
+- Fly mode and position markers for imported-map inspection
+- `F6` remote model tuning panel
+- `F7` remote weapon tuning panel with freeze-pose debug support
+- `F8`/`F9`/`F10` multiplayer debug workflow
+
+## Project Direction
+
+This prototype is being treated as the live game foundation rather than a throwaway experiment. The current direction is:
+
+- keep the Counter-Strike-like tactical feel
+- keep imported maps and baked navmesh as the main content path
+- keep multiplayer additive but increasingly authoritative
+- improve remote third-person readability so aiming, posture, and combat intent are easy to read
+- continue moving from temporary animation experiments toward a stronger layered character presentation stack
+
+## Tech Stack
+
+- `Three.js`
+- `Vite`
+- `Colyseus`
+- `three-mesh-bvh`
+- `recast-navigation`
 
 ## Local Development
 
@@ -36,22 +89,16 @@ npm install
 npm --prefix server install
 ```
 
-Run the Vite client:
+Run the client:
 
 ```bash
 npm run dev
 ```
 
-Run the Colyseus server in a second terminal:
+Run the multiplayer server:
 
 ```bash
 npm run server:start
-```
-
-Local browser builds default to:
-
-```text
-ws://localhost:2567
 ```
 
 Useful scripts:
@@ -63,12 +110,15 @@ npm run build:navmesh
 npm run server:dev
 ```
 
+Local browser builds default to:
+
+```text
+ws://localhost:2567
+```
+
 ## Deployment
 
-The current deploy path is a single Railway service that hosts both:
-
-- the built Vite frontend from `dist/`
-- the Colyseus server from `server/`
+The current deployment path is a single Railway service that hosts both the built frontend and the Colyseus server.
 
 Railway settings:
 
@@ -77,12 +127,11 @@ Build Command: npm install && npm --prefix server install && npm run build
 Start Command: npm --prefix server start
 ```
 
-Notes:
+The server:
 
-- server entrypoint: `server/src/index.js`
-- the server serves the built frontend with SPA fallback
-- the server also exposes `/health`
-- deployed browser builds default websocket connections to the current host, so a separate `VITE_COLYSEUS_SERVER_URL` is not required for the one-service Railway setup
+- serves the built frontend from `dist/`
+- exposes `/health`
+- uses the current host for deployed websocket connections
 
 ## Project Layout
 
@@ -90,53 +139,30 @@ Notes:
 src/
   app/
   core/
-    input/
-    loop/
-    physics/
-    three/
   game/
-    ai/
-    audio/
-    maps/
-    networking/
-    player/
-      controllers/
-      state/
-    rounds/
-    skyboxes/
-    targets/
-    ui/
-    utility/
-    weapons/
   shared/
   styles/
 server/
   src/
-docs/
 public/
+docs/
 ```
 
 ## Key Files
 
-- `src/app/GameApp.js`: composition root, map lifecycle, HUD, networking ownership, debug controls
-- `src/game/networking/RemotePlayerPresenter.js`: remote third-person presentation, external animation clip loading, weapon attachment, IK experiment
-- `src/shared/playerMovement.js`: shared movement simulation used by client and server
-- `src/core/physics/CollisionWorld.js`: static collision, ground sampling, and LOS
-- `src/game/maps/mapAssetLoader.js`: imported-map and manifest-driven map assembly
-- `src/shared/maps/mapManifest.js`: map registry and asset metadata
-- `server/src/rooms/TacticalRoom.js`: authoritative multiplayer room
+- `src/app/GameApp.js`
+- `src/game/networking/RemotePlayerPresenter.js`
+- `src/shared/playerMovement.js`
+- `src/core/physics/CollisionWorld.js`
+- `src/game/maps/mapAssetLoader.js`
+- `src/shared/maps/mapManifest.js`
+- `server/src/rooms/TacticalRoom.js`
 
 ## Docs
 
-Start here for maintained project context:
+Maintained project docs live in:
 
 - `docs/MASTER_CONTEXT.md`
 - `docs/systems/app.md`
 - `docs/systems/networking.md`
 - `docs/remote-weapon-asset-contract.md`
-
-## Notes
-
-- Multiplayer is additive. If the server is unavailable, the browser runtime should still work locally.
-- The legacy remote placeholder/model path is still preserved as fallback while the new remote character pipeline is under active iteration.
-- The current locomotion-quality conclusion is that standalone exported clips from the source DCC are preferred over runtime subclips from one long strip.

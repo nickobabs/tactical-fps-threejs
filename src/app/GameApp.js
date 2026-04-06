@@ -226,6 +226,7 @@ export class GameApp {
         z: this.runtime.playerController.velocity.z,
       },
       yaw: this.runtime.playerController.yawAngle,
+      pitch: this.runtime.playerController.pitchAngle,
       isGrounded: this.runtime.playerController.isGrounded,
       isCrouched: this.runtime.playerController.isCrouched,
       currentHeight: this.runtime.playerController.currentHeight,
@@ -565,7 +566,9 @@ export class GameApp {
             this.runtime.playerController.reconcileAuthoritativeState(authoritativeCorrection);
           }
         } else {
-          this.networkClient.suspendGameplaySync();
+          this.networkClient.suspendGameplaySync({
+            preserveRemotePlayers: this.runtime.playerController.getMovementMode?.() === 'fly',
+          });
         }
         this.runtime.playerController.updatePresentation(
           delta,
@@ -578,7 +581,7 @@ export class GameApp {
           collisionWorld: this.runtime.collisionWorld,
           navigationManager: this.runtime.navigationManager,
         });
-        if (this.getGameplaySyncEnabled()) {
+        if (this.authoritativeNetworkingEnabled) {
           this.remotePlayerPresenter.syncPlayers(
             this.networkClient.getRemotePlayers(),
             this.networkClient.remotePlayerBuffers,

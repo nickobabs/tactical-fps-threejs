@@ -199,6 +199,7 @@ export class NetworkClient {
         && previousSnapshot.position.y === normalizedState.position.y
         && previousSnapshot.position.z === normalizedState.position.z
         && previousSnapshot.yaw === normalizedState.yaw
+        && previousSnapshot.pitch === normalizedState.pitch
         && previousSnapshot.currentHeight === normalizedState.currentHeight
         && previousSnapshot.isCrouched === normalizedState.isCrouched
         && previousSnapshot.activeWeaponKey === normalizedState.activeWeaponKey
@@ -338,6 +339,7 @@ export class NetworkClient {
           playerId,
           position: { ...snapshot.position },
           yaw: snapshot.yaw,
+          pitch: snapshot.pitch,
           currentHeight: snapshot.currentHeight,
           isCrouched: snapshot.isCrouched,
           displayName: snapshot.displayName,
@@ -368,6 +370,7 @@ export class NetworkClient {
           playerId,
           position: { ...nextSnapshot.position },
           yaw: nextSnapshot.yaw,
+          pitch: nextSnapshot.pitch,
           currentHeight: nextSnapshot.currentHeight,
           isCrouched: nextSnapshot.isCrouched,
           displayName: nextSnapshot.displayName,
@@ -390,6 +393,7 @@ export class NetworkClient {
           z: lerp(previousSnapshot.position.z, nextSnapshot.position.z, alpha),
         },
         yaw: interpolateAngle(previousSnapshot.yaw, nextSnapshot.yaw, alpha),
+        pitch: lerp(previousSnapshot.pitch, nextSnapshot.pitch, alpha),
         currentHeight: lerp(previousSnapshot.currentHeight, nextSnapshot.currentHeight, alpha),
         isCrouched: nextSnapshot.isCrouched,
         displayName: nextSnapshot.displayName,

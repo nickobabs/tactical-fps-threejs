@@ -216,7 +216,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - remote players use a remote third-person presentation path with placeholder fallback
   - the active character-model experiment uses `public/models/players/newtest.glb`
   - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
-  - crouch, jump, weapon attachment, and fire layering are active in the experimental path
+  - remote rifle presentation still uses authored socket helpers plus a stable full-body locomotion path
+  - standing fire now uses the full-body `newtest_fire.fbx` clip
+  - current remote vertical-aim readability is a modest compromise:
+    - weapon/socket pitch remains the main universal cue
+    - neck/head procedural aim remains active where it behaves well
+    - crouch body aiming is intentionally disabled
   - client prediction with replay/reconciliation
   - first server-authoritative PvP combat slice for hits, health, death, and respawn
   - debug workflow still active
@@ -317,6 +322,21 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - hit damage numbers
   - dark dead overlay
   - respawn countdown
+- Remote rifle presentation and tuning moved forward again:
+  - active remote rifle asset is now `public/models/weapons/newak.glb`
+  - `newak.glb` now exports authored `grip_socket`, `muzzle_socket`, and `left_hand_grip`
+  - remote rifle scale tuning in `F7` now affects the normalized rifle path correctly
+  - current baked `rifleHip` pose values now come from live in-engine tuning
+  - `F7` now includes freeze-pose support for steadier weapon tuning
+  - fly mode no longer clears remote players, so remote pose tuning can continue from free camera
+- First remote vertical-aim readability pass landed:
+  - player pitch now replicates through the multiplayer protocol
+  - remote weapon pitch and experimental body-aim runtime pass were wired end to end
+- First authored remote rifle upper-body base layer landed:
+  - new file is `public/models/players/animations/newtest_rifle_upper_idle.fbx`
+  - this proved useful as a content experiment, but the broad upper/lower-body layering direction was not stable enough to keep as the active runtime path
+- Repo hygiene was improved:
+  - `.gitignore` now ignores `debug/`
 - Auto-pause on pointer-lock loss was removed so inactive multiplayer test tabs do not keep interrupting sessions.
 - Local target dummies are now disabled by default for PvP testing unless `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`.
 - Railway deployment support was added:
@@ -337,10 +357,15 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - `GameApp` still owns some temporary debug/presentation responsibilities because that is the fastest path while broader runtime boundaries are still settling.
 - Remote character presentation is now out of `GameApp`, but the current weapon/model workflow is still a prototype content pipeline:
   - remote character experiment uses `newtest.glb`, with the older legacy path still available as a fallback
-  - remote rifle uses `ak-47-fixed.glb`
-  - the character/weapon export path currently depends on a hand-authored `weapon_socket_r` helper on the character and `grip_socket` / `muzzle_socket` helpers on the rifle
+  - remote rifle now uses `newak.glb`
+  - the character/weapon export path currently depends on a hand-authored `weapon_socket_r` helper on the character and `grip_socket` / `muzzle_socket` / `left_hand_grip` helpers on the rifle
   - the main animation-quality blocker is now the long-strip export/subclip path rather than the source run motion itself
   - first clean proof for locomotion came from a standalone FBX clip exported from the original 3ds Max source file
+  - current practical remote-aim compromise is lighter:
+    - keep stable full-body locomotion as the base
+    - keep weapon/socket pitch visible
+    - use only a narrow neck/head procedural aim-readability pass
+    - avoid broad runtime upper/lower-body clip layering for locomotion states
 - The top active multiplayer movement blocker after the latest pass is wall/slope contact jitter under authority/correction.
 - Shared movement feel is still intentionally simple on the planar-velocity side:
   - current starts, stops, and direction changes still use a target-velocity lerp in `src/shared/playerMovement.js`
@@ -442,6 +467,13 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Formalize gameplay metadata export for imported maps later, likely from Blender or a similar DCC path.
 - Keep baked navmesh as the preferred runtime model.
 - Leave wall-contact oscillation paused until it is worth doing a more principled controller/contact pass.
+- Continue the new remote aiming/presentation direction:
+  - keep pitch replicated through the authoritative multiplayer path
+  - keep the current stable full-body locomotion path as the active remote baseline
+  - keep weapon pitch as the main always-on vertical-aim readability cue
+  - keep the current neck/head-only procedural aim-readability pass as a small additive polish layer where it behaves well
+  - treat broad upper/lower-body locomotion layering as paused until a more formal animation-state-machine approach exists
+  - treat remote left-hand IK as still experimental
 - Next movement-feel pass:
   - replace the current planar velocity lerp with a more explicit acceleration / braking model in `src/shared/playerMovement.js`
   - keep high responsiveness while preventing instant direction flips
@@ -464,6 +496,32 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       - maintain placeholder fallback
       - continue the `newtest.glb` remote character experiment
       - replace long-strip runtime subclips with standalone exported locomotion clips from Max
-      - add a proper left-hand helper to the rifle and replace the guessed IK target
+      - build on the new authored rifle helpers and the new rifle upper-body base clip
       - continue socket-relative rifle pose tuning and per-weapon hand offsets / pose adjustments
 - Movement implementation notes for the next pass now live in `docs/movement-acceleration-plan.md`
+
+## Current Remote Aim / Animation Checkpoint
+
+- Pitch is now replicated through the multiplayer path:
+  - `src/shared/netcodeProtocol.js`
+  - `src/game/networking/NetworkClient.js`
+  - `server/src/rooms/TacticalRoom.js`
+  - `src/game/player/controllers/FirstPersonController.js`
+  - `src/app/GameApp.js`
+- The first remote vertical-aim pass is no longer just "procedural offsets on top of full-body locomotion."
+- Current layered remote rifle stack is:
+  - stable full-body locomotion from authored clips
+  - weapon/socket pitch for remote vertical-aim readability
+  - a narrow neck/head-only procedural aim-readability pass
+- Current current-state notes:
+  - the broader upper/lower-body layering experiment was rolled back because it produced unstable locomotion transitions and incompatible state combinations
+  - standing fire now uses the full-body `newtest_fire.fbx` clip again instead of the old broken experimental overlay path
+  - current remote body aiming is intentionally modest:
+    - neck/head-only procedural pitch remains active
+    - crouch body aiming is disabled
+    - weapon pitch remains the main universal cue
+  - the remote left-hand IK path still exists only as an experimental runtime CCD setup and should not be treated as a finished system
+- Likely next steps if we continue this branch:
+  - tune the current neck/head aim-readability defaults after more playtesting
+  - decide whether a tiny authored standing-only aim-pose set is worth trying later
+  - revisit reliable remote left-hand IK only if the broader remote presentation pass becomes important enough to justify it

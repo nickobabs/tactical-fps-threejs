@@ -18,10 +18,32 @@ const REMOTE_RIFLE_TARGET_LENGTH = 0.82;
 const REMOTE_WEAPON_TUNING_STORAGE_KEY = 'remoteWeaponTuning.v2';
 const REMOTE_UPPER_BODY_FADE_DURATION = 0.08;
 const REMOTE_UPPER_BODY_ACTION_DURATION = 0.22;
+const REMOTE_FULL_BODY_FIRE_ACTION_DURATION = 0.18;
 const REMOTE_IK_BLEND_FACTOR = 0.9;
 const REMOTE_IK_ITERATIONS = 2;
 const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
 const REMOTE_CHARACTER_VARIANT = import.meta.env.VITE_REMOTE_CHARACTER_VARIANT ?? 'experimental';
+const REMOTE_AIM_PITCH_MIN = -0.9;
+const REMOTE_AIM_PITCH_MAX = 0.7;
+const REMOTE_AIM_WEAPON_FACTOR = 0.9;
+const REMOTE_AIM_PROXY_WEAPON_FACTOR = 0.75;
+const REMOTE_AIM_WEAPON_AXIS = 'y';
+const REMOTE_AIM_PROXY_WEAPON_AXIS = 'y';
+const REMOTE_AIM_BONE_SIGN = -1;
+const REMOTE_AIM_BONE_LOCAL_AXIS = new THREE.Vector3(0, 0, 1);
+const REMOTE_AIM_STATE_FACTORS = {
+  idle: { bones: 2.4, weapon: 0.92 },
+  scopedIdle: { bones: 2.8, weapon: 0.98 },
+  move: { bones: 1.15, weapon: 0.62 },
+  scopedMove: { bones: 1.35, weapon: 0.7 },
+  crouch: { bones: 0.8, weapon: 0.44 },
+  air: { bones: 0.45, weapon: 0.3 },
+  dead: { bones: 0, weapon: 0 },
+};
+const REMOTE_AIM_BONE_SPECS = [
+  { names: ['Bip01_Neck', 'Bip01 Neck'], fallbackPattern: /neck/i, weight: 0.42 },
+  { names: ['Bip01_Head', 'Bip01 Head'], fallbackPattern: /head/i, weight: 0.2 },
+];
 
 const REMOTE_CLIPS = {
   idle: 'idle',
@@ -34,6 +56,18 @@ const REMOTE_CLIPS = {
   crouchBackward: 'crouch back',
   jump: 'jump',
   fire: 'fire',
+};
+const REMOTE_AIM_CLIP_FACTORS = {
+  [REMOTE_CLIPS.idle]: 1,
+  [REMOTE_CLIPS.runForward]: 0.7,
+  [REMOTE_CLIPS.runBackward]: 0.7,
+  [REMOTE_CLIPS.strafeLeft]: 0.5,
+  [REMOTE_CLIPS.strafeRight]: 0.5,
+  [REMOTE_CLIPS.crouchIdle]: 0,
+  [REMOTE_CLIPS.crouchWalk]: 0,
+  [REMOTE_CLIPS.crouchBackward]: 0,
+  [REMOTE_CLIPS.jump]: 0,
+  [REMOTE_CLIPS.fire]: 1,
 };
 const DEFAULT_REMOTE_DEBUG_SETTINGS = {
   freezePose: false,
@@ -53,6 +87,7 @@ const REMOTE_RIGHT = new THREE.Vector3();
 const REMOTE_WORLD_SCALE = new THREE.Vector3();
 const REMOTE_IK_TARGET_WORLD = new THREE.Vector3();
 const REMOTE_IK_TARGET_LOCAL = new THREE.Vector3();
+const REMOTE_AIM_BONE_QUATERNION = new THREE.Quaternion();
 const REMOTE_CHARACTER_ASSET_PROMISES = new Map();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
 let REMOTE_WEAPON_TUNING_CACHE = null;
@@ -140,6 +175,13 @@ const DEFAULT_REMOTE_SOCKET_POSES = {
 };
 const DEFAULT_REMOTE_CHARACTER_SETTINGS = {
   modelScale: 1.120,
+  aim: {
+    weaponAxis: 'z',
+    proxyWeaponAxis: 'z',
+    boneAxis: 'z',
+    boneStrength: 0.75,
+    weaponStrength: 0.30,
+  },
 };
 const REMOTE_RIFLE_FALLBACK_SOCKET_ROTATION = new THREE.Euler(Math.PI / 2, 0, 0);
 const REMOTE_RIFLE_FALLBACK_SOCKET_PRESETS = {
@@ -161,6 +203,21 @@ function cloneRemoteDebugSettings(settings = DEFAULT_REMOTE_DEBUG_SETTINGS) {
   return {
     freezePose: Boolean(settings.freezePose),
     freezeClip: String(settings.freezeClip ?? DEFAULT_REMOTE_DEBUG_SETTINGS.freezeClip),
+  };
+}
+
+function cloneRemoteAimSettings(settings = DEFAULT_REMOTE_CHARACTER_SETTINGS.aim) {
+  const normalizeAxis = (value, fallback) => {
+    const nextValue = String(value ?? fallback).toLowerCase();
+    return nextValue === 'x' || nextValue === 'y' || nextValue === 'z' ? nextValue : fallback;
+  };
+
+  return {
+    weaponAxis: normalizeAxis(settings.weaponAxis, DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.weaponAxis),
+    proxyWeaponAxis: normalizeAxis(settings.proxyWeaponAxis, DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.proxyWeaponAxis),
+    boneAxis: normalizeAxis(settings.boneAxis, DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.boneAxis),
+    boneStrength: Number.isFinite(Number(settings.boneStrength)) ? Number(settings.boneStrength) : DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.boneStrength,
+    weaponStrength: Number.isFinite(Number(settings.weaponStrength)) ? Number(settings.weaponStrength) : DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.weaponStrength,
   };
 }
 
@@ -362,6 +419,9 @@ function buildRemoteCharacterAnimations(gltfAnimations, definition, externalClip
         clip = reverseAnimationClip(clip);
       }
       if (clipDefinition.type === 'upper-body-subclip') {
+        if (normalizeRemoteClipName(clipName) === normalizeRemoteClipName(REMOTE_CLIPS.fire)) {
+          baseClips.push(stripRootMotionFromClip(clip.clone()));
+        }
         upperBodyClips.push(createUpperBodyOnlyClip(clip, clipDefinition.lowerBodyPatterns));
       } else {
         baseClips.push(stripRootMotionFromClip(clip));
@@ -412,6 +472,7 @@ function ensureRemoteWeaponTuning() {
     weaponPoses: {},
     character: {
       modelScale: DEFAULT_REMOTE_CHARACTER_SETTINGS.modelScale,
+      aim: cloneRemoteAimSettings(),
     },
     debug: cloneRemoteDebugSettings(),
   };
@@ -443,6 +504,9 @@ function ensureRemoteWeaponTuning() {
           nextCache.character.modelScale = Number(parsed.character.modelScale);
         } else if (Number.isFinite(Number(parsed.modelScale))) {
           nextCache.character.modelScale = Number(parsed.modelScale);
+        }
+        if (parsed.character?.aim) {
+          nextCache.character.aim = cloneRemoteAimSettings(parsed.character.aim);
         }
         if (parsed.debug) {
           nextCache.debug = cloneRemoteDebugSettings(parsed.debug);
@@ -489,6 +553,14 @@ function ensureRemoteWeaponTuning() {
         REMOTE_WEAPON_TUNING_CACHE.character.modelScale = Number(value);
         persistRemoteWeaponTuning();
         return REMOTE_WEAPON_TUNING_CACHE.character.modelScale;
+      },
+      setAim(patch) {
+        REMOTE_WEAPON_TUNING_CACHE.character.aim = cloneRemoteAimSettings({
+          ...REMOTE_WEAPON_TUNING_CACHE.character.aim,
+          ...patch,
+        });
+        persistRemoteWeaponTuning();
+        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.character.aim));
       },
       setDebug(patch) {
         REMOTE_WEAPON_TUNING_CACHE.debug = cloneRemoteDebugSettings({
@@ -763,8 +835,120 @@ function getRemoteCharacterModelScale() {
   return ensureRemoteWeaponTuning().character.modelScale;
 }
 
+function getRemoteAimSettings() {
+  return ensureRemoteWeaponTuning().character.aim;
+}
+
 function getRemoteDebugSettings() {
   return ensureRemoteWeaponTuning().debug;
+}
+
+function getRemoteAimPitch(value) {
+  return THREE.MathUtils.clamp(Number(value ?? 0), REMOTE_AIM_PITCH_MIN, REMOTE_AIM_PITCH_MAX);
+}
+
+function findRemoteAimBones(characterRoot) {
+  const resolvedBones = [];
+  const usedBoneNames = new Set();
+  const availableBones = [];
+  characterRoot.traverse((child) => {
+    if (child?.isBone) {
+      availableBones.push(child.name);
+    }
+  });
+
+  for (const spec of REMOTE_AIM_BONE_SPECS) {
+    let bone = null;
+    for (const candidateName of spec.names) {
+      const exact = characterRoot.getObjectByName(candidateName);
+      if (exact?.isBone && !usedBoneNames.has(exact.name)) {
+        bone = exact;
+        break;
+      }
+    }
+    if (!bone?.isBone) {
+      const fallbackName = availableBones.find(
+        (boneName) => spec.fallbackPattern.test(boneName) && !usedBoneNames.has(boneName),
+      );
+      bone = fallbackName ? characterRoot.getObjectByName(fallbackName) : null;
+    }
+    if (!bone?.isBone) {
+      continue;
+    }
+    usedBoneNames.add(bone.name);
+    resolvedBones.push({
+      bone,
+      weight: spec.weight,
+      baseQuaternion: bone.quaternion.clone(),
+    });
+  }
+
+  console.info('[RemotePlayerPresenter] Aim bones resolved:', resolvedBones.map((entry) => entry.bone.name));
+  return resolvedBones;
+}
+
+function captureRemoteAimBoneBasePose(visual) {
+  for (const entry of visual.characterAimBones ?? []) {
+    entry.baseQuaternion.copy(entry.bone.quaternion);
+  }
+}
+
+function getRemoteAimStateFactors(presentationState) {
+  if (presentationState === 'dead') {
+    return REMOTE_AIM_STATE_FACTORS.dead;
+  }
+  if (presentationState === 'air') {
+    return REMOTE_AIM_STATE_FACTORS.air;
+  }
+  if (presentationState === 'scoped-idle') {
+    return REMOTE_AIM_STATE_FACTORS.scopedIdle;
+  }
+  if (presentationState === 'scoped-move') {
+    return REMOTE_AIM_STATE_FACTORS.scopedMove;
+  }
+  if (presentationState === 'move') {
+    return REMOTE_AIM_STATE_FACTORS.move;
+  }
+  if (String(presentationState ?? '').startsWith('crouch')) {
+    return REMOTE_AIM_STATE_FACTORS.crouch;
+  }
+  return REMOTE_AIM_STATE_FACTORS.idle;
+}
+
+function applyRemoteAimPitch(visual, pitch, presentationState = 'idle', targetClip = null) {
+  const aimPitch = getRemoteAimPitch(pitch);
+  const aimFactors = getRemoteAimStateFactors(presentationState);
+  const aimSettings = getRemoteAimSettings();
+  const clipFactor = REMOTE_AIM_CLIP_FACTORS[targetClip] ?? 1;
+  const weaponFactor = aimFactors.weapon * aimSettings.weaponStrength;
+  const boneFactor = aimFactors.bones * aimSettings.boneStrength * clipFactor;
+
+  if (visual.characterWeaponAnchor) {
+    visual.characterWeaponAnchor.rotation[aimSettings.weaponAxis] = aimPitch * REMOTE_AIM_WEAPON_FACTOR * weaponFactor;
+  } else {
+    visual.weaponAnchor.rotation[aimSettings.proxyWeaponAxis] = (visual.weaponAnchor.userData[`baseRotation${aimSettings.proxyWeaponAxis.toUpperCase()}`] ?? 0)
+      + aimPitch * REMOTE_AIM_PROXY_WEAPON_FACTOR * weaponFactor;
+  }
+
+  if (!visual.characterRoot || boneFactor <= 0) {
+    return;
+  }
+
+  REMOTE_AIM_BONE_LOCAL_AXIS.set(
+    aimSettings.boneAxis === 'x' ? 1 : 0,
+    aimSettings.boneAxis === 'y' ? 1 : 0,
+    aimSettings.boneAxis === 'z' ? 1 : 0,
+  );
+
+  for (const entry of visual.characterAimBones ?? []) {
+    entry.bone.quaternion.copy(entry.baseQuaternion);
+    entry.bone.quaternion.premultiply(
+      REMOTE_AIM_BONE_QUATERNION.setFromAxisAngle(
+        REMOTE_AIM_BONE_LOCAL_AXIS,
+        aimPitch * entry.weight * boneFactor * REMOTE_AIM_BONE_SIGN,
+      ),
+    );
+  }
 }
 
 function createRemoteCharacterTuningPanel() {
@@ -799,7 +983,7 @@ function createRemoteCharacterTuningPanel() {
   panel.appendChild(title);
 
   const help = document.createElement('div');
-  help.textContent = 'F6 toggle • remote model scale';
+  help.textContent = 'F6 toggle • model scale + aim axes';
   help.style.opacity = '0.72';
   help.style.marginBottom = '10px';
   panel.appendChild(help);
@@ -842,6 +1026,41 @@ function createRemoteCharacterTuningPanel() {
 
   const modelScaleControl = createRow({ label: 'Model Scale', min: 0.9, max: 1.35, step: 0.005 });
 
+  const createSelectRow = (labelText, options) => {
+    const row = document.createElement('label');
+    row.style.display = 'grid';
+    row.style.gridTemplateColumns = '92px 1fr';
+    row.style.alignItems = 'center';
+    row.style.gap = '8px';
+    row.style.marginBottom = '8px';
+
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    row.appendChild(label);
+
+    const select = document.createElement('select');
+    select.style.background = '#0f1720';
+    select.style.color = '#e5edf7';
+    select.style.border = '1px solid rgba(148, 163, 184, 0.35)';
+    select.style.borderRadius = '4px';
+    select.style.padding = '4px';
+    for (const optionValue of options) {
+      const option = document.createElement('option');
+      option.value = optionValue;
+      option.textContent = optionValue.toUpperCase();
+      select.appendChild(option);
+    }
+    panel.appendChild(row);
+    row.appendChild(select);
+    return select;
+  };
+
+  const weaponAxisSelect = createSelectRow('Weapon Axis', ['x', 'y', 'z']);
+  const proxyWeaponAxisSelect = createSelectRow('Proxy Axis', ['x', 'y', 'z']);
+  const boneAxisSelect = createSelectRow('Bone Axis', ['x', 'y', 'z']);
+  const boneStrengthControl = createRow({ label: 'Bone Str', min: 0, max: 4, step: 0.05 });
+  const weaponStrengthControl = createRow({ label: 'Weap Str', min: 0, max: 3, step: 0.05 });
+
   const resetButton = document.createElement('button');
   resetButton.textContent = 'Reset All';
   resetButton.style.marginTop = '12px';
@@ -861,6 +1080,16 @@ function createRemoteCharacterTuningPanel() {
     const text = String(Number(value).toFixed(3));
     modelScaleControl.range.value = text;
     modelScaleControl.number.value = text;
+    const aim = getRemoteAimSettings();
+    weaponAxisSelect.value = aim.weaponAxis;
+    proxyWeaponAxisSelect.value = aim.proxyWeaponAxis;
+    boneAxisSelect.value = aim.boneAxis;
+    const boneStrengthText = String(Number(aim.boneStrength).toFixed(2));
+    boneStrengthControl.range.value = boneStrengthText;
+    boneStrengthControl.number.value = boneStrengthText;
+    const weaponStrengthText = String(Number(aim.weaponStrength).toFixed(2));
+    weaponStrengthControl.range.value = weaponStrengthText;
+    weaponStrengthControl.number.value = weaponStrengthText;
   }
 
   const applyModelScale = (rawValue) => {
@@ -875,6 +1104,27 @@ function createRemoteCharacterTuningPanel() {
   };
   modelScaleControl.range.addEventListener('input', (event) => applyModelScale(event.target.value));
   modelScaleControl.number.addEventListener('input', (event) => applyModelScale(event.target.value));
+  weaponAxisSelect.addEventListener('change', () => window.__remoteWeaponTuning.setAim({ weaponAxis: weaponAxisSelect.value }));
+  proxyWeaponAxisSelect.addEventListener('change', () => window.__remoteWeaponTuning.setAim({ proxyWeaponAxis: proxyWeaponAxisSelect.value }));
+  boneAxisSelect.addEventListener('change', () => window.__remoteWeaponTuning.setAim({ boneAxis: boneAxisSelect.value }));
+
+  const bindAimStrength = (control, key) => {
+    const applyValue = (rawValue) => {
+      const nextValue = Number(rawValue);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      window.__remoteWeaponTuning.setAim({ [key]: nextValue });
+      const text = String(Number(nextValue).toFixed(2));
+      control.range.value = text;
+      control.number.value = text;
+    };
+    control.range.addEventListener('input', (event) => applyValue(event.target.value));
+    control.number.addEventListener('input', (event) => applyValue(event.target.value));
+  };
+
+  bindAimStrength(boneStrengthControl, 'boneStrength');
+  bindAimStrength(weaponStrengthControl, 'weaponStrength');
 
   resetButton.addEventListener('click', () => {
     window.__remoteWeaponTuning.reset();
@@ -1332,6 +1582,9 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
   const weaponAnchor = new THREE.Group();
   weaponAnchor.position.set(REMOTE_PLAYER_WEAPON_SIDE_X, 0.9, REMOTE_PLAYER_WEAPON_FORWARD_Z);
   weaponAnchor.rotation.set(0.12, 0, -0.18);
+  weaponAnchor.userData.baseRotationX = weaponAnchor.rotation.x;
+  weaponAnchor.userData.baseRotationY = weaponAnchor.rotation.y;
+  weaponAnchor.userData.baseRotationZ = weaponAnchor.rotation.z;
   root.add(weaponAnchor);
 
   const labelSprite = new THREE.Sprite(
@@ -1368,6 +1621,8 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     activeUpperBodyClip: null,
     activeUpperBodyWeight: 1,
     upperBodyActionTime: 0,
+    fullBodyActionClip: null,
+    fullBodyActionTime: 0,
     characterLoadState: 'idle',
     characterWeaponBone: null,
     characterWeaponSocket: null,
@@ -1375,6 +1630,7 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     characterSkinnedMesh: null,
     leftHandIkSolver: null,
     leftHandIkTargetBone: null,
+    characterAimBones: [],
     characterScaleBase: 1,
     characterModelScaleAtAttach: 1,
     characterBasePosition: new THREE.Vector3(),
@@ -1431,6 +1687,14 @@ function triggerRemotePlayerFireFlash(visual) {
   }
 
   visual.flashTime = REMOTE_FIRE_FLASH_DURATION;
+  if (visual.characterDefinition?.id === 'experimental' && visual.weaponKey === 'rifle') {
+    if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
+      visual.fullBodyActionClip = REMOTE_CLIPS.fire;
+      visual.fullBodyActionTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
+      return;
+    }
+    return;
+  }
   playRemoteUpperBodyClip(visual, REMOTE_CLIPS.fire);
 }
 
@@ -1469,6 +1733,7 @@ function setRemoteCharacterClip(visual, clipName) {
   if (!nextAction) {
     return;
   }
+  const isImmediateFireTransition = normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.fire);
 
   const previousAction = visual.activeCharacterClip
     ? findRemoteClipAction(visual, visual.activeCharacterClip)
@@ -1479,10 +1744,19 @@ function setRemoteCharacterClip(visual, clipName) {
   }
 
   if (previousAction && previousAction !== nextAction) {
-    previousAction.fadeOut(0.12);
+    if (isImmediateFireTransition) {
+      previousAction.stop();
+    } else {
+      previousAction.fadeOut(0.12);
+    }
   }
 
-  nextAction.reset().fadeIn(0.12).play();
+  nextAction.reset();
+  if (isImmediateFireTransition) {
+    nextAction.setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+  } else {
+    nextAction.fadeIn(0.12).play();
+  }
   visual.activeCharacterClip = normalizedClipName;
 }
 
@@ -1511,7 +1785,6 @@ function freezeRemoteCharacterClip(visual, clipName) {
       action.paused = true;
     }
   }
-
   for (const action of visual.characterUpperBodyActions.values()) {
     action.stop();
     action.paused = true;
@@ -1519,6 +1792,8 @@ function freezeRemoteCharacterClip(visual, clipName) {
   }
   visual.activeUpperBodyClip = null;
   visual.upperBodyActionTime = 0;
+  visual.characterMixer.update(0);
+  captureRemoteAimBoneBasePose(visual);
 }
 
 function playRemoteUpperBodyClip(visual, clipName) {
@@ -1571,6 +1846,20 @@ function updateRemoteUpperBodyAction(visual, delta) {
   action.fadeOut(REMOTE_UPPER_BODY_FADE_DURATION);
   visual.activeUpperBodyClip = null;
   visual.activeUpperBodyWeight = 1;
+}
+
+function updateRemoteFullBodyAction(visual, delta) {
+  if (!visual.fullBodyActionClip) {
+    return null;
+  }
+
+  const activeClip = visual.fullBodyActionClip;
+  visual.fullBodyActionTime = Math.max(0, visual.fullBodyActionTime - delta);
+  if (visual.fullBodyActionTime <= 0) {
+    visual.fullBodyActionClip = null;
+    visual.fullBodyActionTime = 0;
+  }
+  return activeClip;
 }
 
 function findFirstSkinnedMesh(root) {
@@ -1662,12 +1951,15 @@ function disposeRemoteCharacterModel(visual) {
   visual.activeCharacterClip = null;
   visual.activeUpperBodyClip = null;
   visual.upperBodyActionTime = 0;
+  visual.fullBodyActionClip = null;
+  visual.fullBodyActionTime = 0;
   visual.characterWeaponBone = null;
   visual.characterWeaponSocket = null;
   visual.characterWeaponAnchor = null;
   visual.characterSkinnedMesh = null;
   visual.leftHandIkSolver = null;
   visual.leftHandIkTargetBone = null;
+  visual.characterAimBones = [];
   visual.characterScaleBase = 1;
   visual.characterModelScaleAtAttach = 1;
   visual.characterBasePosition.set(0, 0, 0);
@@ -1713,6 +2005,7 @@ function attachRemoteCharacterModel(visual, asset) {
   visual.root.add(characterRoot);
   visual.characterRoot = characterRoot;
   visual.characterDefinition = definition;
+  visual.characterAimBones = findRemoteAimBones(characterRoot);
   visual.characterScaleBase = REMOTE_PLAYER_STAND_HEIGHT / baseHeight;
   visual.characterModelScaleAtAttach = getRemoteCharacterModelScale();
   visual.characterMixer = new THREE.AnimationMixer(characterRoot);
@@ -1932,7 +2225,9 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   const presentationState = String(player.presentationState ?? authoritativeState?.presentationState ?? 'idle');
   const isAir = presentationState === 'air';
   const isScoped = Boolean(player.isScoped ?? authoritativeState?.isScoped);
+  const aimPitch = Number(player.pitch ?? authoritativeState?.pitch ?? 0);
   const isScopedStance = isScoped || presentationState === 'scoped-idle' || presentationState === 'scoped-move';
+  visual.presentationState = presentationState;
   const previousAlive = visual.lastAlive !== false;
   if (previousAlive && !isAlive) {
     visual.deathTransitionTime = REMOTE_DEATH_TRANSITION_DURATION;
@@ -1982,6 +2277,9 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
     0,
     isScopedStance ? -0.08 : -0.18,
   );
+  visual.weaponAnchor.userData.baseRotationX = visual.weaponAnchor.rotation.x;
+  visual.weaponAnchor.userData.baseRotationY = visual.weaponAnchor.rotation.y;
+  visual.weaponAnchor.userData.baseRotationZ = visual.weaponAnchor.rotation.z;
   visual.weaponAnchor.visible = isAlive;
 
   if (visual.characterMixer) {
@@ -1992,10 +2290,12 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
     if (debugSettings.freezePose) {
       freezeRemoteCharacterClip(visual, targetClip);
     } else {
-      setRemoteCharacterClip(visual, targetClip);
+      const fullBodyActionClip = updateRemoteFullBodyAction(visual, delta);
+      setRemoteCharacterClip(visual, fullBodyActionClip ?? targetClip);
       updateClipPlaybackParameters(visual, targetClip);
       updateRemoteUpperBodyAction(visual, delta);
       visual.characterMixer.update(delta);
+      captureRemoteAimBoneBasePose(visual);
     }
     if (visual.characterRoot) {
       const currentModelScaleSetting = getRemoteCharacterModelScale();
@@ -2011,6 +2311,8 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
       }
     }
   }
+
+  applyRemoteAimPitch(visual, aimPitch, presentationState, visual.activeCharacterClip);
 
   if (visual.weaponMesh) {
     visual.weaponMesh.visible = isAlive;
