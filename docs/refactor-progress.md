@@ -16,6 +16,10 @@ The refactor has been proceeding in small verified slices with a production buil
   - fly-mode and landing helpers
   - presentation smoothing math
   - collision-safe movement helpers
+- Remote presenter
+  - remote tuning persistence/state is split into `remoteTuningStore.js`
+  - `F6` / `F7` browser tuning panels are split into `remoteTuningPanels.js`
+  - hit-volume debug extraction was attempted and then reverted after it regressed remote presentation, so that block still lives in `RemotePlayerPresenter.js`
 
 ## Remaining High-Risk Areas
 
@@ -25,6 +29,7 @@ The refactor has been proceeding in small verified slices with a production buil
   - `reconcileAuthoritativeState`
 - `RemotePlayerPresenter`
   - still the largest concentrated runtime hotspot in the repo
+  - stable after audit, but the next slice should be smaller than the reverted hit-volume-debug extraction
 - Server-side authoritative room / remote hitbox runtime
   - still relatively large and not yet refactored in this pass
   - confirmed separate multiplayer bug: airborne remote authoritative hitboxes can sit below the visible mesh while local hitbox debug remains accurate (see `debug/Siufbpy.png`)

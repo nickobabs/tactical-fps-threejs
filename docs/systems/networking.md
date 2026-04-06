@@ -59,6 +59,10 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Small local drift is intentionally ignored. Local correction now uses a deadzone and hysteresis model so the client only starts converging once divergence is meaningfully above threshold, and stops once it has settled back into a smaller band.
 - Replicated state already carries `displayName`, `activeWeaponKey`, and a small `presentationState` enum, and the active remote third-person playermodel path now consumes that data directly.
 - Remote player presentation is now split between network state in `NetworkClient` and runtime rendering in `RemotePlayerPresenter`.
+- The remote-presenter refactor has started conservatively:
+  - tuning persistence / normalization now lives in `src/game/networking/remoteTuningStore.js`
+  - `F6` / `F7` browser tuning panels now live in `src/game/networking/remoteTuningPanels.js`
+  - core remote visual update, animation playback, hit-bone discovery, and `F3` hit-volume debug still remain in `RemotePlayerPresenter.js`
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 - The current combat slice is intentionally narrow:
   - local weapon presentation stays immediate
@@ -81,6 +85,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - remote hit flinch / flash readability
   - clearer remote death lean / fall transition
 - Remote presentation now has an active skinned-character path in `RemotePlayerPresenter`, with the older capsule/weapon proxy kept as a fallback if asset loading fails
+  - the latest stable refactor checkpoint keeps the remote tuning store and panel UI extracted, while the hit-volume debug block stays local after a failed extraction/regression was backed out
   - the runtime supports both a legacy remote character asset (`public/models/players/tester3.glb`) and an experimental character asset (`public/models/players/newtest.glb`)
   - the source strip clip is `Take 001`, which is still used for several temporary runtime subclips
   - imported root-motion translation is stripped in code so the replicated actor transform stays authoritative
@@ -154,6 +159,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - the authoritative path now follows the visible remote mesh closely enough for current PvP use
   - head placement depends on the shared tuned defaults and should be revalidated if the playermodel, skeleton, or aim-readability pass changes
   - `F3` remains an important diagnostic tool, and `F6` local hitbox debug should be used for future visual tuning before baking new shared defaults
+  - one current known regression remains tracked separately: airborne remote authoritative hitboxes can sit below the visible mesh while local hitbox debug remains accurate
 
 ## Investigation Notes
 

@@ -20,6 +20,11 @@ import {
   REMOTE_CLIPS,
   getRemoteSocketPoseKey,
 } from '../../shared/remoteCharacterConfig.js';
+import { createRemoteTuningStore } from './remoteTuningStore.js';
+import {
+  createRemoteCharacterTuningPanelUi,
+  createRemoteWeaponTuningPanelUi,
+} from './remoteTuningPanels.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_PLAYER_BODY_RADIUS = 0.35;
@@ -81,7 +86,6 @@ const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
 const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 const REMOTE_CHARACTER_ASSET_PROMISES = new Map();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
-let REMOTE_WEAPON_TUNING_CACHE = null;
 let REMOTE_CCDIK_SOLVER_PROMISE = null;
 const REMOTE_EXPERIMENTAL_CLIP_PROMISES = new Map();
 const REMOTE_ROOT_MOTION_BONE_NAMES = ['mixamorighips', 'hips', 'root', '_rootjoint', 'armature'];
@@ -170,51 +174,12 @@ const DEFAULT_REMOTE_CHARACTER_SETTINGS = {
   aim: REMOTE_CHARACTER_AIM_SETTINGS,
   hitboxes: REMOTE_CHARACTER_HITBOX_SETTINGS,
 };
-
-function clonePose(pose) {
-  return {
-    position: [...pose.position],
-    rotation: [...pose.rotation],
-    scale: pose.scale,
-  };
-}
-
-function cloneRemoteDebugSettings(settings = DEFAULT_REMOTE_DEBUG_SETTINGS) {
-  return {
-    freezePose: Boolean(settings.freezePose),
-    freezeClip: String(settings.freezeClip ?? DEFAULT_REMOTE_DEBUG_SETTINGS.freezeClip),
-    localHitboxDebug: Boolean(settings.localHitboxDebug),
-  };
-}
-
-function cloneRemoteAimSettings(settings = DEFAULT_REMOTE_CHARACTER_SETTINGS.aim) {
-  const normalizeAxis = (value, fallback) => {
-    const nextValue = String(value ?? fallback).toLowerCase();
-    return nextValue === 'x' || nextValue === 'y' || nextValue === 'z' ? nextValue : fallback;
-  };
-
-  return {
-    weaponAxis: normalizeAxis(settings.weaponAxis, DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.weaponAxis),
-    proxyWeaponAxis: normalizeAxis(settings.proxyWeaponAxis, DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.proxyWeaponAxis),
-    boneAxis: normalizeAxis(settings.boneAxis, DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.boneAxis),
-    boneStrength: Number.isFinite(Number(settings.boneStrength)) ? Number(settings.boneStrength) : DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.boneStrength,
-    weaponStrength: Number.isFinite(Number(settings.weaponStrength)) ? Number(settings.weaponStrength) : DEFAULT_REMOTE_CHARACTER_SETTINGS.aim.weaponStrength,
-  };
-}
-
-function cloneRemoteHitboxSettings(settings = DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes) {
-  const headOffset = settings?.headOffset ?? DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset;
-  return {
-    headOffset: {
-      x: Number.isFinite(Number(headOffset.x)) ? Number(headOffset.x) : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset.x,
-      y: Number.isFinite(Number(headOffset.y)) ? Number(headOffset.y) : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset.y,
-      z: Number.isFinite(Number(headOffset.z)) ? Number(headOffset.z) : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headOffset.z,
-    },
-    headRadius: Number.isFinite(Number(settings?.headRadius))
-      ? Number(settings.headRadius)
-      : DEFAULT_REMOTE_CHARACTER_SETTINGS.hitboxes.headRadius,
-  };
-}
+const remoteTuningStore = createRemoteTuningStore({
+  storageKey: REMOTE_WEAPON_TUNING_STORAGE_KEY,
+  defaultSocketPoses: DEFAULT_REMOTE_SOCKET_POSES,
+  defaultCharacterSettings: DEFAULT_REMOTE_CHARACTER_SETTINGS,
+  defaultDebugSettings: DEFAULT_REMOTE_DEBUG_SETTINGS,
+});
 
 function getRequestedRemoteCharacterDefinition() {
   return REMOTE_CHARACTER_DEFINITIONS[REMOTE_CHARACTER_VARIANT] ?? REMOTE_CHARACTER_DEFINITIONS.legacy;
@@ -441,407 +406,33 @@ function buildRemoteCharacterAnimations(gltfAnimations, definition, externalClip
   return { baseClips, upperBodyClips };
 }
 
-function persistRemoteWeaponTuning() {
-  if (typeof window === 'undefined' || !REMOTE_WEAPON_TUNING_CACHE) {
-    return;
-  }
-  window.localStorage.setItem(REMOTE_WEAPON_TUNING_STORAGE_KEY, JSON.stringify(REMOTE_WEAPON_TUNING_CACHE));
-}
-
 function ensureRemoteWeaponTuning() {
-  if (REMOTE_WEAPON_TUNING_CACHE) {
-    return REMOTE_WEAPON_TUNING_CACHE;
-  }
-
-  const nextCache = {
-    weaponPoses: {},
-    character: {
-      modelScale: DEFAULT_REMOTE_CHARACTER_SETTINGS.modelScale,
-      aim: cloneRemoteAimSettings(),
-      hitboxes: cloneRemoteHitboxSettings(),
-    },
-    debug: cloneRemoteDebugSettings(),
-  };
-  for (const [key, pose] of Object.entries(DEFAULT_REMOTE_SOCKET_POSES)) {
-    nextCache.weaponPoses[key] = clonePose(pose);
-  }
-
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = window.localStorage.getItem(REMOTE_WEAPON_TUNING_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const parsedWeaponPoses = parsed.weaponPoses ?? parsed;
-        for (const [key, pose] of Object.entries(parsedWeaponPoses)) {
-          if (!nextCache.weaponPoses[key]) {
-            continue;
-          }
-          if (Array.isArray(pose?.position) && pose.position.length === 3) {
-            nextCache.weaponPoses[key].position = pose.position.map((value) => Number(value ?? 0));
-          }
-          if (Array.isArray(pose?.rotation) && pose.rotation.length === 3) {
-            nextCache.weaponPoses[key].rotation = pose.rotation.map((value) => Number(value ?? 0));
-          }
-          if (Number.isFinite(Number(pose?.scale))) {
-            nextCache.weaponPoses[key].scale = Number(pose.scale);
-          }
-        }
-        if (Number.isFinite(Number(parsed.character?.modelScale))) {
-          nextCache.character.modelScale = Number(parsed.character.modelScale);
-        } else if (Number.isFinite(Number(parsed.modelScale))) {
-          nextCache.character.modelScale = Number(parsed.modelScale);
-        }
-        if (parsed.character?.aim) {
-          nextCache.character.aim = cloneRemoteAimSettings(parsed.character.aim);
-        }
-        if (parsed.character?.hitboxes) {
-          nextCache.character.hitboxes = cloneRemoteHitboxSettings(parsed.character.hitboxes);
-        }
-        if (parsed.debug) {
-          nextCache.debug = cloneRemoteDebugSettings(parsed.debug);
-        }
-      }
-    } catch (error) {
-      console.warn('[RemotePlayerPresenter] Failed to load remote weapon tuning from localStorage.', error);
-    }
-  }
-
-  REMOTE_WEAPON_TUNING_CACHE = nextCache;
-
-  if (typeof window !== 'undefined') {
-    window.__remoteWeaponTuning = {
-      get poses() {
-        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.weaponPoses));
-      },
-      get character() {
-        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.character));
-      },
-      get debug() {
-        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.debug));
-      },
-      setPose(key, patch) {
-        if (!REMOTE_WEAPON_TUNING_CACHE?.weaponPoses?.[key]) {
-          throw new Error(`Unknown remote weapon pose key: ${key}`);
-        }
-        if (Array.isArray(patch?.position) && patch.position.length === 3) {
-          REMOTE_WEAPON_TUNING_CACHE.weaponPoses[key].position = patch.position.map((value) => Number(value ?? 0));
-        }
-        if (Array.isArray(patch?.rotation) && patch.rotation.length === 3) {
-          REMOTE_WEAPON_TUNING_CACHE.weaponPoses[key].rotation = patch.rotation.map((value) => Number(value ?? 0));
-        }
-        if (Number.isFinite(Number(patch?.scale))) {
-          REMOTE_WEAPON_TUNING_CACHE.weaponPoses[key].scale = Number(patch.scale);
-        }
-        persistRemoteWeaponTuning();
-        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.weaponPoses[key]));
-      },
-      setModelScale(value) {
-        if (!Number.isFinite(Number(value))) {
-          throw new Error('Model scale must be finite.');
-        }
-        REMOTE_WEAPON_TUNING_CACHE.character.modelScale = Number(value);
-        persistRemoteWeaponTuning();
-        return REMOTE_WEAPON_TUNING_CACHE.character.modelScale;
-      },
-      setAim(patch) {
-        REMOTE_WEAPON_TUNING_CACHE.character.aim = cloneRemoteAimSettings({
-          ...REMOTE_WEAPON_TUNING_CACHE.character.aim,
-          ...patch,
-        });
-        persistRemoteWeaponTuning();
-        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.character.aim));
-      },
-      setHitboxes(patch) {
-        REMOTE_WEAPON_TUNING_CACHE.character.hitboxes = cloneRemoteHitboxSettings({
-          ...REMOTE_WEAPON_TUNING_CACHE.character.hitboxes,
-          ...patch,
-        });
-        persistRemoteWeaponTuning();
-        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.character.hitboxes));
-      },
-      setDebug(patch) {
-        REMOTE_WEAPON_TUNING_CACHE.debug = cloneRemoteDebugSettings({
-          ...REMOTE_WEAPON_TUNING_CACHE.debug,
-          ...patch,
-        });
-        persistRemoteWeaponTuning();
-        return JSON.parse(JSON.stringify(REMOTE_WEAPON_TUNING_CACHE.debug));
-      },
-      reset() {
-        window.localStorage.removeItem(REMOTE_WEAPON_TUNING_STORAGE_KEY);
-        REMOTE_WEAPON_TUNING_CACHE = null;
-        return ensureRemoteWeaponTuning();
-      },
-      save() {
-        persistRemoteWeaponTuning();
-      },
-    };
-  }
-
-  return REMOTE_WEAPON_TUNING_CACHE;
+  return remoteTuningStore.ensure();
 }
 
 function createRemoteWeaponTuningPanel() {
-  if (typeof document === 'undefined') {
-    return {
-      destroy() {},
-    };
-  }
-
-  const panel = document.createElement('div');
-  panel.style.position = 'fixed';
-  panel.style.top = '72px';
-  panel.style.right = '16px';
-  panel.style.zIndex = '1200';
-  panel.style.width = '320px';
-  panel.style.maxHeight = 'calc(100vh - 96px)';
-  panel.style.overflow = 'auto';
-  panel.style.padding = '12px';
-  panel.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-  panel.style.background = 'rgba(10, 14, 20, 0.92)';
-  panel.style.color = '#e5edf7';
-  panel.style.fontFamily = 'monospace';
-  panel.style.fontSize = '12px';
-  panel.style.borderRadius = '10px';
-  panel.style.display = 'none';
-  panel.style.backdropFilter = 'blur(8px)';
-
-  const title = document.createElement('div');
-  title.textContent = 'Remote Weapon Tuning';
-  title.style.fontWeight = '700';
-  title.style.marginBottom = '10px';
-  panel.appendChild(title);
-
-  const help = document.createElement('div');
-  help.textContent = 'F7 toggle • values save automatically';
-  help.style.opacity = '0.72';
-  help.style.marginBottom = '10px';
-  panel.appendChild(help);
-
-  const poseSelect = document.createElement('select');
-  poseSelect.style.width = '100%';
-  poseSelect.style.marginBottom = '12px';
-  poseSelect.style.background = '#0f1720';
-  poseSelect.style.color = '#e5edf7';
-  poseSelect.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-  poseSelect.style.borderRadius = '6px';
-  poseSelect.style.padding = '6px';
-  for (const key of Object.keys(DEFAULT_REMOTE_SOCKET_POSES)) {
-    const option = document.createElement('option');
-    option.value = key;
-    option.textContent = key;
-    poseSelect.appendChild(option);
-  }
-  panel.appendChild(poseSelect);
-
-  const controlsHost = document.createElement('div');
-  panel.appendChild(controlsHost);
-
-  const freezeRow = document.createElement('label');
-  freezeRow.style.display = 'grid';
-  freezeRow.style.gridTemplateColumns = '1fr auto';
-  freezeRow.style.alignItems = 'center';
-  freezeRow.style.gap = '8px';
-  freezeRow.style.marginBottom = '8px';
-
-  const freezeLabel = document.createElement('span');
-  freezeLabel.textContent = 'Freeze Pose';
-  freezeRow.appendChild(freezeLabel);
-
-  const freezeToggle = document.createElement('input');
-  freezeToggle.type = 'checkbox';
-  freezeRow.appendChild(freezeToggle);
-  panel.appendChild(freezeRow);
-
-  const freezeClipSelect = document.createElement('select');
-  freezeClipSelect.style.width = '100%';
-  freezeClipSelect.style.marginBottom = '12px';
-  freezeClipSelect.style.background = '#0f1720';
-  freezeClipSelect.style.color = '#e5edf7';
-  freezeClipSelect.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-  freezeClipSelect.style.borderRadius = '6px';
-  freezeClipSelect.style.padding = '6px';
-  for (const [label, value] of [
-    ['idle', REMOTE_CLIPS.idle],
-    ['run', REMOTE_CLIPS.runForward],
-    ['run back', REMOTE_CLIPS.runBackward],
-    ['strafe left', REMOTE_CLIPS.strafeLeft],
-    ['strafe right', REMOTE_CLIPS.strafeRight],
-    ['crouch idle', REMOTE_CLIPS.crouchIdle],
-    ['crouch walk', REMOTE_CLIPS.crouchWalk],
-    ['jump', REMOTE_CLIPS.jump],
-  ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    freezeClipSelect.appendChild(option);
-  }
-  panel.appendChild(freezeClipSelect);
-
-  const resetButton = document.createElement('button');
-  resetButton.textContent = 'Reset All';
-  resetButton.style.marginTop = '12px';
-  resetButton.style.width = '100%';
-  resetButton.style.padding = '8px';
-  resetButton.style.background = '#1f2937';
-  resetButton.style.color = '#e5edf7';
-  resetButton.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-  resetButton.style.borderRadius = '6px';
-  resetButton.style.cursor = 'pointer';
-  panel.appendChild(resetButton);
-
-  document.body.appendChild(panel);
-
-  const controlSpecs = [
-    { id: 'posX', label: 'Pos X', kind: 'position', index: 0, min: -0.3, max: 0.3, step: 0.001 },
-    { id: 'posY', label: 'Pos Y', kind: 'position', index: 1, min: -0.3, max: 0.3, step: 0.001 },
-    { id: 'posZ', label: 'Pos Z', kind: 'position', index: 2, min: -0.3, max: 0.3, step: 0.001 },
-    { id: 'rotX', label: 'Rot X', kind: 'rotation', index: 0, min: -3.2, max: 3.2, step: 0.01 },
-    { id: 'rotY', label: 'Rot Y', kind: 'rotation', index: 1, min: -3.2, max: 3.2, step: 0.01 },
-    { id: 'rotZ', label: 'Rot Z', kind: 'rotation', index: 2, min: -3.2, max: 3.2, step: 0.01 },
-    { id: 'scale', label: 'Scale', kind: 'scale', min: 0.2, max: 2.5, step: 0.01 },
-  ];
-
-  const controls = new Map();
-  for (const spec of controlSpecs) {
-    const row = document.createElement('label');
-    row.style.display = 'grid';
-    row.style.gridTemplateColumns = '52px 1fr 58px';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
-    row.style.marginBottom = '8px';
-
-    const label = document.createElement('span');
-    label.textContent = spec.label;
-    row.appendChild(label);
-
-    const range = document.createElement('input');
-    range.type = 'range';
-    range.min = String(spec.min);
-    range.max = String(spec.max);
-    range.step = String(spec.step);
-    row.appendChild(range);
-
-    const number = document.createElement('input');
-    number.type = 'number';
-    number.min = String(spec.min);
-    number.max = String(spec.max);
-    number.step = String(spec.step);
-    number.style.width = '58px';
-    number.style.background = '#0f1720';
-    number.style.color = '#e5edf7';
-    number.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-    number.style.borderRadius = '4px';
-    number.style.padding = '4px';
-    row.appendChild(number);
-
-    controlsHost.appendChild(row);
-    controls.set(spec.id, { spec, range, number });
-  }
-
-  function getCurrentPoseKey() {
-    return poseSelect.value;
-  }
-
-  function syncInputsFromPose() {
-    const pose = ensureRemoteWeaponTuning().weaponPoses[getCurrentPoseKey()];
-    const debug = ensureRemoteWeaponTuning().debug;
-    freezeToggle.checked = Boolean(debug.freezePose);
-    freezeClipSelect.value = debug.freezeClip ?? DEFAULT_REMOTE_DEBUG_SETTINGS.freezeClip;
-    freezeClipSelect.disabled = !freezeToggle.checked;
-    for (const { spec, range, number } of controls.values()) {
-      const value = spec.kind === 'scale'
-        ? pose.scale
-        : pose[spec.kind][spec.index];
-      const text = String(Number(value).toFixed(spec.kind === 'rotation' ? 2 : 3));
-      range.value = text;
-      number.value = text;
-    }
-  }
-
-  function writePoseValue(spec, nextValue) {
-    const pose = clonePose(ensureRemoteWeaponTuning().weaponPoses[getCurrentPoseKey()]);
-    if (spec.kind === 'scale') {
-      pose.scale = nextValue;
-    } else {
-      pose[spec.kind][spec.index] = nextValue;
-    }
-    window.__remoteWeaponTuning.setPose(getCurrentPoseKey(), pose);
-  }
-
-  for (const { spec, range, number } of controls.values()) {
-    const applyValue = (rawValue) => {
-      const nextValue = Number(rawValue);
-      if (!Number.isFinite(nextValue)) {
-        return;
-      }
-      writePoseValue(spec, nextValue);
-      const text = String(Number(nextValue).toFixed(spec.kind === 'rotation' ? 2 : 3));
-      range.value = text;
-      number.value = text;
-    };
-    range.addEventListener('input', (event) => applyValue(event.target.value));
-    number.addEventListener('input', (event) => applyValue(event.target.value));
-  }
-
-  poseSelect.addEventListener('change', () => syncInputsFromPose());
-  freezeToggle.addEventListener('change', () => {
-    window.__remoteWeaponTuning.setDebug({
-      freezePose: freezeToggle.checked,
-    });
-    freezeClipSelect.disabled = !freezeToggle.checked;
+  return createRemoteWeaponTuningPanelUi({
+    defaultSocketPoses: DEFAULT_REMOTE_SOCKET_POSES,
+    defaultDebugSettings: DEFAULT_REMOTE_DEBUG_SETTINGS,
+    remoteClips: REMOTE_CLIPS,
+    ensureRemoteWeaponTuning,
   });
-  freezeClipSelect.addEventListener('change', () => {
-    window.__remoteWeaponTuning.setDebug({
-      freezeClip: freezeClipSelect.value,
-    });
-  });
-  resetButton.addEventListener('click', () => {
-    window.__remoteWeaponTuning.reset();
-    syncInputsFromPose();
-  });
-
-  function togglePanel() {
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    if (panel.style.display !== 'none') {
-      syncInputsFromPose();
-    }
-  }
-
-  function handleKeyDown(event) {
-    if (event.code !== 'F7') {
-      return;
-    }
-    togglePanel();
-    event.preventDefault();
-  }
-
-  window.addEventListener('keydown', handleKeyDown);
-  ensureRemoteWeaponTuning();
-  syncInputsFromPose();
-
-  return {
-    destroy() {
-      window.removeEventListener('keydown', handleKeyDown);
-      panel.remove();
-    },
-  };
 }
 
 function getRemoteCharacterModelScale() {
-  return ensureRemoteWeaponTuning().character.modelScale;
+  return remoteTuningStore.getCharacterModelScale();
 }
 
 function getRemoteAimSettings() {
-  return ensureRemoteWeaponTuning().character.aim;
+  return remoteTuningStore.getAimSettings();
 }
 
 function getRemoteHitboxSettings() {
-  return ensureRemoteWeaponTuning().character.hitboxes;
+  return remoteTuningStore.getHitboxSettings();
 }
 
 function getRemoteDebugSettings() {
-  return ensureRemoteWeaponTuning().debug;
+  return remoteTuningStore.getDebugSettings();
 }
 
 function getRemoteAimPitch(value) {
@@ -953,290 +544,13 @@ function applyRemoteAimPitch(visual, pitch, presentationState = 'idle', targetCl
 }
 
 function createRemoteCharacterTuningPanel() {
-  if (typeof document === 'undefined') {
-    return {
-      destroy() {},
-    };
-  }
-
-  const panel = document.createElement('div');
-  panel.style.position = 'fixed';
-  panel.style.top = '72px';
-  panel.style.left = '16px';
-  panel.style.zIndex = '1200';
-  panel.style.width = '340px';
-  panel.style.maxHeight = 'calc(100vh - 96px)';
-  panel.style.overflow = 'auto';
-  panel.style.padding = '12px';
-  panel.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-  panel.style.background = 'rgba(10, 14, 20, 0.92)';
-  panel.style.color = '#e5edf7';
-  panel.style.fontFamily = 'monospace';
-  panel.style.fontSize = '12px';
-  panel.style.borderRadius = '10px';
-  panel.style.display = 'none';
-  panel.style.backdropFilter = 'blur(8px)';
-
-  const title = document.createElement('div');
-  title.textContent = 'Remote Body Tuning';
-  title.style.fontWeight = '700';
-  title.style.marginBottom = '10px';
-  panel.appendChild(title);
-
-  const help = document.createElement('div');
-  help.textContent = 'F6 toggle • model scale + aim axes';
-  help.style.opacity = '0.72';
-  help.style.marginBottom = '10px';
-  panel.appendChild(help);
-
-  const createRow = (spec) => {
-    const row = document.createElement('label');
-    row.style.display = 'grid';
-    row.style.gridTemplateColumns = '92px 1fr 58px';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
-    row.style.marginBottom = '8px';
-
-    const label = document.createElement('span');
-    label.textContent = spec.label;
-    row.appendChild(label);
-
-    const range = document.createElement('input');
-    range.type = 'range';
-    range.min = String(spec.min);
-    range.max = String(spec.max);
-    range.step = String(spec.step);
-    row.appendChild(range);
-
-    const number = document.createElement('input');
-    number.type = 'number';
-    number.min = String(spec.min);
-    number.max = String(spec.max);
-    number.step = String(spec.step);
-    number.style.width = '58px';
-    number.style.background = '#0f1720';
-    number.style.color = '#e5edf7';
-    number.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-    number.style.borderRadius = '4px';
-    number.style.padding = '4px';
-    row.appendChild(number);
-
-    panel.appendChild(row);
-    return { spec, range, number };
-  };
-
-  const modelScaleControl = createRow({ label: 'Model Scale', min: 0.9, max: 1.35, step: 0.005 });
-
-  const createSelectRow = (labelText, options) => {
-    const row = document.createElement('label');
-    row.style.display = 'grid';
-    row.style.gridTemplateColumns = '92px 1fr';
-    row.style.alignItems = 'center';
-    row.style.gap = '8px';
-    row.style.marginBottom = '8px';
-
-    const label = document.createElement('span');
-    label.textContent = labelText;
-    row.appendChild(label);
-
-    const select = document.createElement('select');
-    select.style.background = '#0f1720';
-    select.style.color = '#e5edf7';
-    select.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-    select.style.borderRadius = '4px';
-    select.style.padding = '4px';
-    for (const optionValue of options) {
-      const option = document.createElement('option');
-      option.value = optionValue;
-      option.textContent = optionValue.toUpperCase();
-      select.appendChild(option);
-    }
-    panel.appendChild(row);
-    row.appendChild(select);
-    return select;
-  };
-
-  const weaponAxisSelect = createSelectRow('Weapon Axis', ['x', 'y', 'z']);
-  const proxyWeaponAxisSelect = createSelectRow('Proxy Axis', ['x', 'y', 'z']);
-  const boneAxisSelect = createSelectRow('Bone Axis', ['x', 'y', 'z']);
-  const boneStrengthControl = createRow({ label: 'Bone Str', min: 0, max: 4, step: 0.05 });
-  const weaponStrengthControl = createRow({ label: 'Weap Str', min: 0, max: 3, step: 0.05 });
-  const headOffsetXControl = createRow({ label: 'Head X', min: -0.3, max: 0.3, step: 0.005 });
-  const headOffsetYControl = createRow({ label: 'Head Y', min: -0.3, max: 0.3, step: 0.005 });
-  const headOffsetZControl = createRow({ label: 'Head Z', min: -0.3, max: 0.3, step: 0.005 });
-  const headRadiusControl = createRow({ label: 'Head Rad', min: 0.04, max: 0.25, step: 0.005 });
-
-  const localHitboxDebugRow = document.createElement('label');
-  localHitboxDebugRow.style.display = 'flex';
-  localHitboxDebugRow.style.alignItems = 'center';
-  localHitboxDebugRow.style.gap = '8px';
-  localHitboxDebugRow.style.marginTop = '12px';
-  localHitboxDebugRow.style.marginBottom = '8px';
-  const localHitboxDebugToggle = document.createElement('input');
-  localHitboxDebugToggle.type = 'checkbox';
-  const localHitboxDebugLabel = document.createElement('span');
-  localHitboxDebugLabel.textContent = 'Local Hitbox Debug';
-  localHitboxDebugRow.appendChild(localHitboxDebugToggle);
-  localHitboxDebugRow.appendChild(localHitboxDebugLabel);
-  panel.appendChild(localHitboxDebugRow);
-
-  const resetButton = document.createElement('button');
-  resetButton.textContent = 'Reset All';
-  resetButton.style.marginTop = '12px';
-  resetButton.style.width = '100%';
-  resetButton.style.padding = '8px';
-  resetButton.style.background = '#1f2937';
-  resetButton.style.color = '#e5edf7';
-  resetButton.style.border = '1px solid rgba(148, 163, 184, 0.35)';
-  resetButton.style.borderRadius = '6px';
-  resetButton.style.cursor = 'pointer';
-  panel.appendChild(resetButton);
-
-  document.body.appendChild(panel);
-
-  function syncModelScale() {
-    const value = getRemoteCharacterModelScale();
-    const text = String(Number(value).toFixed(3));
-    modelScaleControl.range.value = text;
-    modelScaleControl.number.value = text;
-    const aim = getRemoteAimSettings();
-    weaponAxisSelect.value = aim.weaponAxis;
-    proxyWeaponAxisSelect.value = aim.proxyWeaponAxis;
-    boneAxisSelect.value = aim.boneAxis;
-    const boneStrengthText = String(Number(aim.boneStrength).toFixed(2));
-    boneStrengthControl.range.value = boneStrengthText;
-    boneStrengthControl.number.value = boneStrengthText;
-    const weaponStrengthText = String(Number(aim.weaponStrength).toFixed(2));
-    weaponStrengthControl.range.value = weaponStrengthText;
-    weaponStrengthControl.number.value = weaponStrengthText;
-    const hitboxes = getRemoteHitboxSettings();
-    const headOffsetXText = String(Number(hitboxes.headOffset.x).toFixed(3));
-    headOffsetXControl.range.value = headOffsetXText;
-    headOffsetXControl.number.value = headOffsetXText;
-    const headOffsetYText = String(Number(hitboxes.headOffset.y).toFixed(3));
-    headOffsetYControl.range.value = headOffsetYText;
-    headOffsetYControl.number.value = headOffsetYText;
-    const headOffsetZText = String(Number(hitboxes.headOffset.z).toFixed(3));
-    headOffsetZControl.range.value = headOffsetZText;
-    headOffsetZControl.number.value = headOffsetZText;
-    const headRadiusText = String(Number(hitboxes.headRadius).toFixed(3));
-    headRadiusControl.range.value = headRadiusText;
-    headRadiusControl.number.value = headRadiusText;
-    const debug = getRemoteDebugSettings();
-    localHitboxDebugToggle.checked = Boolean(debug.localHitboxDebug);
-  }
-
-  const applyModelScale = (rawValue) => {
-    const nextValue = Number(rawValue);
-    if (!Number.isFinite(nextValue)) {
-      return;
-    }
-    window.__remoteWeaponTuning.setModelScale(nextValue);
-    const text = String(Number(nextValue).toFixed(3));
-    modelScaleControl.range.value = text;
-    modelScaleControl.number.value = text;
-  };
-  modelScaleControl.range.addEventListener('input', (event) => applyModelScale(event.target.value));
-  modelScaleControl.number.addEventListener('input', (event) => applyModelScale(event.target.value));
-  weaponAxisSelect.addEventListener('change', () => window.__remoteWeaponTuning.setAim({ weaponAxis: weaponAxisSelect.value }));
-  proxyWeaponAxisSelect.addEventListener('change', () => window.__remoteWeaponTuning.setAim({ proxyWeaponAxis: proxyWeaponAxisSelect.value }));
-  boneAxisSelect.addEventListener('change', () => window.__remoteWeaponTuning.setAim({ boneAxis: boneAxisSelect.value }));
-
-  const bindAimStrength = (control, key) => {
-    const applyValue = (rawValue) => {
-      const nextValue = Number(rawValue);
-      if (!Number.isFinite(nextValue)) {
-        return;
-      }
-      window.__remoteWeaponTuning.setAim({ [key]: nextValue });
-      const text = String(Number(nextValue).toFixed(2));
-      control.range.value = text;
-      control.number.value = text;
-    };
-    control.range.addEventListener('input', (event) => applyValue(event.target.value));
-    control.number.addEventListener('input', (event) => applyValue(event.target.value));
-  };
-
-  bindAimStrength(boneStrengthControl, 'boneStrength');
-  bindAimStrength(weaponStrengthControl, 'weaponStrength');
-
-  const bindHeadOffset = (control, axis) => {
-    const applyValue = (rawValue) => {
-      const nextValue = Number(rawValue);
-      if (!Number.isFinite(nextValue)) {
-        return;
-      }
-      const current = getRemoteHitboxSettings();
-      window.__remoteWeaponTuning.setHitboxes({
-        headOffset: {
-          ...current.headOffset,
-          [axis]: nextValue,
-        },
-      });
-      const text = String(Number(nextValue).toFixed(3));
-      control.range.value = text;
-      control.number.value = text;
-    };
-    control.range.addEventListener('input', (event) => applyValue(event.target.value));
-    control.number.addEventListener('input', (event) => applyValue(event.target.value));
-  };
-
-  bindHeadOffset(headOffsetXControl, 'x');
-  bindHeadOffset(headOffsetYControl, 'y');
-  bindHeadOffset(headOffsetZControl, 'z');
-
-  const applyHeadRadius = (rawValue) => {
-    const nextValue = Number(rawValue);
-    if (!Number.isFinite(nextValue)) {
-      return;
-    }
-    const current = getRemoteHitboxSettings();
-    window.__remoteWeaponTuning.setHitboxes({
-      ...current,
-      headRadius: nextValue,
-    });
-    const text = String(Number(nextValue).toFixed(3));
-    headRadiusControl.range.value = text;
-    headRadiusControl.number.value = text;
-  };
-  headRadiusControl.range.addEventListener('input', (event) => applyHeadRadius(event.target.value));
-  headRadiusControl.number.addEventListener('input', (event) => applyHeadRadius(event.target.value));
-  localHitboxDebugToggle.addEventListener('change', () => {
-    window.__remoteWeaponTuning.setDebug({
-      localHitboxDebug: localHitboxDebugToggle.checked,
-    });
+  return createRemoteCharacterTuningPanelUi({
+    getRemoteCharacterModelScale,
+    getRemoteAimSettings,
+    getRemoteHitboxSettings,
+    getRemoteDebugSettings,
+    ensureRemoteWeaponTuning,
   });
-
-  resetButton.addEventListener('click', () => {
-    window.__remoteWeaponTuning.reset();
-    syncModelScale();
-  });
-
-  function togglePanel() {
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    if (panel.style.display !== 'none') {
-      syncModelScale();
-    }
-  }
-
-  function handleKeyDown(event) {
-    if (event.code !== 'F6') {
-      return;
-    }
-    togglePanel();
-    event.preventDefault();
-  }
-
-  window.addEventListener('keydown', handleKeyDown);
-  ensureRemoteWeaponTuning();
-  syncModelScale();
-
-  return {
-    destroy() {
-      window.removeEventListener('keydown', handleKeyDown);
-      panel.remove();
-    },
-  };
 }
 
 async function loadRemoteIkSolver() {
@@ -1631,99 +945,6 @@ function createRemoteRifleModelGroup(asset) {
   return group;
 }
 
-function createRemotePlayerVisual(displayName, bodyMaterial) {
-  const root = new THREE.Group();
-
-  const body = new THREE.Group();
-  const bodyCylinder = new THREE.Mesh(
-    new THREE.CylinderGeometry(REMOTE_PLAYER_BODY_RADIUS, REMOTE_PLAYER_BODY_RADIUS, 1, 18),
-    bodyMaterial,
-  );
-  bodyCylinder.castShadow = true;
-  bodyCylinder.receiveShadow = true;
-  body.add(bodyCylinder);
-
-  const bodyTop = new THREE.Mesh(
-    new THREE.SphereGeometry(REMOTE_PLAYER_BODY_RADIUS, 18, 12),
-    bodyMaterial,
-  );
-  bodyTop.castShadow = true;
-  bodyTop.receiveShadow = true;
-  body.add(bodyTop);
-
-  const bodyBottom = new THREE.Mesh(
-    new THREE.SphereGeometry(REMOTE_PLAYER_BODY_RADIUS, 18, 12),
-    bodyMaterial,
-  );
-  bodyBottom.castShadow = true;
-  bodyBottom.receiveShadow = true;
-  body.add(bodyBottom);
-  root.add(body);
-
-  const weaponAnchor = new THREE.Group();
-  weaponAnchor.position.set(REMOTE_PLAYER_WEAPON_SIDE_X, 0.9, REMOTE_PLAYER_WEAPON_FORWARD_Z);
-  weaponAnchor.rotation.set(0.12, 0, -0.18);
-  weaponAnchor.userData.baseRotationX = weaponAnchor.rotation.x;
-  weaponAnchor.userData.baseRotationY = weaponAnchor.rotation.y;
-  weaponAnchor.userData.baseRotationZ = weaponAnchor.rotation.z;
-  root.add(weaponAnchor);
-
-  const labelSprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: createLabelTexture(displayName),
-      transparent: true,
-      depthWrite: false,
-    }),
-  );
-  labelSprite.position.set(0, 2.15, 0);
-  labelSprite.scale.set(1.6, 0.4, 1);
-  root.add(labelSprite);
-
-  const hitVolumeDebugGroup = createRemoteHitVolumeDebugGroup();
-  hitVolumeDebugGroup.visible = false;
-
-  return {
-    root,
-    body,
-    bodyCylinder,
-    bodyTop,
-    bodyBottom,
-    weaponAnchor,
-    weaponMesh: null,
-    weaponKey: null,
-    labelSprite,
-    hitVolumeDebugGroup,
-    showHitVolumeDebug: false,
-    flashTime: 0,
-    hitReactionTime: 0,
-    deathTransitionTime: 0,
-    lastAlive: true,
-    characterRoot: null,
-    characterDefinition: null,
-    characterMixer: null,
-    characterActions: new Map(),
-    characterUpperBodyActions: new Map(),
-    activeCharacterClip: null,
-    activeUpperBodyClip: null,
-    activeUpperBodyWeight: 1,
-    upperBodyActionTime: 0,
-    fullBodyActionClip: null,
-    fullBodyActionTime: 0,
-    characterLoadState: 'idle',
-    characterWeaponBone: null,
-    characterWeaponSocket: null,
-    characterWeaponAnchor: null,
-    characterSkinnedMesh: null,
-    leftHandIkSolver: null,
-    leftHandIkTargetBone: null,
-    characterAimBones: [],
-    characterHitBones: null,
-    characterScaleBase: 1,
-    characterModelScaleAtAttach: 1,
-    characterBasePosition: new THREE.Vector3(),
-  };
-}
-
 function createRemoteHitCapsuleDebugMesh(color) {
   const material = new THREE.MeshBasicMaterial({
     color,
@@ -1976,6 +1197,99 @@ function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones) {
   }, REMOTE_LOCAL_HITBOX_SNAPSHOT);
 
   return updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, localSnapshot);
+}
+
+function createRemotePlayerVisual(displayName, bodyMaterial) {
+  const root = new THREE.Group();
+
+  const body = new THREE.Group();
+  const bodyCylinder = new THREE.Mesh(
+    new THREE.CylinderGeometry(REMOTE_PLAYER_BODY_RADIUS, REMOTE_PLAYER_BODY_RADIUS, 1, 18),
+    bodyMaterial,
+  );
+  bodyCylinder.castShadow = true;
+  bodyCylinder.receiveShadow = true;
+  body.add(bodyCylinder);
+
+  const bodyTop = new THREE.Mesh(
+    new THREE.SphereGeometry(REMOTE_PLAYER_BODY_RADIUS, 18, 12),
+    bodyMaterial,
+  );
+  bodyTop.castShadow = true;
+  bodyTop.receiveShadow = true;
+  body.add(bodyTop);
+
+  const bodyBottom = new THREE.Mesh(
+    new THREE.SphereGeometry(REMOTE_PLAYER_BODY_RADIUS, 18, 12),
+    bodyMaterial,
+  );
+  bodyBottom.castShadow = true;
+  bodyBottom.receiveShadow = true;
+  body.add(bodyBottom);
+  root.add(body);
+
+  const weaponAnchor = new THREE.Group();
+  weaponAnchor.position.set(REMOTE_PLAYER_WEAPON_SIDE_X, 0.9, REMOTE_PLAYER_WEAPON_FORWARD_Z);
+  weaponAnchor.rotation.set(0.12, 0, -0.18);
+  weaponAnchor.userData.baseRotationX = weaponAnchor.rotation.x;
+  weaponAnchor.userData.baseRotationY = weaponAnchor.rotation.y;
+  weaponAnchor.userData.baseRotationZ = weaponAnchor.rotation.z;
+  root.add(weaponAnchor);
+
+  const labelSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: createLabelTexture(displayName),
+      transparent: true,
+      depthWrite: false,
+    }),
+  );
+  labelSprite.position.set(0, 2.15, 0);
+  labelSprite.scale.set(1.6, 0.4, 1);
+  root.add(labelSprite);
+
+  const hitVolumeDebugGroup = createRemoteHitVolumeDebugGroup();
+  hitVolumeDebugGroup.group.visible = false;
+
+  return {
+    root,
+    body,
+    bodyCylinder,
+    bodyTop,
+    bodyBottom,
+    weaponAnchor,
+    weaponMesh: null,
+    weaponKey: null,
+    labelSprite,
+    hitVolumeDebugGroup,
+    showHitVolumeDebug: false,
+    flashTime: 0,
+    hitReactionTime: 0,
+    deathTransitionTime: 0,
+    lastAlive: true,
+    characterRoot: null,
+    characterDefinition: null,
+    characterMixer: null,
+    characterActions: new Map(),
+    characterUpperBodyActions: new Map(),
+    activeCharacterClip: null,
+    activeUpperBodyClip: null,
+    activeUpperBodyWeight: 1,
+    upperBodyActionTime: 0,
+    fullBodyActionClip: null,
+    fullBodyActionTime: 0,
+    characterLoadState: 'idle',
+    characterWeaponBone: null,
+    characterWeaponSocket: null,
+    characterWeaponAnchor: null,
+    characterSkinnedMesh: null,
+    leftHandIkSolver: null,
+    leftHandIkTargetBone: null,
+    characterAimBones: [],
+    characterHitBones: null,
+    characterScaleBase: 1,
+    characterModelScaleAtAttach: 1,
+    characterBasePosition: new THREE.Vector3(),
+  };
 }
 
 function getRemoteWeaponParent(visual) {
