@@ -12,6 +12,8 @@ import { preloadNavigationModules } from '../game/ai/NavigationManager.js';
 import { FixedStepLoop } from '../core/loop/FixedStepLoop.js';
 import { NETCODE_SIMULATION_STEP } from '../shared/netcode.js';
 
+const DEFAULT_HORIZONTAL_FOV = 103;
+
 export class GameApp {
   constructor(root) {
     this.root = root;
@@ -21,6 +23,7 @@ export class GameApp {
     this.loadingStatus = '';
     this.currentFps = 0;
     this.mouseSensitivity = 0.0011;
+    this.baseHorizontalFov = DEFAULT_HORIZONTAL_FOV;
     this.mapLoadToken = 0;
     this.authoritativeNetworkingEnabled = true;
     this.networkJumpQueued = false;
@@ -59,9 +62,10 @@ export class GameApp {
     this.selectedMapId = MAP_OPTIONS[0].id;
     this.selectedSkyboxId = SKYBOX_OPTIONS[0].id;
 
+    const initialAspect = window.innerWidth / window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
+      this.horizontalToVerticalFov(this.baseHorizontalFov, initialAspect),
+      initialAspect,
       0.1,
       500,
     );
@@ -129,9 +133,11 @@ export class GameApp {
       getFps: () => this.currentFps,
       getMasterVolume: () => this.audioManager.getMasterVolume(),
       getMouseSensitivity: () => this.mouseSensitivity,
+      getHorizontalFov: () => this.baseHorizontalFov,
       onResume: () => this.resumeGame(),
       onSelectMap: (mapId) => this.loadMap(mapId),
       onSensitivityChange: (value) => this.setMouseSensitivity(value),
+      onFovChange: (value) => this.setHorizontalFov(value),
       onVolumeChange: (volume) => this.audioManager.setMasterVolume(volume),
       maps: MAP_OPTIONS,
       getSelectedMapId: () => this.selectedMapId,
@@ -361,6 +367,8 @@ export class GameApp {
       this.lastSentScopedState = false;
       this.localSimulationLoop.accumulator = 0;
       this.runtime.attachToScene(this.scene);
+      this.runtime.weaponManager?.setBaseFov(this.camera.fov);
+      this.runtime.playerController?.setBaseFov(this.camera.fov);
       this.syncCollisionDebugMesh();
       if (this.getGameplaySyncEnabled()) {
         this.syncLocalPlayerToNetwork();
@@ -404,6 +412,21 @@ export class GameApp {
     this.runtime?.playerController?.setMouseSensitivity(this.mouseSensitivity);
   }
 
+  horizontalToVerticalFov(horizontalDegrees, aspect = this.camera?.aspect ?? (window.innerWidth / window.innerHeight)) {
+    const horizontalRadians = THREE.MathUtils.degToRad(horizontalDegrees);
+    const verticalRadians = 2 * Math.atan(Math.tan(horizontalRadians / 2) / Math.max(aspect, 0.0001));
+    return THREE.MathUtils.radToDeg(verticalRadians);
+  }
+
+  setHorizontalFov(horizontalDegrees) {
+    this.baseHorizontalFov = THREE.MathUtils.clamp(horizontalDegrees, 80, 120);
+    const verticalFov = this.horizontalToVerticalFov(this.baseHorizontalFov);
+    this.camera.fov = verticalFov;
+    this.camera.updateProjectionMatrix();
+    this.runtime?.weaponManager?.setBaseFov(verticalFov);
+    this.runtime?.playerController?.setBaseFov(verticalFov);
+  }
+
   createLighting() {
     const group = new THREE.Group();
 
@@ -427,7 +450,10 @@ export class GameApp {
 
   onResize() {
     this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.fov = this.horizontalToVerticalFov(this.baseHorizontalFov, this.camera.aspect);
     this.camera.updateProjectionMatrix();
+    this.runtime?.weaponManager?.setBaseFov(this.camera.fov);
+    this.runtime?.playerController?.setBaseFov(this.camera.fov);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 

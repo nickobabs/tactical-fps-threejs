@@ -50,7 +50,7 @@
 ## Current Status
 
 - Implemented and active
-- Includes pause/resume flow, key bindings view, map selection view, skybox selection view, volume control, sensitivity control with numeric feedback, FPS display, scoped reticles, and a centered map-loading overlay
+- Includes pause/resume flow, key bindings view, map selection view, skybox selection view, volume control, sensitivity control with numeric feedback, horizontal FOV control, FPS display, scoped reticles, and a centered map-loading overlay
 - The file structure is now split so HUD shell logic and pause-menu construction are no longer in one file
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`

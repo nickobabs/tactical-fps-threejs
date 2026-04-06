@@ -13,9 +13,11 @@ export function createHud({
   getFps,
   getMasterVolume,
   getMouseSensitivity,
+  getHorizontalFov,
   onResume,
   onSelectMap,
   onSensitivityChange,
+  onFovChange,
   onVolumeChange,
   maps = [],
   getSelectedMapId,
@@ -77,9 +79,11 @@ export function createHud({
     onSelectSkybox,
     skyboxes,
     onSensitivityChange,
+    onFovChange,
     onVolumeChange,
     getMasterVolume,
     getMouseSensitivity,
+    getHorizontalFov,
   });
 
   const roundEl = hud.querySelector('.hud__round');

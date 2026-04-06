@@ -2,7 +2,7 @@
 
 ## Summary
 
-`WeaponManager` coordinates equipped weapon state, while `weaponFiring.js`, `weaponPresentation.js`, and `weaponEffects.js` now own shot resolution, viewmodel presentation math, and temporary shot effects respectively.
+`WeaponManager` coordinates equipped weapon state, while `weaponFiring.js`, `weaponPresentation.js`, and `weaponEffects.js` own shot resolution, viewmodel presentation math, and temporary shot effects respectively.
 
 ## Inputs
 
@@ -29,7 +29,9 @@
 
 ## Key Design Decisions
 
-- Weapon is procedurally assembled from simple primitives instead of imported art
+- First-person viewmodels now use a mixed path:
+  - rifle and knife use a borrowed animated prototype asset pack
+  - sniper still uses a procedural fallback viewmodel
 - Viewmodel is rendered on a separate camera layer to avoid self-hits during raycasts
 - Weapon behavior is split between a runtime manager, config data, viewmodel builder helpers, shot-resolution helpers, presentation helpers, and temporary shot-effect helpers
 - The rifle is automatic and supports ADS with a centered sight picture
@@ -40,13 +42,18 @@
 - Weapon swapping is slot-driven through config data, so adding new number-key weapons does not require another hardcoded branch in `WeaponManager`
 - Slot lookup now comes from config data rather than a per-frame scan across all weapons, which keeps input handling simpler as the arsenal grows
 - `WeaponManager` now coordinates weapon runtime state while delegating hitscan/melee resolution and viewmodel presentation math to smaller helpers, which lowers the cost of adding more weapons or expanding animation logic later
+- The active base FOV is now exposed to the player as horizontal FOV and is configurable from the pause menu
+- The current rifle/knife prototype path includes a temporary `F4` live-tuning panel for viewmodel and muzzle alignment
 
 ## Current Status
 
 - Implemented and active
 - Includes `Rifle`, `Sniper`, and `Knife` slots, weapon swapping on number keys, scoped FOV transitions, sniper hipfire spread, per-weapon damage values, weapon-dependent movement speed, and a basic knife thrust attack with dedicated audio
+- Rifle and knife now play imported equip / hold / fire clips from the borrowed prototype viewmodel pack
+- Knife equip now uses the authored full draw animation instead of only the earlier procedural stab-style presentation
 
 ## Limitations
 
-- No ammo, reload, reload cancel, weapon-specific animation system, or camera kick
-- Knife melee is still intentionally lightweight: there is no separate swing trace, combo chain, inspect, or animation rig
+- No ammo, reload authority, reload cancel, inspect flow, or camera kick
+- The current rifle/knife animation baseline is still explicitly a prototype content path using borrowed assets, not a final production asset pipeline
+- Knife melee is still intentionally lightweight on the gameplay side: there is no separate swing trace, combo chain, or deeper melee state machine

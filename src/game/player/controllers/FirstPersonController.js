@@ -309,6 +309,10 @@ export class FirstPersonController {
     this.mouseSensitivity = Math.max(0.0001, value);
   }
 
+  setBaseFov(value) {
+    this.baseFov = Math.max(1, value);
+  }
+
   getMouseSensitivity() {
     return this.mouseSensitivity;
   }

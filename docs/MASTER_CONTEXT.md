@@ -129,7 +129,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - `NetworkClient` now lives at the app/session layer in `GameApp`, not inside `MapRuntime`, so map swaps no longer imply reconnect churn.
 - The player controller owns look, movement state, prediction/reconciliation, movement mode, and the split between canonical gameplay state and presented first-person state.
 - `CollisionWorld` owns static mesh-based collision resolution, downward ground sampling, and line-of-sight checks using `three-mesh-bvh`.
-- Weapons remain procedural viewmodels attached directly to the camera.
+- First-person weapons now use a mixed camera-attached presentation path:
+  - rifle and knife currently use a borrowed animated prototype viewmodel pack
+  - sniper still uses the older procedural fallback path
 - HUD and pause menu are DOM/CSS, not world-space UI.
 - Shared locomotion math lives in `src/shared/playerMovement.js` and is used by both the browser controller and the Colyseus room.
 - Shared map metadata now has an explicit manifest in `src/shared/maps/mapManifest.js`.
@@ -211,6 +213,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - skybox selection
   - volume slider
   - sensitivity slider
+  - horizontal FOV slider
 - Multiplayer:
   - Colyseus room
   - remote players use a remote third-person presentation path with placeholder fallback
@@ -332,6 +335,17 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - First remote vertical-aim readability pass landed:
   - player pitch now replicates through the multiplayer protocol
   - remote weapon pitch and experimental body-aim runtime pass were wired end to end
+- First-person weapon presentation moved off the all-procedural baseline:
+  - active rifle and knife now use the borrowed animated `public/models/viewmodels/cube-gunman/hand_base.glb` prototype pack
+  - current borrowed prototype textures live under `public/models/viewmodels/cube-gunman/textures/`
+  - sniper still uses the procedural fallback path
+  - the pause menu now includes a horizontal FOV slider, with the active baseline set to `103` horizontal
+  - `F4` now opens a temporary first-person viewmodel tuning panel:
+    - hip / ADS position and rotation
+    - per-pose muzzle offsets
+    - forced ADS preview
+    - live muzzle preview
+    - values persist through `localStorage`
 - First authored remote rifle upper-body base layer landed:
   - new file is `public/models/players/animations/newtest_rifle_upper_idle.fbx`
   - this proved useful as a content experiment, but the broad upper/lower-body layering direction was not stable enough to keep as the active runtime path

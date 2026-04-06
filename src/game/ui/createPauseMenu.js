@@ -8,17 +8,21 @@ export function createPauseMenu({
   onSelectSkybox,
   skyboxes = [],
   onSensitivityChange,
+  onFovChange,
   onVolumeChange,
   getMasterVolume,
   getMouseSensitivity,
+  getHorizontalFov,
 }) {
   let lastSelectedMapId = null;
   let lastSelectedSkyboxId = null;
   let lastVolume = null;
   let lastSensitivity = null;
+  let lastFov = null;
   const pause = document.createElement('div');
   pause.className = 'hud__pause';
   const sensitivityToPercent = () => Math.round(((getMouseSensitivity?.() ?? 0.0011) / 0.0022) * 100);
+  const currentFov = () => Math.round(getHorizontalFov?.() ?? 103);
   pause.innerHTML = `
     <div class="hud__pause-panel">
       <div class="hud__pause-title">Paused</div>
@@ -33,6 +37,13 @@ export function createPauseMenu({
           <span class="hud__slider-value">${sensitivityToPercent()}</span>
         </span>
         <input class="hud__sensitivity-slider" type="range" min="1" max="100" step="1" value="${sensitivityToPercent()}" />
+      </label>
+      <label class="hud__volume">
+        <span class="hud__slider-header">
+          <span class="hud__volume-label">FOV (H)</span>
+          <span class="hud__fov-value hud__slider-value">${currentFov()}</span>
+        </span>
+        <input class="hud__fov-slider" type="range" min="80" max="120" step="1" value="${currentFov()}" />
       </label>
       <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="bindings">Key Bindings</button>
       <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="maps">Maps</button>
@@ -70,6 +81,8 @@ export function createPauseMenu({
   const volumeSlider = pause.querySelector('.hud__volume-slider');
   const sensitivitySlider = pause.querySelector('.hud__sensitivity-slider');
   const sensitivityValueEl = pause.querySelector('.hud__slider-value');
+  const fovSlider = pause.querySelector('.hud__fov-slider');
+  const fovValueEl = pause.querySelector('.hud__fov-value');
   const bindingsButton = pause.querySelector('[data-action="bindings"]');
   const mapsButton = pause.querySelector('[data-action="maps"]');
   const skyboxesButton = pause.querySelector('[data-action="skyboxes"]');
@@ -84,6 +97,11 @@ export function createPauseMenu({
     const percent = Number(event.currentTarget.value);
     sensitivityValueEl.textContent = String(percent);
     onSensitivityChange?.((percent / 100) * 0.0022);
+  };
+  const handleFov = (event) => {
+    const horizontalFov = Number(event.currentTarget.value);
+    fovValueEl.textContent = String(horizontalFov);
+    onFovChange?.(horizontalFov);
   };
   const handleBindings = () => {
     bindingsEl.classList.toggle('hud__bindings--visible');
@@ -110,6 +128,7 @@ export function createPauseMenu({
   resumeButton.addEventListener('click', handleResume);
   volumeSlider.addEventListener('input', handleVolume);
   sensitivitySlider.addEventListener('input', handleSensitivity);
+  fovSlider.addEventListener('input', handleFov);
   bindingsButton.addEventListener('click', handleBindings);
   mapsButton.addEventListener('click', handleMaps);
   skyboxesButton.addEventListener('click', handleSkyboxes);
@@ -121,6 +140,7 @@ export function createPauseMenu({
       resumeButton.removeEventListener('click', handleResume);
       volumeSlider.removeEventListener('input', handleVolume);
       sensitivitySlider.removeEventListener('input', handleSensitivity);
+      fovSlider.removeEventListener('input', handleFov);
       bindingsButton.removeEventListener('click', handleBindings);
       mapsButton.removeEventListener('click', handleMaps);
       skyboxesButton.removeEventListener('click', handleSkyboxes);
@@ -162,6 +182,13 @@ export function createPauseMenu({
         sensitivitySlider.value = String(sensitivity);
         sensitivityValueEl.textContent = String(sensitivity);
         lastSensitivity = sensitivity;
+      }
+
+      const horizontalFov = currentFov();
+      if (horizontalFov !== lastFov) {
+        fovSlider.value = String(horizontalFov);
+        fovValueEl.textContent = String(horizontalFov);
+        lastFov = horizontalFov;
       }
     },
   };
