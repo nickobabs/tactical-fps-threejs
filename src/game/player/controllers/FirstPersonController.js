@@ -1,23 +1,17 @@
 import * as THREE from 'three';
 import { createPlayerMovementState, simulatePlayerMovement } from '../../../shared/playerMovement.js';
 import { NETCODE_SIMULATION_STEP } from '../../../shared/netcode.js';
+import { getImmediatePresentationVelocity, getMovementInputSnapshot } from './playerInputState.js';
+import { findLandingHeightAtCurrentPosition, getNextFlyMode } from './playerFlyMode.js';
+import { updatePresentationState } from './playerPresentation.js';
 
 const NEXT_POSITION = new THREE.Vector3();
 const HORIZONTAL_DELTA = new THREE.Vector3();
 const SOFT_CORRECTION_DELTA = new THREE.Vector3();
-const RENDER_POSITION_WORLD = new THREE.Vector3();
-const PRESENTATION_TARGET_WORLD = new THREE.Vector3();
-const IMMEDIATE_PRESENTATION_VELOCITY = new THREE.Vector3();
-const RESPONSIVE_PRESENTATION_OFFSET = new THREE.Vector3();
 const BUFFERED_CANONICAL_CORRECTION = new THREE.Vector3();
 const SOFT_CORRECTION_MIN_DISTANCE = 0.02;
 const SOFT_CORRECTION_MAX_DISTANCE = 2.5;
-const CORRECTION_OFFSET_DECAY = 18;
 const CORRECTION_OFFSET_EPSILON = 0.0001;
-const PRESENTATION_MAX_EXTRAPOLATION = NETCODE_SIMULATION_STEP;
-const RESPONSIVE_OFFSET_GAIN = 0.012;
-const RESPONSIVE_OFFSET_DECAY = 16;
-const RESPONSIVE_OFFSET_MAX = 0.08;
 const CANONICAL_CORRECTION_BLEND = 9;
 const MAX_CANONICAL_CORRECTION_PER_STEP = 0.035;
 const LOCAL_CORRECTION_START_DISTANCE = 0.18;
@@ -29,21 +23,6 @@ const BUFFERED_CORRECTION_TARGET = new THREE.Vector3();
 const BUFFERED_CORRECTION_APPLIED = new THREE.Vector3();
 const BUFFERED_CORRECTION_MOVE = new THREE.Vector3();
 const CORRECTION_STEP_TARGET = new THREE.Vector3();
-const LANDING_RAYCASTER = new THREE.Raycaster();
-const LANDING_WORLD_NORMAL_MATRIX = new THREE.Matrix3();
-const LANDING_WORLD_NORMAL = new THREE.Vector3();
-const LANDING_SAMPLE_OFFSETS = [
-  [0, 0],
-  [-0.22, 0],
-  [0.22, 0],
-  [0, -0.22],
-  [0, 0.22],
-  [-0.16, -0.16],
-  [0.16, -0.16],
-  [-0.16, 0.16],
-  [0.16, 0.16],
-];
-
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
     return performance.now();
@@ -191,29 +170,21 @@ export class FirstPersonController {
   }
 
   toggleFlyMode() {
-    if (this.movementMode === 'fly') {
-      if (!this.allowGroundedMode) {
-        return this.movementMode;
-      }
-
-      const landed = this.tryExitFlyMode();
-      return landed ? 'grounded' : 'fly';
+    const nextFlyMode = getNextFlyMode({
+      movementMode: this.movementMode,
+      allowGroundedMode: this.allowGroundedMode,
+      findLandingHeight: () => this.findLandingHeightAtCurrentPosition(),
+    });
+    if (nextFlyMode.nextMode === 'grounded') {
+      this.applyGroundedLanding(nextFlyMode.landingHeight);
+      return this.movementMode;
     }
 
     this.setMovementMode('fly');
     return this.movementMode;
   }
 
-  tryExitFlyMode() {
-    if (!this.allowGroundedMode) {
-      return false;
-    }
-
-    const landingHeight = this.findLandingHeightAtCurrentPosition();
-    if (landingHeight == null) {
-      return false;
-    }
-
+  applyGroundedLanding(landingHeight) {
     this.setMovementMode('grounded');
     this.position.y = landingHeight;
     this.presentationPosition.y = landingHeight;
@@ -226,83 +197,14 @@ export class FirstPersonController {
     this.motionState.velocity.z = 0;
     this.motionState.isGrounded = true;
     this.yaw.position.copy(this.presentationPosition);
-    return true;
   }
 
   findLandingHeightAtCurrentPosition() {
-    if (this.landingSurfaces.length > 0) {
-      let supportedSamples = 0;
-      let accumulatedHeight = 0;
-
-      for (const [offsetX, offsetZ] of LANDING_SAMPLE_OFFSETS) {
-        const sampleX = this.position.x + offsetX;
-        const sampleZ = this.position.z + offsetZ;
-
-        LANDING_RAYCASTER.set(
-          new THREE.Vector3(sampleX, this.position.y + 1.5, sampleZ),
-          new THREE.Vector3(0, -1, 0),
-        );
-
-        const hit = LANDING_RAYCASTER.intersectObjects(this.landingSurfaces, false).find((candidate) => {
-          const faceNormal = candidate.face?.normal;
-          if (!faceNormal || !candidate.object) {
-            return false;
-          }
-
-          LANDING_WORLD_NORMAL_MATRIX.getNormalMatrix(candidate.object.matrixWorld);
-          LANDING_WORLD_NORMAL.copy(faceNormal)
-            .applyMatrix3(LANDING_WORLD_NORMAL_MATRIX)
-            .normalize();
-
-          const dropDistance = this.position.y - candidate.point.y;
-          return LANDING_WORLD_NORMAL.y > 0.35 && dropDistance >= -0.5 && dropDistance <= 256;
-        });
-
-        if (!hit) {
-          continue;
-        }
-
-        supportedSamples += 1;
-        accumulatedHeight += hit.point.y;
-      }
-
-      if (supportedSamples >= 5) {
-        return accumulatedHeight / supportedSamples;
-      }
-
-      return null;
-    }
-
-    if (!this.collisionWorld) {
-      return this.position.y;
-    }
-
-    let supportedSamples = 0;
-    let accumulatedHeight = 0;
-
-    for (const [offsetX, offsetZ] of LANDING_SAMPLE_OFFSETS) {
-      const groundHeight = this.collisionWorld.getGroundHeightAt(
-        this.position.x + offsetX,
-        this.position.z + offsetZ,
-        this.position.y,
-        2,
-        256,
-      );
-      const dropDistance = this.position.y - groundHeight;
-
-      if (dropDistance < -0.5 || dropDistance > 256) {
-        continue;
-      }
-
-      supportedSamples += 1;
-      accumulatedHeight += groundHeight;
-    }
-
-    if (supportedSamples < 5) {
-      return null;
-    }
-
-    return accumulatedHeight / supportedSamples;
+    return findLandingHeightAtCurrentPosition({
+      position: this.position,
+      landingSurfaces: this.landingSurfaces,
+      collisionWorld: this.collisionWorld,
+    });
   }
 
   setMouseSensitivity(value) {
@@ -336,31 +238,13 @@ export class FirstPersonController {
   }
 
   getMovementInputSnapshot(options = {}) {
-    if (this.movementMode === 'fly') {
-      return {
-        forward: this.input.isPressed('KeyW'),
-        backward: this.input.isPressed('KeyS'),
-        left: this.input.isPressed('KeyA'),
-        right: this.input.isPressed('KeyD'),
-        sprint: this.input.isPressed('ShiftLeft'),
-        descend: this.input.isPressed('KeyC'),
-        jump: Boolean(options.jumpPressed),
-        yaw: this.yawAngle,
-        pitch: this.pitchAngle,
-      };
-    }
-
-    return {
-      forward: this.input.isPressed('KeyW'),
-      backward: this.input.isPressed('KeyS'),
-      left: this.input.isPressed('KeyA'),
-      right: this.input.isPressed('KeyD'),
-      sprint: this.input.isPressed('ShiftLeft'),
-      crouch: this.input.isPressed('KeyC'),
-      jump: Boolean(options.jumpPressed),
-      yaw: this.yawAngle,
-      pitch: this.pitchAngle,
-    };
+    return getMovementInputSnapshot({
+      input: this.input,
+      movementMode: this.movementMode,
+      yawAngle: this.yawAngle,
+      pitchAngle: this.pitchAngle,
+      jumpPressed: options.jumpPressed,
+    });
   }
 
   getCurrentSpeedMultiplier() {
@@ -368,152 +252,31 @@ export class FirstPersonController {
   }
 
   getImmediatePresentationVelocity() {
-    if (this.movementMode === 'fly') {
-      const speedMultiplier = this.getSpeedMultiplier();
-      const wantsSprint = this.input.isPressed('ShiftLeft');
-      const moveForward = this.input.isPressed('KeyW');
-      const moveBackward = this.input.isPressed('KeyS');
-      const moveLeft = this.input.isPressed('KeyA');
-      const moveRight = this.input.isPressed('KeyD');
-      const moveUp = this.input.isPressed('Space');
-      const moveDown = this.input.isPressed('KeyC');
-
-      const forwardX = -Math.sin(this.yawAngle);
-      const forwardZ = -Math.cos(this.yawAngle);
-      const rightX = Math.cos(this.yawAngle);
-      const rightZ = -Math.sin(this.yawAngle);
-
-      let moveX = 0;
-      let moveY = 0;
-      let moveZ = 0;
-
-      if (moveForward) {
-        moveX += forwardX;
-        moveZ += forwardZ;
-      }
-      if (moveBackward) {
-        moveX -= forwardX;
-        moveZ -= forwardZ;
-      }
-      if (moveRight) {
-        moveX += rightX;
-        moveZ += rightZ;
-      }
-      if (moveLeft) {
-        moveX -= rightX;
-        moveZ -= rightZ;
-      }
-      if (moveUp) {
-        moveY += 1;
-      }
-      if (moveDown) {
-        moveY -= 1;
-      }
-
-      const moveLength = Math.hypot(moveX, moveY, moveZ);
-      if (moveLength <= 0) {
-        return { x: 0, y: 0, z: 0 };
-      }
-
-      const speed = (wantsSprint ? this.flySprintSpeed : this.flySpeed) * speedMultiplier;
-      return {
-        x: (moveX / moveLength) * speed,
-        y: (moveY / moveLength) * speed,
-        z: (moveZ / moveLength) * speed,
-      };
-    }
-
-    const speedMultiplier = this.getSpeedMultiplier();
-    const wantsCrouch = this.input.isPressed('KeyC');
-    const wantsSprint = this.input.isPressed('ShiftLeft');
-    const moveForward = this.input.isPressed('KeyW');
-    const moveBackward = this.input.isPressed('KeyS');
-    const moveLeft = this.input.isPressed('KeyA');
-    const moveRight = this.input.isPressed('KeyD');
-
-    const forwardX = -Math.sin(this.yawAngle);
-    const forwardZ = -Math.cos(this.yawAngle);
-    const rightX = Math.cos(this.yawAngle);
-    const rightZ = -Math.sin(this.yawAngle);
-
-    let moveX = 0;
-    let moveZ = 0;
-
-    if (moveForward) {
-      moveX += forwardX;
-      moveZ += forwardZ;
-    }
-    if (moveBackward) {
-      moveX -= forwardX;
-      moveZ -= forwardZ;
-    }
-    if (moveRight) {
-      moveX += rightX;
-      moveZ += rightZ;
-    }
-    if (moveLeft) {
-      moveX -= rightX;
-      moveZ -= rightZ;
-    }
-
-    const moveLength = Math.hypot(moveX, moveZ);
-    if (moveLength <= 0) {
-      return { x: 0, y: this.velocity.y, z: 0 };
-    }
-
-    moveX /= moveLength;
-    moveZ /= moveLength;
-
-    const maxSpeed = (wantsCrouch
-      ? this.crouchSpeed
-      : wantsSprint
-        ? this.runSpeed
-        : this.walkSpeed) * speedMultiplier;
-
-    return {
-      x: moveX * maxSpeed,
-      y: this.velocity.y,
-      z: moveZ * maxSpeed,
-    };
+    return getImmediatePresentationVelocity({
+      input: this.input,
+      movementMode: this.movementMode,
+      yawAngle: this.yawAngle,
+      velocity: this.velocity,
+      getSpeedMultiplier: this.getSpeedMultiplier,
+      flySpeed: this.flySpeed,
+      flySprintSpeed: this.flySprintSpeed,
+      crouchSpeed: this.crouchSpeed,
+      runSpeed: this.runSpeed,
+      walkSpeed: this.walkSpeed,
+    });
   }
 
   updatePresentation(delta, alpha = 1) {
-    const damping = Math.exp(-CORRECTION_OFFSET_DECAY * delta);
-    this.correctionOffsetWorld.multiplyScalar(damping);
-
-    if (this.correctionOffsetWorld.lengthSq() <= CORRECTION_OFFSET_EPSILON * CORRECTION_OFFSET_EPSILON) {
-      this.correctionOffsetWorld.set(0, 0, 0);
-    }
-
-    const immediateVelocity = this.getImmediatePresentationVelocity();
-    const responsiveDecay = Math.exp(-RESPONSIVE_OFFSET_DECAY * delta);
-    this.responsivePresentationOffset.multiplyScalar(responsiveDecay);
-    RESPONSIVE_PRESENTATION_OFFSET.set(
-      immediateVelocity.x * RESPONSIVE_OFFSET_GAIN,
-      0,
-      immediateVelocity.z * RESPONSIVE_OFFSET_GAIN,
-    );
-    this.responsivePresentationOffset.addScaledVector(
-      RESPONSIVE_PRESENTATION_OFFSET.sub(this.responsivePresentationOffset),
-      1 - responsiveDecay,
-    );
-    if (this.responsivePresentationOffset.lengthSq() > RESPONSIVE_OFFSET_MAX * RESPONSIVE_OFFSET_MAX) {
-      this.responsivePresentationOffset.setLength(RESPONSIVE_OFFSET_MAX);
-    }
-
-    PRESENTATION_TARGET_WORLD.copy(this.position).addScaledVector(
-      IMMEDIATE_PRESENTATION_VELOCITY.set(
-        immediateVelocity.x,
-        immediateVelocity.y,
-        immediateVelocity.z,
-      ),
-      THREE.MathUtils.clamp(alpha, 0, 1) * PRESENTATION_MAX_EXTRAPOLATION,
-    );
-    PRESENTATION_TARGET_WORLD.add(this.responsivePresentationOffset);
-    PRESENTATION_TARGET_WORLD.add(this.correctionOffsetWorld);
-    this.presentationTargetPosition.copy(PRESENTATION_TARGET_WORLD);
-    RENDER_POSITION_WORLD.copy(this.presentationTargetPosition);
-    this.presentationPosition.copy(RENDER_POSITION_WORLD);
+    updatePresentationState({
+      delta,
+      alpha,
+      position: this.position,
+      correctionOffsetWorld: this.correctionOffsetWorld,
+      responsivePresentationOffset: this.responsivePresentationOffset,
+      immediateVelocity: this.getImmediatePresentationVelocity(),
+      presentationTargetPosition: this.presentationTargetPosition,
+    });
+    this.presentationPosition.copy(this.presentationTargetPosition);
     this.yaw.position.copy(this.presentationPosition);
     this.viewAnchor.position.set(0, 0, 0);
   }
