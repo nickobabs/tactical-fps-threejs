@@ -124,7 +124,7 @@ It already supports real play loops:
 
 ### 1. Game Composition
 
-[`GameApp.js`](/C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js) is the composition root.
+[`GameApp.js`](src/app/GameApp.js) is the composition root.
 
 It owns:
 
@@ -136,13 +136,13 @@ It owns:
 - remote player presentation
 - top-level debug workflow
 
-Map-bound systems are assembled under [`MapRuntime.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/maps/MapRuntime.js), which keeps collision, navigation, controller, weapons, rounds, targets, and utility scoped to the active map.
+Map-bound systems are assembled under [`MapRuntime.js`](src/game/maps/MapRuntime.js), which keeps collision, navigation, controller, weapons, rounds, targets, and utility scoped to the active map.
 
 ### 2. Movement
 
 Movement is not a purely local controller.
 
-The project uses shared movement logic in [`playerMovement.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js), so the browser and the server evolve around the same locomotion rules.
+The project uses shared movement logic in [`playerMovement.js`](src/shared/playerMovement.js), so the browser and the server evolve around the same locomotion rules.
 
 The current movement stack:
 
@@ -151,7 +151,7 @@ The current movement stack:
 - replay-based reconciliation rather than direct hard replacement
 - deadzone/hysteresis correction policy so tiny disagreement is not constantly visible
 
-Collision comes from [`CollisionWorld.js`](/C:/Users/nicko/tactical-fps-threejs/src/core/physics/CollisionWorld.js), which uses `three-mesh-bvh` against authored static collision geometry.
+Collision comes from [`CollisionWorld.js`](src/core/physics/CollisionWorld.js), which uses `three-mesh-bvh` against authored static collision geometry.
 
 ### 3. Weapons
 
@@ -196,8 +196,8 @@ Multiplayer is now a real gameplay system, not just replicated transforms.
 
 The active baseline includes:
 
-- authoritative room simulation in [`TacticalRoom.js`](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
-- shared protocol helpers in [`netcodeProtocol.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/netcodeProtocol.js)
+- authoritative room simulation in [`TacticalRoom.js`](server/src/rooms/TacticalRoom.js)
+- shared protocol helpers in [`netcodeProtocol.js`](src/shared/netcodeProtocol.js)
 - input snapshots from the browser
 - authoritative movement/state on the server
 - fire requests validated on the server
@@ -205,7 +205,7 @@ The active baseline includes:
 
 ### 6. Remote Player Presentation
 
-[`RemotePlayerPresenter.js`](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js) is the remote playermodel presentation layer.
+[`RemotePlayerPresenter.js`](src/game/networking/RemotePlayerPresenter.js) is the remote playermodel presentation layer.
 
 It is doing real runtime work:
 
@@ -222,9 +222,9 @@ The project now has a working server-authoritative segmented hitbox pipeline.
 
 The important pieces are:
 
-- shared skeleton/hitbox constants in [`remoteCharacterConfig.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteCharacterConfig.js)
-- shared hitbox snapshot construction in [`remoteHitboxes.js`](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteHitboxes.js)
-- authoritative remote rig evaluation in [`remoteHitboxRig.js`](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
+- shared skeleton/hitbox constants in [`remoteCharacterConfig.js`](src/shared/remoteCharacterConfig.js)
+- shared hitbox snapshot construction in [`remoteHitboxes.js`](src/shared/remoteHitboxes.js)
+- authoritative remote rig evaluation in [`remoteHitboxRig.js`](server/src/remoteHitboxRig.js)
 
 The main lesson from that feature:
 
@@ -357,10 +357,10 @@ scripts/
 
 If you want the deeper system writeups, start with:
 
-- [MASTER_CONTEXT.md](/C:/Users/nicko/tactical-fps-threejs/docs/MASTER_CONTEXT.md)
-- [networking.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/networking.md)
-- [weapons.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/weapons.md)
-- [physics.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/physics.md)
-- [player-controller.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/player-controller.md)
-- [ui-hud.md](/C:/Users/nicko/tactical-fps-threejs/docs/systems/ui-hud.md)
-- [remote-hitbox-audit.md](/C:/Users/nicko/tactical-fps-threejs/docs/remote-hitbox-audit.md)
+- [MASTER_CONTEXT.md](docs/MASTER_CONTEXT.md)
+- [networking.md](docs/systems/networking.md)
+- [weapons.md](docs/systems/weapons.md)
+- [physics.md](docs/systems/physics.md)
+- [player-controller.md](docs/systems/player-controller.md)
+- [ui-hud.md](docs/systems/ui-hud.md)
+- [remote-hitbox-audit.md](docs/remote-hitbox-audit.md)
