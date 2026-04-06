@@ -101,7 +101,7 @@ Current status:
 
 - `F7` is the active tool for weapon hold tuning
 - `F6` now also exposes temporary weapon/proxy/bone axis and strength controls for remote aim debugging
-- Left-arm IK is now an active experiment, but the current rifle still does not have a proper left-hand helper, so the runtime grip target is only approximate
+- Left-arm IK is now an active experiment, and the current rifle path can use the authored `left_hand_grip` helper when present
 
 ## What Worked
 
@@ -136,6 +136,6 @@ That should be significantly cleaner than the first AK pass.
 
 ## Current Follow-Up
 
-- The next clean asset step for the rifle is to add a dedicated left-hand helper/socket.
-- Once that exists, the current runtime guessed IK target should be replaced by the authored helper.
-- That should make the left-arm IK experiment materially more trustworthy than the current provisional setup.
+- Keep using authored left-hand helpers where available instead of guessed runtime grip targets.
+- If a future rifle import lacks a dedicated left-hand helper/socket, add one as part of the asset cleanup pass rather than restoring guessed offsets.
+- Continue treating left-arm IK as experimental until the broader remote presentation path is stable enough to justify locking that workflow down.
