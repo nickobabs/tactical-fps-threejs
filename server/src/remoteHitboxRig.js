@@ -19,6 +19,11 @@ import {
 import {
   createRemoteHitboxPointCache,
 } from '../../src/shared/remoteHitboxes.js';
+import {
+  describeRemoteHitboxAudit,
+  resolveRemoteHitBones,
+  resolveRemoteRootJoint,
+} from '../../src/shared/remoteSkeleton.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_MODEL_URL = new URL('../../public/models/players/newtest.glb', import.meta.url);
@@ -260,7 +265,7 @@ async function loadRemoteRigAsset() {
       template.scale.setScalar(scale);
       template.updateMatrixWorld(true);
       TMP_BOX.setFromObject(template);
-      const rootJoint = template.getObjectByName('Bip01');
+      const rootJoint = resolveRemoteRootJoint(template, REMOTE_EXPERIMENTAL_SKELETON);
       if (rootJoint) {
         rootJoint.getWorldPosition(TMP_ROOT_WORLD);
         template.position.set(-TMP_ROOT_WORLD.x, -TMP_BOX.min.y, -TMP_ROOT_WORLD.z);
@@ -283,25 +288,9 @@ async function loadRemoteRigAsset() {
 }
 
 function findRigBones(root) {
+  const bones = resolveRemoteHitBones(root, REMOTE_EXPERIMENTAL_SKELETON);
   return {
-    head: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.head),
-    neck: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.neck),
-    spine: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.spine),
-    pelvis: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.pelvis),
-    leftClavicle: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.leftClavicle),
-    leftUpperArm: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.leftUpperArm),
-    leftForearm: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.leftForearm),
-    leftHand: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.leftHand),
-    rightClavicle: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.rightClavicle),
-    rightUpperArm: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.rightUpperArm),
-    rightForearm: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.rightForearm),
-    rightHand: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.rightHand),
-    leftThigh: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.leftThigh),
-    leftCalf: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.leftCalf),
-    leftFoot: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.leftFoot),
-    rightThigh: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.rightThigh),
-    rightCalf: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.rightCalf),
-    rightFoot: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.rightFoot),
+    ...bones,
     weaponSocket: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.weaponSocket),
   };
 }
@@ -587,6 +576,10 @@ export async function createRemoteHitboxRig() {
     leftHandIkSolver: null,
     leftHandIkTargetBone: null,
   };
+  console.info('[remoteHitboxRig] Hitbox audit:', describeRemoteHitboxAudit({
+    root: resolveRemoteRootJoint(root, REMOTE_EXPERIMENTAL_SKELETON),
+    bones: rig.bones,
+  }));
   await ensureLeftHandIk(rig);
   return rig;
 }
@@ -658,6 +651,18 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   updateLeftHandIk(rig, player);
   rig.container.updateMatrixWorld(true);
   captureHitboxPoints(rig.hitboxPoints, rig.bones);
+  rig.debugState = {
+    activeClip: rig.activeClip,
+    clipTime: Number(activeEntry.action.time ?? 0),
+    clipPlaybackSpeed: Number(activeEntry.playbackSpeed ?? 1),
+    fireTime: Number(rig.fireTime ?? 0),
+    points: {
+      head: rig.hitboxPoints.head ? { ...rig.hitboxPoints.head } : null,
+      neck: rig.hitboxPoints.neck ? { ...rig.hitboxPoints.neck } : null,
+      spine: rig.hitboxPoints.spine ? { ...rig.hitboxPoints.spine } : null,
+      pelvis: rig.hitboxPoints.pelvis ? { ...rig.hitboxPoints.pelvis } : null,
+    },
+  };
   restoreAimBoneBasePose(rig);
   rig.container.updateMatrixWorld(true);
   activeEntry.action.paused = true;

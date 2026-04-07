@@ -107,6 +107,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - runtime subclips from the long strip proved visibly jittery for locomotion loops
   - the first standalone exported locomotion proof, `public/models/players/newtest_run.fbx`, now overrides the experimental `run` clip and plays cleanly in-engine
   - current direction is to export the rest of the locomotion set as standalone clips from the original 3ds Max source instead of continuing to rely on runtime subclips for loop-critical motions
+  - a later parity audit aligned client/server root-motion stripping on `Bip01.position`, which removed the remaining locomotion and jump mismatch; see `docs/remote-hitbox-audit.md` for the detailed debugging record
   - remote pitch is now replicated
   - a new authored rifle upper-body base clip still exists for the experimental remote path:
     - `public/models/players/animations/newtest_rifle_upper_idle.fbx`
@@ -158,8 +159,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Remote hitboxes are now in a usable state, but still deserve normal gameplay validation over time:
   - the authoritative path now follows the visible remote mesh closely enough for current PvP use
   - head placement depends on the shared tuned defaults and should be revalidated if the playermodel, skeleton, or aim-readability pass changes
-  - `F3` remains an important diagnostic tool, and `F6` local hitbox debug should be used for future visual tuning before baking new shared defaults
-  - one current known regression remains tracked separately: airborne remote authoritative hitboxes can sit below the visible mesh while local hitbox debug remains accurate
+  - `F3` remains an important visual diagnostic tool, and `F6` local hitbox debug should be used for future visual tuning before baking new shared defaults
+  - the temporary file-backed deep audit used to resolve the locomotion/jump mismatch was removed after the fix, so `F3` no longer writes log files during normal use
+- the earlier airborne remote-hitbox offset was resolved by that same `Bip01` root-motion parity fix
 
 ## Investigation Notes
 

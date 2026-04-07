@@ -32,7 +32,7 @@ The refactor has been proceeding in small verified slices with a production buil
   - stable after audit, but the next slice should be smaller than the reverted hit-volume-debug extraction
 - Server-side authoritative room / remote hitbox runtime
   - still relatively large and not yet refactored in this pass
-  - confirmed separate multiplayer bug: airborne remote authoritative hitboxes can sit below the visible mesh while local hitbox debug remains accurate (see `debug/Siufbpy.png`)
+  - latest parity audit resolved the major locomotion and airborne presentation mismatch by aligning client/server `Bip01` root-motion stripping
 
 ## Working Rules For The Next Pass
 

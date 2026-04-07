@@ -51,7 +51,7 @@ export const MAP_MANIFEST = [
   },
   {
     id: 'dust2-import-test',
-    label: 'Dust2 Import Test',
+    label: 'Dust2 Legacy Import',
     networking: {
       authoritativeMovement: true,
     },
@@ -79,6 +79,34 @@ export const MAP_MANIFEST = [
       render: {
         source: 'gltf-scene',
         path: '/maps/de_dust2_-_cs_map.glb',
+      },
+    },
+  },
+  {
+    id: 'dust2-map-test',
+    label: 'Dust2 Test',
+    networking: {
+      authoritativeMovement: true,
+    },
+    gameplay: {
+      source: 'defaults',
+      movementMode: 'grounded',
+      allowGroundedMode: true,
+      spawnMarkers: ['spawn_01', 'spawn_02'],
+    },
+    assets: {
+      navigation: {
+        format: 'recast-navmesh-binary',
+        path: '/navmeshes/dust2-import-test.bin',
+        buildSource: 'gltf-scene',
+      },
+      collision: {
+        source: 'gltf-scene',
+        path: '/maps/d2colltest.glb',
+      },
+      render: {
+        source: 'gltf-scene',
+        path: '/maps/d2maptest.glb',
       },
     },
   },

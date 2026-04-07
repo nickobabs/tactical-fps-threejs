@@ -19,6 +19,7 @@ import { GameDebugController } from './GameDebugController.js';
 import { GameSessionController } from './GameSessionController.js';
 
 const DEFAULT_HORIZONTAL_FOV = 103;
+const MOVEMENT_TRACE_STORAGE_KEY = 'tactical-fps-threejs-movement-trace';
 
 export class GameApp {
   constructor(root) {
@@ -28,6 +29,8 @@ export class GameApp {
     this.mouseSensitivity = 0.0011;
     this.baseHorizontalFov = DEFAULT_HORIZONTAL_FOV;
     this.networkJumpQueued = false;
+    this.lastMovementTraceSampleAt = 0;
+    this.movementTraceSamples = [];
     this.fatalErrorOverlay = new FatalErrorOverlay(this.root);
     this.localSimulationLoop = new FixedStepLoop(NETCODE_SIMULATION_STEP);
     this.audioManager = createGameAudioManager();
@@ -169,6 +172,7 @@ export class GameApp {
       getIsLoading: () => this.isLoadingMap,
       getLoadingStatus: () => this.loadingStatus,
       getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
+      getIsMovementTraceRecording: () => this.debugController.isMovementTraceRecording(),
       consumeMarkDebugSnapshotRequested: () => this.debugController.consumeMarkDebugSnapshotRequested(),
       onSelectSkybox: (skyboxId) => this.setSkybox(skyboxId),
       skyboxes: SKYBOX_OPTIONS,
@@ -320,7 +324,13 @@ export class GameApp {
     }
 
     if (frameInput.justPressed.has('F10')) {
-      this.debugController.requestDebugSnapshot();
+      const recording = this.debugController.toggleMovementTraceRecording();
+      if (recording) {
+        this.movementTraceSamples = [];
+      } else {
+        this.flushMovementTrace();
+      }
+      this.lastMovementTraceSampleAt = 0;
     }
 
     if (frameInput.justPressed.has('F3')) {
@@ -485,6 +495,59 @@ export class GameApp {
     this.updatePlayerPresentation(delta);
     this.updateTargets(delta);
     this.updateRemotePlayers(delta);
+    this.recordMovementTraceIfNeeded();
+  }
+
+  recordMovementTraceIfNeeded() {
+    if (!this.debugController.isMovementTraceRecording()) {
+      return;
+    }
+
+    if (!this.runtime?.playerController) {
+      return;
+    }
+
+    const now = performance.now();
+    if (now - this.lastMovementTraceSampleAt < 100) {
+      return;
+    }
+    this.lastMovementTraceSampleAt = now;
+
+    const movement = this.runtime.playerController.getDebugState();
+    const network = this.networkClient.getDebugState();
+    this.movementTraceSamples.push({
+      recordedAt: Date.now(),
+      perfNow: now,
+      mapId: this.selectedMapId,
+      movement,
+      network: {
+        connectionState: network.connectionState,
+        localMapId: network.localMapId,
+        latestSequence: network.latestSequence,
+        acknowledgedSequence: network.acknowledgedSequence,
+        sequenceGap: network.sequenceGap,
+        pendingInputCount: network.pendingInputCount,
+        snapshotAgeMs: network.snapshotAgeMs,
+        lastPredictedDriftDistance: network.lastPredictedDriftDistance,
+        authoritativeUpdatesPerSecond: network.authoritativeUpdatesPerSecond,
+      },
+    });
+  }
+
+  flushMovementTrace() {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(MOVEMENT_TRACE_STORAGE_KEY, JSON.stringify({
+        recordedAt: Date.now(),
+        samples: this.movementTraceSamples,
+      }));
+      console.info(`[GameApp] Saved movement trace samples=${this.movementTraceSamples.length} to localStorage key "${MOVEMENT_TRACE_STORAGE_KEY}".`);
+    } catch (error) {
+      console.warn('[GameApp] Failed to persist movement trace.', error);
+    }
   }
 
   animate() {

@@ -32,6 +32,10 @@ function getNow() {
   return Date.now();
 }
 
+function formatSigned(value) {
+  return Number(value ?? 0).toFixed(2);
+}
+
 export class FirstPersonController {
   constructor(camera, input, options = {}) {
     this.camera = camera;
@@ -65,9 +69,9 @@ export class FirstPersonController {
 
     this.velocity = new THREE.Vector3();
 
-    this.walkSpeed = 4.1;
-    this.runSpeed = 6.2;
-    this.crouchSpeed = 2.2;
+    this.walkSpeed = 4.92;
+    this.runSpeed = 7.44;
+    this.crouchSpeed = 2.64;
     this.flySpeed = 8;
     this.flySprintSpeed = 16;
     this.jumpForce = 6.1;
@@ -111,11 +115,65 @@ export class FirstPersonController {
     const horizontalSpeed = Math.sqrt(
       this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z,
     );
+    const moveForward = this.input?.isPressed?.('KeyW') ?? false;
+    const moveBackward = this.input?.isPressed?.('KeyS') ?? false;
+    const moveLeft = this.input?.isPressed?.('KeyA') ?? false;
+    const moveRight = this.input?.isPressed?.('KeyD') ?? false;
+    const wantsCrouch = this.input?.isPressed?.('KeyC') ?? false;
+    const forwardX = -Math.sin(this.yawAngle);
+    const forwardZ = -Math.cos(this.yawAngle);
+    const rightX = Math.cos(this.yawAngle);
+    const rightZ = -Math.sin(this.yawAngle);
+    let targetMoveX = 0;
+    let targetMoveZ = 0;
+
+    if (moveForward) {
+      targetMoveX += forwardX;
+      targetMoveZ += forwardZ;
+    }
+    if (moveBackward) {
+      targetMoveX -= forwardX;
+      targetMoveZ -= forwardZ;
+    }
+    if (moveRight) {
+      targetMoveX += rightX;
+      targetMoveZ += rightZ;
+    }
+    if (moveLeft) {
+      targetMoveX -= rightX;
+      targetMoveZ -= rightZ;
+    }
+
+    const targetMoveLength = Math.hypot(targetMoveX, targetMoveZ);
+    if (targetMoveLength > 0) {
+      targetMoveX /= targetMoveLength;
+      targetMoveZ /= targetMoveLength;
+    }
+
+    const targetBaseSpeed = this.movementMode === 'fly'
+      ? ((this.input?.isPressed?.('ShiftLeft') ?? false) ? this.flySprintSpeed : this.flySpeed)
+      : (wantsCrouch ? this.crouchSpeed : this.walkSpeed);
+    const targetSpeed = targetMoveLength > 0 ? targetBaseSpeed * this.getSpeedMultiplier() : 0;
+    const targetVelocityX = targetMoveLength > 0 ? targetMoveX * targetSpeed : 0;
+    const targetVelocityZ = targetMoveLength > 0 ? targetMoveZ * targetSpeed : 0;
+    const speedRatio = targetSpeed > 1e-6 ? horizontalSpeed / targetSpeed : 0;
+    const inputFlags = [
+      moveForward ? 'W' : '',
+      moveBackward ? 'S' : '',
+      moveLeft ? 'A' : '',
+      moveRight ? 'D' : '',
+      wantsCrouch ? 'C' : '',
+    ].filter(Boolean).join('');
 
     const debugState = {
       grounded: this.isGrounded,
       crouched: this.isCrouched,
       speed: horizontalSpeed,
+      targetSpeed,
+      speedRatio,
+      inputFlags: inputFlags || '-',
+      targetVectorText: `${formatSigned(targetVelocityX)}, ${formatSigned(targetVelocityZ)}`,
+      velocityVectorText: `${formatSigned(this.velocity.x)}, ${formatSigned(this.velocity.z)}`,
       movementMode: this.movementMode,
       positionText: `${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)}`,
       responsiveOffsetMagnitude: this.responsivePresentationOffset.length(),

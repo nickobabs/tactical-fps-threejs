@@ -43,6 +43,36 @@ function createPoint() {
   return { x: 0, y: 0, z: 0 };
 }
 
+function ensurePoint(point) {
+  return point ?? createPoint();
+}
+
+function ensureSegment(segment, radius) {
+  return {
+    start: ensurePoint(segment?.start),
+    end: ensurePoint(segment?.end),
+    radius: Number.isFinite(Number(segment?.radius)) ? Number(segment.radius) : radius,
+  };
+}
+
+function ensureSphere(sphere, radius) {
+  return {
+    center: ensurePoint(sphere?.center),
+    radius: Number.isFinite(Number(sphere?.radius)) ? Number(sphere.radius) : radius,
+  };
+}
+
+function ensureRemoteHitboxSnapshotShape(target) {
+  return {
+    head: ensureSphere(target?.head, REMOTE_HITBOX_RADII.head),
+    torso: ensureSegment(target?.torso, REMOTE_HITBOX_RADII.torso),
+    pelvis: ensureSegment(target?.pelvis, REMOTE_HITBOX_RADII.pelvis),
+    arms: Array.from({ length: 6 }, (_, index) => ensureSegment(target?.arms?.[index], REMOTE_HITBOX_RADII.arm)),
+    hands: Array.from({ length: 2 }, (_, index) => ensureSphere(target?.hands?.[index], REMOTE_HITBOX_RADII.hand)),
+    legs: Array.from({ length: 4 }, (_, index) => ensureSegment(target?.legs?.[index], REMOTE_HITBOX_RADII.leg)),
+  };
+}
+
 function setPoint(target, x, y, z) {
   target.x = x;
   target.y = y;
@@ -172,26 +202,28 @@ export function buildRemoteHitboxSnapshotFromPoints({
     return null;
   }
 
-  buildHeadCenter(target.head.center, finalPoints, headOffset);
-  target.head.radius = Number.isFinite(Number(headRadius)) ? Number(headRadius) : REMOTE_HITBOX_RADII.head;
+  const snapshot = ensureRemoteHitboxSnapshotShape(target);
 
-  writeSegment(target.torso, finalPoints.spine, finalPoints.neck, REMOTE_HITBOX_RADII.torso);
-  writeSegment(target.pelvis, stablePoints.pelvis, stablePoints.spine, REMOTE_HITBOX_RADII.pelvis);
+  buildHeadCenter(snapshot.head.center, finalPoints, headOffset);
+  snapshot.head.radius = Number.isFinite(Number(headRadius)) ? Number(headRadius) : REMOTE_HITBOX_RADII.head;
 
-  writeSegment(target.arms[0], finalPoints.leftClavicle, finalPoints.leftUpperArm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[1], finalPoints.leftUpperArm, finalPoints.leftForearm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[2], finalPoints.leftForearm, finalPoints.leftHand, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[3], finalPoints.rightClavicle, finalPoints.rightUpperArm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[4], finalPoints.rightUpperArm, finalPoints.rightForearm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[5], finalPoints.rightForearm, finalPoints.rightHand, REMOTE_HITBOX_RADII.arm);
+  writeSegment(snapshot.torso, finalPoints.spine, finalPoints.neck, REMOTE_HITBOX_RADII.torso);
+  writeSegment(snapshot.pelvis, stablePoints.pelvis, stablePoints.spine, REMOTE_HITBOX_RADII.pelvis);
 
-  writeSphere(target.hands[0], finalPoints.leftHand, REMOTE_HITBOX_RADII.hand);
-  writeSphere(target.hands[1], finalPoints.rightHand, REMOTE_HITBOX_RADII.hand);
+  writeSegment(snapshot.arms[0], finalPoints.leftClavicle, finalPoints.leftUpperArm, REMOTE_HITBOX_RADII.arm);
+  writeSegment(snapshot.arms[1], finalPoints.leftUpperArm, finalPoints.leftForearm, REMOTE_HITBOX_RADII.arm);
+  writeSegment(snapshot.arms[2], finalPoints.leftForearm, finalPoints.leftHand, REMOTE_HITBOX_RADII.arm);
+  writeSegment(snapshot.arms[3], finalPoints.rightClavicle, finalPoints.rightUpperArm, REMOTE_HITBOX_RADII.arm);
+  writeSegment(snapshot.arms[4], finalPoints.rightUpperArm, finalPoints.rightForearm, REMOTE_HITBOX_RADII.arm);
+  writeSegment(snapshot.arms[5], finalPoints.rightForearm, finalPoints.rightHand, REMOTE_HITBOX_RADII.arm);
 
-  writeSegment(target.legs[0], finalPoints.leftThigh, finalPoints.leftCalf, REMOTE_HITBOX_RADII.leg);
-  writeSegment(target.legs[1], finalPoints.leftCalf, finalPoints.leftFoot, REMOTE_HITBOX_RADII.leg);
-  writeSegment(target.legs[2], finalPoints.rightThigh, finalPoints.rightCalf, REMOTE_HITBOX_RADII.leg);
-  writeSegment(target.legs[3], finalPoints.rightCalf, finalPoints.rightFoot, REMOTE_HITBOX_RADII.leg);
+  writeSphere(snapshot.hands[0], finalPoints.leftHand, REMOTE_HITBOX_RADII.hand);
+  writeSphere(snapshot.hands[1], finalPoints.rightHand, REMOTE_HITBOX_RADII.hand);
 
-  return target;
+  writeSegment(snapshot.legs[0], finalPoints.leftThigh, finalPoints.leftCalf, REMOTE_HITBOX_RADII.leg);
+  writeSegment(snapshot.legs[1], finalPoints.leftCalf, finalPoints.leftFoot, REMOTE_HITBOX_RADII.leg);
+  writeSegment(snapshot.legs[2], finalPoints.rightThigh, finalPoints.rightCalf, REMOTE_HITBOX_RADII.leg);
+  writeSegment(snapshot.legs[3], finalPoints.rightCalf, finalPoints.rightFoot, REMOTE_HITBOX_RADII.leg);
+
+  return snapshot;
 }

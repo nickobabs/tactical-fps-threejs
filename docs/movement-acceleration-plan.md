@@ -2,6 +2,32 @@
 
 This note captures the planned next movement pass so work can resume cleanly without reconstructing design intent.
 
+## Status Update 2026-04-07
+
+This plan is still relevant, but the latest slowdown investigation showed that the obvious "hang around `4.1-4.5` after direction changes" symptom is not explained solely by the simple acceleration model.
+
+What changed before this finding:
+
+- grounded sprint was removed
+- grounded base speed was raised to `4.92`
+- crouch speed was raised to `2.64`
+- knife movement multiplier is now `1.25`, for an effective knife top speed of `6.15`
+
+What the trace showed:
+
+- `targetSpeed` stayed at `4.92` during the repro
+- input flags were clean single-direction `W` / `S`
+- actual horizontal speed repeatedly snapped to discrete stale values like:
+  - `4.10`
+  - `4.5373`
+- that is more consistent with stale/replayed horizontal velocity than with intended target-speed logic
+
+Current interpretation:
+
+- the visible slowdown during some direction changes is most likely a reconciliation / replay artifact
+- do not treat it as proof that `acceleration: 32` is the primary blocker
+- before another broader acceleration/braking redesign, verify whether small grounded corrections are overwriting local horizontal velocity too aggressively
+
 ## Goal
 
 Replace the current simple planar velocity lerp in `src/shared/playerMovement.js` with a more deliberate acceleration / braking model that still feels clean and tactical.
@@ -67,12 +93,17 @@ Intended behavior:
 
 ### 3. Keep existing speed caps and movement-state multipliers
 
-Retain the current max-speed model:
+Retain the current max-speed model unless intentionally revised again:
 
 - walk
-- sprint
 - crouch
 - weapon speed multiplier
+
+Current live values:
+
+- walk: `4.92`
+- crouch: `2.64`
+- knife multiplier: `1.25`
 
 The new system should change how velocity approaches the cap, not the cap logic itself.
 
@@ -117,7 +148,8 @@ Likely tuning direction:
 3. Keep vertical movement, jump, gravity, and ground support behavior unchanged for the first pass.
 4. Validate local single-player feel first.
 5. Validate local multiplayer correction behavior after that.
-6. Only then tune numbers for sniper-feel / counter-strafe behavior.
+6. If the discrete stale-speed issue persists, adjust grounded reconciliation before broader acceleration redesign.
+7. Only then tune numbers for sniper-feel / counter-strafe behavior.
 
 ## Out Of Scope For This Pass
 

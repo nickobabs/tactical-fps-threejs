@@ -221,19 +221,13 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - remote players use a remote third-person presentation path with placeholder fallback
   - `RemotePlayerPresenter` currently supports both a legacy remote character path (`public/models/players/tester3.glb`) and an experimental path (`public/models/players/newtest.glb`)
   - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
-  - remote rifle presentation still uses authored socket helpers plus a stable full-body locomotion path
-  - standing fire now uses the full-body `newtest_fire.fbx` clip
-  - current remote vertical-aim readability is a modest compromise:
-    - weapon/socket pitch remains the main universal cue
-    - neck/head procedural aim remains active where it behaves well
-    - crouch body aiming is intentionally disabled
+  - remote rifle presentation uses authored socket helpers and the current stable full-body locomotion path
+  - standing fire uses the full-body `newtest_fire.fbx` clip
+  - remote vertical-aim readability currently comes from weapon/socket pitch plus a narrow neck/head procedural layer
   - client prediction with replay/reconciliation
   - first server-authoritative PvP combat slice for hits, health, death, and respawn
-  - server-authoritative segmented remote hitboxes are now active:
-    - `F3` can show authoritative remote hit volumes
-    - the decisive parity fix was removing authoritative left-hand IK
-    - head follow now uses a pose-relative anchor plus tuned shared defaults
-    - `F6` includes `Local Hitbox Debug` for future visual tuning without changing real hitreg
+  - server-authoritative segmented remote hitboxes are active and now track the visible remote mesh closely enough for current PvP use
+  - `F3` shows authoritative remote hit volumes and `F6` includes `Local Hitbox Debug` for safe visual tuning
   - debug workflow still active
 
 ## Main Runtime Flow
@@ -329,6 +323,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - runtime subclips from the long `Take 001` strip are usable for many motions, but loop quality was not good enough for locomotion
   - the first standalone Max-exported run clip, `public/models/players/newtest_run.fbx`, now plays cleanly in-engine and overrides the experimental `run` clip
   - current conclusion: standalone exported clips from the source DCC are the preferred path for locomotion quality, while the long-strip subclip path remains a temporary bridge
+  - later parity work aligned client/server root-motion stripping on `Bip01.position`, which removed the remaining locomotion and jump mismatch; see `docs/remote-hitbox-audit.md` for the full debugging record
 - The project README was updated from scaffold-level notes to a current project overview with actual runtime/deploy/architecture context.
 - Local combat HUD feedback was added:
   - stronger damage vignette
@@ -400,6 +395,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - current starts, stops, and direction changes still use a target-velocity lerp in `src/shared/playerMovement.js`
   - the next planned movement pass is explicit acceleration / deceleration / opposition braking
   - goal is cleaner tactical momentum, not slippery inertia systems
+- Current movement tuning state as of 2026-04-07:
+  - grounded sprint has been removed
+  - grounded base speed is now `4.92`
+  - crouch speed is now `2.64`
+  - knife movement multiplier is now `1.25`, for an effective knife top speed of `6.15`
 
 ## Known Issues Or Deliberate Compromises
 
@@ -472,6 +472,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Current best hypothesis:
   - the remaining movement issue is in contact response, not wall phasing
   - a more principled future pass likely means better wall/slope contact response tuning, more instrumentation, or both
+  - a newer movement-feel issue observed during direction changes is probably not a target-speed problem:
+    - movement traces showed clean `W` / `S` input and `targetSpeed = 4.92`
+    - actual horizontal speed repeatedly landed on discrete stale values such as `4.10` and `4.5373`
+    - that points more strongly to reconciliation replaying slightly older horizontal velocity than to pure acceleration tuning
+    - next likely fix should be in grounded reconciliation / replay policy, not another blind speed-cap change
 
 ## Local Multiplayer Feel Baseline
 
@@ -489,6 +494,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - deadzone/hysteresis correction
   - debug controls still available during development
   - app-layer `NetworkClient` lifetime
+  - temporary local movement-trace capture via `F10`
+    - capture is stored in browser `localStorage` under `tactical-fps-threejs-movement-trace`
+    - export with:
+      - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
 
 ## Near-Term Direction
 

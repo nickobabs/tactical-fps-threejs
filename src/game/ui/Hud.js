@@ -24,6 +24,7 @@ export function createHud({
   getIsLoading,
   getLoadingStatus,
   getIgnoreLocalCorrections,
+  getIsMovementTraceRecording,
   consumeMarkDebugSnapshotRequested,
   onSelectSkybox,
   skyboxes = [],
@@ -181,6 +182,9 @@ export function createHud({
       'NETDEBUG',
       `ignore_local_corrections=${Boolean(getIgnoreLocalCorrections?.())}`,
       `state=${networkDebug.connectionState}`,
+      `map_id=${networkDebug.localMapId ?? 'unknown'}`,
+      `player_state_count=${networkDebug.receivedPlayerStateCount ?? 0} same_map_remote=${networkDebug.sameMapRemoteStateCount ?? 0} filtered_remote=${networkDebug.filteredRemoteStateCount ?? 0}`,
+      `remote_maps=${(networkDebug.receivedRemoteMaps ?? []).join(',') || 'none'}`,
       `seq_local=${networkDebug.latestSequence} seq_ack=${networkDebug.acknowledgedSequence} seq_gap=${networkDebug.sequenceGap}`,
       `pending_inputs=${networkDebug.pendingInputCount} jump_latched=${networkDebug.pendingJumpSend}`,
       `snapshot_age_ms=${networkDebug.snapshotAgeMs} auth_per_sec=${networkDebug.authoritativeUpdatesPerSecond}`,
@@ -188,6 +192,8 @@ export function createHud({
       `corr_dist=${movement.lastCorrectionDistance.toFixed(3)} present_offset=${movement.correctionOffsetMagnitude.toFixed(3)}`,
       `buffered_corr=${(movement.bufferedCanonicalCorrectionMagnitude ?? 0).toFixed(3)} responsive_offset=${(movement.responsiveOffsetMagnitude ?? 0).toFixed(3)}`,
       `corr_enqueue_per_sec=${(movement.correctionEnqueueRatePerSecond ?? 0).toFixed(3)} corr_active=${movement.correctionActive ? 'yes' : 'no'}`,
+      `input=${movement.inputFlags ?? '-'} target_speed=${(movement.targetSpeed ?? 0).toFixed(3)} speed_ratio=${(movement.speedRatio ?? 0).toFixed(3)}`,
+      `target_xz=${movement.targetVectorText ?? '0.00, 0.00'} vel_xz=${movement.velocityVectorText ?? '0.00, 0.00'}`,
       `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,
       `mode=${movement.movementMode ?? 'grounded'} pos=${movement.positionText ?? 'n/a'}`,
     ].join('\n');
@@ -233,13 +239,20 @@ export function createHud({
         grounded: true,
         crouched: false,
         speed: 0,
+        traceRecording: false,
         correctionOffsetMagnitude: 0,
         simulationDeltaMagnitude: 0,
         movementMode: 'grounded',
         positionText: '0.00, 0.00, 0.00',
       };
+      movement.traceRecording = Boolean(getIsMovementTraceRecording?.());
       const networkDebug = networkClient?.getDebugState?.() ?? {
         connectionState: 'offline',
+        localMapId: null,
+        receivedPlayerStateCount: 0,
+        sameMapRemoteStateCount: 0,
+        filteredRemoteStateCount: 0,
+        receivedRemoteMaps: [],
         latestSequence: 0,
         acknowledgedSequence: 0,
         pendingInputCount: 0,
@@ -284,7 +297,7 @@ export function createHud({
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
       const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
-      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - ${displaySpeed.toFixed(1)} m/s`;
+      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${movement.traceRecording ? ' - TRACE(F10)' : ''}`;
       const positionText = `Pos: ${movement.positionText ?? '0.00, 0.00, 0.00'} - ${movement.movementMode ?? 'grounded'}`;
       const pointerText = paused
         ? 'Paused'

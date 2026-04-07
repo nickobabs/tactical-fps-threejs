@@ -42,6 +42,7 @@
 - Look input is gathered from browser pointer-lock movement events and applied once per render frame, which keeps aiming tied to the same timing as camera/render updates.
 - Movement speed can be scaled externally without changing controller internals, which is now used for weapon-dependent mobility such as the knife.
 - Core locomotion math is now shared with the multiplayer server through `src/shared/playerMovement.js`, while the browser controller still layers local collision queries on top of that shared simulation.
+- Grounded sprint has been removed from the current live ruleset. Grounded locomotion now uses walk/crouch speeds plus weapon speed multipliers, while fly mode still keeps its own sprint behavior.
 - `FirstPersonController` is being refactored by responsibility instead of rewritten wholesale:
   - `playerInputState.js` owns movement input snapshotting and immediate presentation-velocity calculation
   - `playerFlyMode.js` owns landing-height probing and fly-mode transition decisions
@@ -56,7 +57,7 @@
 ## Current Status
 
 - Implemented and active
-- Supports look, walk, sprint, crouch, jump, collision blocking, and walking onto authored raised surfaces
+- Supports look, walk, crouch, jump, collision blocking, and walking onto authored raised surfaces
 - Supports fly mode for debugging/imported-map exploration
 - Supports weapon-dependent movement speed modifiers through a callback passed from `GameApp`
 - Default base sensitivity is lower than the original prototype tuning and can be adjusted from the pause menu
@@ -86,6 +87,10 @@
   - preserving local yaw/pitch during reconciliation
 - Those experiments improved specific symptoms at different times, and the important outcome was that local deadzone/hysteresis correction produced the first movement baseline that passed the eye test in local multiplayer.
 - Current debugging suggests the biggest remaining risk is now wall-pressure correctness under authority/correction, not just flat-ground feel. The obvious post-sprint forward nudge was improved by fixing stale-input transport, and wall phasing is no longer the active blocker.
+- Latest movement tracing on 2026-04-07 narrowed a separate feel issue:
+  - direction-change slowdown was reproduced even when `targetSpeed` stayed at the full grounded cap
+  - repeated observed speeds such as `4.10` and `4.5373` point to stale/replayed horizontal velocity rather than simple acceleration limits
+  - the next likely fix is in reconciliation behavior for small grounded corrections, not another blind max-speed tweak
 - The next scheduled movement pass is acceleration / deceleration / momentum tuning in shared movement:
   - fast acceleration to speed
   - explicit deceleration and opposition braking

@@ -5,6 +5,7 @@ import {
   createCollisionMapFromLayoutData,
   createCollisionGeometryFromScene,
 } from '../../shared/maps/mapCollision.js';
+import { findNamedSpawnPoint } from '../../shared/maps/mapSpawnMarkers.js';
 
 const MAP_RUNTIME_LOADERS = {
   'training-ground': () => import('./TrainingGround.js'),
@@ -164,6 +165,37 @@ function resolveDefaultGameplayState(entry, renderMap, collisionGeometry) {
         z: explicitSpawn.z ?? 0,
       },
       groundHeight: entry.gameplay?.groundHeight ?? 0,
+      allowGroundedMode: entry.gameplay?.allowGroundedMode ?? true,
+    };
+  }
+
+  const namedSpawn = findNamedSpawnPoint(
+    renderMap.collisionScene ?? renderMap.scene,
+    entry.gameplay?.spawnMarkers,
+  );
+  if (namedSpawn) {
+    const fallbackGroundHeight = entry.gameplay?.groundHeight ?? namedSpawn.position.y;
+    const collisionWorld = collisionGeometry
+      ? new CollisionWorld({
+        groundHeight: fallbackGroundHeight,
+        collisionGeometry,
+      })
+      : null;
+    const groundedY = collisionWorld?.getGroundHeightAt(
+      namedSpawn.position.x,
+      namedSpawn.position.z,
+      namedSpawn.position.y + 0.5,
+      2,
+      8,
+    ) ?? fallbackGroundHeight;
+    return {
+      spawnPoint: {
+        x: namedSpawn.position.x,
+        y: groundedY,
+        z: namedSpawn.position.z,
+      },
+      groundHeight: groundedY,
+      movementMode: entry.gameplay?.movementMode ?? 'grounded',
       allowGroundedMode: entry.gameplay?.allowGroundedMode ?? true,
     };
   }

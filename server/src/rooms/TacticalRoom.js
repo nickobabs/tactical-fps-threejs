@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Room } from '@colyseus/core';
 import { CollisionWorld } from '../../../src/core/physics/CollisionWorld.js';
 import {
@@ -29,6 +32,7 @@ import {
   REMOTE_HITBOX_HEAD_OFFSET,
   REMOTE_HITBOX_RADII,
 } from '../../../src/shared/remoteHitboxes.js';
+import { getMissingRemoteHitBoneKeys } from '../../../src/shared/remoteSkeleton.js';
 import {
   createRemoteHitboxRig,
   triggerRemoteHitboxRigFire,
@@ -54,10 +58,24 @@ const TARGET_TEST_VECTOR = new THREE.Vector3();
 const SHOT_RAY = new THREE.Ray();
 const PLAYER_MOVE_SPEED_EPSILON = 0.1;
 const TARGET_HITBOX_LAYOUT = createPlayerHitboxLayout();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const REMOTE_HITBOX_AUDIT_LOG_PATH = path.resolve(__dirname, '../../../debug/remote-hitbox-audit.log');
+
+async function appendRemoteHitboxAudit(entry) {
+  await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
+  await fs.appendFile(REMOTE_HITBOX_AUDIT_LOG_PATH, `${JSON.stringify(entry)}\n`, 'utf8');
+}
+
 function buildAuthoritativeHitboxes(player) {
   const bones = player.hitboxRig?.bones;
   const hitboxPoints = player.hitboxRig?.hitboxPoints ?? null;
-  if (!bones?.head || !bones?.neck || !bones?.spine || !bones?.pelvis) {
+  const missingBoneKeys = getMissingRemoteHitBoneKeys(bones);
+  if (missingBoneKeys.length > 0) {
+    if (!player.missingHitboxBonesLogged) {
+      console.warn(`[TacticalRoom] Falling back to coarse hitboxes for ${player.playerId}; missing bones: ${missingBoneKeys.join(', ')}`);
+      player.missingHitboxBonesLogged = true;
+    }
     const layout = computePlayerHitboxLayout({
       position: player.motionState.position,
       yaw: player.motionState?.yaw ?? 0,
@@ -259,14 +277,21 @@ export class TacticalRoom extends Room {
       console.warn('[TacticalRoom] Failed to preload remote hitbox rig.', error);
     });
     this.setSimulationInterval(() => {
-      let hasSimulationChanges = false;
-
       for (const player of Object.values(this.players)) {
+        const collisionWorld = this.getCollisionWorldForMap(player.mapId);
+
         if (!player.isAlive) {
           if (player.respawnAt > 0 && Date.now() >= player.respawnAt) {
             this.respawnPlayer(player);
-            hasSimulationChanges = true;
           }
+          continue;
+        }
+
+        if (!player.isReady) {
+          if (player.hitboxRig) {
+            updateRemoteHitboxRig(player.hitboxRig, player, NETCODE_SIMULATION_STEP);
+          }
+          player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
           continue;
         }
 
@@ -278,7 +303,6 @@ export class TacticalRoom extends Room {
           continue;
         }
 
-        const collisionWorld = this.getCollisionWorldForMap(player.mapId);
         while (player.pendingInputs.length > 0) {
           const nextInput = player.pendingInputs.shift();
           player.pitch = Number(nextInput.pitch ?? player.pitch ?? 0);
@@ -313,7 +337,8 @@ export class TacticalRoom extends Room {
           player.presentationState = this.getPresentationStateForPlayer(player);
           player.lastProcessedSequence = nextInput.sequence;
           player.lastProcessedTimestamp = nextInput.timestamp;
-          hasSimulationChanges = true;
+          player.lastDequeuedSequence = nextInput.sequence;
+          player.lastDequeuedTimestamp = nextInput.timestamp;
         }
 
         if (player.hitboxRig) {
@@ -332,8 +357,15 @@ export class TacticalRoom extends Room {
         return;
       }
 
+      const inputTimestamp = Number(message?.timestamp ?? Date.now());
+      if (inputTimestamp < Number(player.inputTimestampGate ?? 0)) {
+        player.droppedByTimestampGate = Number(player.droppedByTimestampGate ?? 0) + 1;
+        return;
+      }
+
       const sequence = Number(message?.sequence ?? 0);
       if (sequence <= player.lastProcessedSequence) {
+        player.droppedBySequence = Number(player.droppedBySequence ?? 0) + 1;
         return;
       }
 
@@ -341,8 +373,10 @@ export class TacticalRoom extends Room {
         ...message,
         yaw: Number(message?.yaw ?? player.motionState.yaw),
         pitch: Number(message?.pitch ?? player.pitch ?? 0),
-      }, sequence, Number(message?.timestamp ?? Date.now()));
+      }, sequence, inputTimestamp);
       player.pendingInputs.push(normalizedInput);
+      player.lastQueuedSequence = sequence;
+      player.lastQueuedTimestamp = inputTimestamp;
     });
 
     this.onMessage('player-ready', async (client, message) => {
@@ -353,8 +387,11 @@ export class TacticalRoom extends Room {
 
       try {
         const readyState = createPlayerReadyMessage(message);
-        await this.ensureCollisionWorldForMap(readyState.mapId);
         player.mapId = readyState.mapId;
+        player.isReady = false;
+        player.pendingInputs.length = 0;
+        player.inputTimestampGate = Date.now();
+        player.lastProcessedTimestamp = Date.now();
         player.spawnState = {
           position: { ...readyState.position },
           yaw: readyState.yaw,
@@ -369,10 +406,14 @@ export class TacticalRoom extends Room {
           isCrouched: readyState.isCrouched,
           currentHeight: readyState.currentHeight,
         });
+        player.pitch = readyState.pitch;
+        player.presentationState = this.getPresentationStateForPlayer(player);
+        this.broadcastPlayerState();
+        await this.ensureCollisionWorldForMap(readyState.mapId);
+        player.isReady = true;
         player.health = player.maxHealth;
         player.isAlive = true;
         player.respawnAt = 0;
-        player.pitch = readyState.pitch;
         player.activeWeaponKey = getSharedWeaponData(readyState.activeWeaponKey)
           ? readyState.activeWeaponKey
           : player.activeWeaponKey;
@@ -418,6 +459,20 @@ export class TacticalRoom extends Room {
       client.send('player-state', { players: this.getSerializablePlayers() });
     });
 
+    this.onMessage('remote-hitbox-audit', (client, message) => {
+      const player = this.players[client.sessionId];
+      const auditEntry = {
+        recordedAt: Date.now(),
+        sessionId: client.sessionId,
+        playerId: player?.playerId ?? client.sessionId,
+        serverPlayerState: player ? serializeAuthoritativePlayerState(player.playerId, player) : null,
+        clientAudit: message ?? null,
+      };
+      void appendRemoteHitboxAudit(auditEntry).catch((error) => {
+        console.warn('[TacticalRoom] Failed to append remote hitbox audit.', error);
+      });
+    });
+
     console.log('[TacticalRoom] Waiting for clients...');
     console.log('[TacticalRoom] Room created');
   }
@@ -429,6 +484,7 @@ export class TacticalRoom extends Room {
       motionState: createPlayerMovementState(),
       pendingInputs: [],
       mapId: 'training-ground',
+      isReady: false,
       spawnState: {
         position: { x: 0, y: 0, z: 0 },
         yaw: 0,
@@ -437,6 +493,13 @@ export class TacticalRoom extends Room {
       },
       lastProcessedSequence: 0,
       lastProcessedTimestamp: Date.now(),
+      inputTimestampGate: 0,
+      lastQueuedSequence: 0,
+      lastQueuedTimestamp: 0,
+      lastDequeuedSequence: 0,
+      lastDequeuedTimestamp: 0,
+      droppedByTimestampGate: 0,
+      droppedBySequence: 0,
       maxHealth: PLAYER_MAX_HEALTH,
       health: PLAYER_MAX_HEALTH,
       isAlive: true,
@@ -448,6 +511,7 @@ export class TacticalRoom extends Room {
       presentationState: 'idle',
       hitboxRig: null,
       authoritativeHitboxes: null,
+      missingHitboxBonesLogged: false,
     };
     this.nextPlayerNumber += 1;
     void createRemoteHitboxRig()
@@ -529,17 +593,21 @@ export class TacticalRoom extends Room {
     }
 
     const loadPromise = (async () => {
-      const collisionMap = await createCollisionMapForMapIdAsync(resolvedMapId);
-      if (!collisionMap) {
-        return null;
-      }
+      try {
+        const collisionMap = await createCollisionMapForMapIdAsync(resolvedMapId);
+        if (!collisionMap) {
+          return null;
+        }
 
-      const collisionWorld = new CollisionWorld({
-        groundHeight: collisionMap.groundHeight,
-        collisionGeometry: collisionMap.collisionGeometry,
-      });
-      this.collisionWorlds.set(resolvedMapId, collisionWorld);
-      return collisionWorld;
+        const collisionWorld = new CollisionWorld({
+          groundHeight: collisionMap.groundHeight,
+          collisionGeometry: collisionMap.collisionGeometry,
+        });
+        this.collisionWorlds.set(resolvedMapId, collisionWorld);
+        return collisionWorld;
+      } catch (error) {
+        throw error;
+      }
     })();
 
     this.collisionWorldPromises.set(resolvedMapId, loadPromise);

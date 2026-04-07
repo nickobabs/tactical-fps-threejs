@@ -121,6 +121,7 @@ export class NetworkClient {
     this.client = null;
     this.room = null;
     this.playerId = null;
+    this.localMapId = null;
     this.connectionState = 'idle';
     this.destroyed = false;
     this.remotePlayerBuffers = new Map();
@@ -138,6 +139,10 @@ export class NetworkClient {
     this.authoritativeEvents = [];
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
+    this.lastReceivedPlayerStateCount = 0;
+    this.lastSameMapRemoteStateCount = 0;
+    this.lastFilteredRemoteStateCount = 0;
+    this.lastReceivedRemoteMaps = [];
 
     void this.connect();
   }
@@ -216,11 +221,22 @@ export class NetworkClient {
   applyPlayerState(players) {
     const nextRemotePlayerIds = new Set();
     const receivedAt = getNow();
+    const activeMapId = this.pendingInitializationState?.mapId ?? this.localMapId;
+    let receivedPlayerStateCount = 0;
+    let sameMapRemoteStateCount = 0;
+    let filteredRemoteStateCount = 0;
+    const receivedRemoteMaps = new Set();
 
     for (const [playerId, playerState] of Object.entries(players)) {
+      receivedPlayerStateCount += 1;
       const normalizedState = normalizeAuthoritativePlayerState(playerId, playerState);
 
       if (playerId === this.playerId) {
+        if (activeMapId && normalizedState.mapId !== activeMapId) {
+          continue;
+        }
+
+        this.localMapId = normalizedState.mapId;
         this.localPlayerState = normalizedState;
         if (normalizedState.sequence > this.lastReconciledSequence) {
           const localEntry = this.pendingInputs.find((entry) => entry.sequence === normalizedState.sequence);
@@ -249,6 +265,13 @@ export class NetworkClient {
         continue;
       }
 
+      receivedRemoteMaps.add(normalizedState.mapId);
+      if (activeMapId && normalizedState.mapId !== activeMapId) {
+        filteredRemoteStateCount += 1;
+        continue;
+      }
+
+      sameMapRemoteStateCount += 1;
       nextRemotePlayerIds.add(playerId);
       const buffer = this.remotePlayerBuffers.get(playerId) ?? [];
       const previousSnapshot = buffer[buffer.length - 1];
@@ -280,6 +303,11 @@ export class NetworkClient {
       this.remotePlayerBuffers.set(playerId, buffer);
     }
 
+    this.lastReceivedPlayerStateCount = receivedPlayerStateCount;
+    this.lastSameMapRemoteStateCount = sameMapRemoteStateCount;
+    this.lastFilteredRemoteStateCount = filteredRemoteStateCount;
+    this.lastReceivedRemoteMaps = [...receivedRemoteMaps].sort();
+
     for (const playerId of this.remotePlayerBuffers.keys()) {
       if (!nextRemotePlayerIds.has(playerId)) {
         this.remotePlayerBuffers.delete(playerId);
@@ -289,6 +317,23 @@ export class NetworkClient {
 
   initializeLocalPlayer(initialState) {
     this.pendingInitializationState = createPlayerReadyMessage(initialState);
+    this.localMapId = this.pendingInitializationState.mapId;
+    this.remotePlayerBuffers.clear();
+    this.pendingLocalCorrection = null;
+    this.pendingInputs.length = 0;
+    this.latestSampledInput = null;
+    this.pendingJumpSend = false;
+    this.lastAuthoritativeStateAt = 0;
+    this.lastAuthoritativeSequence = 0;
+    this.lastCorrectionDistance = 0;
+    this.lastReconciledSequence = 0;
+    this.authoritativeEvents.length = 0;
+    this.localPlayerState = null;
+    this.pendingCombatEvents = [];
+    this.lastReceivedPlayerStateCount = 0;
+    this.lastSameMapRemoteStateCount = 0;
+    this.lastFilteredRemoteStateCount = 0;
+    this.lastReceivedRemoteMaps = [];
 
     if (this.room) {
       this.room.send('player-ready', this.pendingInitializationState);
@@ -349,6 +394,15 @@ export class NetworkClient {
     return true;
   }
 
+  sendRemoteHitboxAudit(audit) {
+    if (!this.room || !audit) {
+      return false;
+    }
+
+    this.room.send('remote-hitbox-audit', audit);
+    return true;
+  }
+
   consumeLocalCorrection() {
     const correction = this.pendingLocalCorrection;
     this.pendingLocalCorrection = null;
@@ -369,6 +423,7 @@ export class NetworkClient {
     if (!options.preserveRemotePlayers) {
       this.remotePlayerBuffers.clear();
     }
+    this.localMapId = null;
     this.pendingLocalCorrection = null;
     this.pendingInitializationState = null;
     this.pendingInputs.length = 0;
@@ -381,6 +436,10 @@ export class NetworkClient {
     this.authoritativeEvents.length = 0;
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
+    this.lastReceivedPlayerStateCount = 0;
+    this.lastSameMapRemoteStateCount = 0;
+    this.lastFilteredRemoteStateCount = 0;
+    this.lastReceivedRemoteMaps = [];
   }
 
   getRemotePlayers() {
@@ -474,6 +533,11 @@ export class NetworkClient {
     const now = getNow();
     return {
       connectionState: this.connectionState,
+      localMapId: this.localMapId,
+      receivedPlayerStateCount: this.lastReceivedPlayerStateCount,
+      sameMapRemoteStateCount: this.lastSameMapRemoteStateCount,
+      filteredRemoteStateCount: this.lastFilteredRemoteStateCount,
+      receivedRemoteMaps: [...this.lastReceivedRemoteMaps],
       latestSequence: Math.max(0, this.nextInputSequence - 1),
       acknowledgedSequence: this.lastAuthoritativeSequence,
       pendingInputCount: this.pendingInputs.length,
@@ -496,6 +560,10 @@ export class NetworkClient {
     this.authoritativeEvents.length = 0;
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
+    this.lastReceivedPlayerStateCount = 0;
+    this.lastSameMapRemoteStateCount = 0;
+    this.lastFilteredRemoteStateCount = 0;
+    this.lastReceivedRemoteMaps = [];
 
     if (this.room) {
       void this.room.leave().catch((error) => {

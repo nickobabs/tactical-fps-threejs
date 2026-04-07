@@ -55,7 +55,11 @@
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`
   - `F9` state is shown in the HUD network line
-  - `F10` can trigger an immediate debug summary dump for stutter/correction capture
+  - `F10` toggles a local movement trace capture
+    - active capture is shown in the movement line as `TRACE(F10)`
+    - trace data is stored in browser `localStorage` under `tactical-fps-threejs-movement-trace`
+    - export helper:
+      - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
 
 ## Near-Term Direction
 

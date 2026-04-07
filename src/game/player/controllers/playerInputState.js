@@ -24,7 +24,7 @@ export function getMovementInputSnapshot({
     backward: input.isPressed('KeyS'),
     left: input.isPressed('KeyA'),
     right: input.isPressed('KeyD'),
-    sprint: input.isPressed('ShiftLeft'),
+    sprint: false,
     crouch: input.isPressed('KeyC'),
     jump: Boolean(jumpPressed),
     yaw: yawAngle,
@@ -101,7 +101,6 @@ export function getImmediatePresentationVelocity({
 
   const speedMultiplier = getSpeedMultiplier();
   const wantsCrouch = input.isPressed('KeyC');
-  const wantsSprint = input.isPressed('ShiftLeft');
   const moveForward = input.isPressed('KeyW');
   const moveBackward = input.isPressed('KeyS');
   const moveLeft = input.isPressed('KeyA');
@@ -142,9 +141,7 @@ export function getImmediatePresentationVelocity({
 
   const maxSpeed = (wantsCrouch
     ? crouchSpeed
-    : wantsSprint
-      ? runSpeed
-      : walkSpeed) * speedMultiplier;
+    : walkSpeed) * speedMultiplier;
 
   return {
     x: moveX * maxSpeed,

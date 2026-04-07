@@ -2,9 +2,9 @@ export const PLAYER_MOVEMENT_DEFAULTS = {
   standHeight: 1.72,
   crouchHeight: 1.08,
   radius: 0.35,
-  walkSpeed: 4.1,
-  runSpeed: 6.2,
-  crouchSpeed: 2.2,
+  walkSpeed: 4.92,
+  runSpeed: 7.44,
+  crouchSpeed: 2.64,
   jumpForce: 6.1,
   gravity: 18,
   acceleration: 32,
@@ -54,7 +54,6 @@ export function simulatePlayerMovement(
   const yaw = Number(inputSnapshot?.yaw ?? state.yaw ?? 0);
   const wantsCrouch = Boolean(inputSnapshot?.crouch);
   const wantsJump = Boolean(inputSnapshot?.jump);
-  const wantsSprint = Boolean(inputSnapshot?.sprint);
 
   state.yaw = yaw;
   state.isCrouched = wantsCrouch;
@@ -99,9 +98,7 @@ export function simulatePlayerMovement(
 
   const maxSpeed = (wantsCrouch
     ? config.crouchSpeed
-    : wantsSprint
-      ? config.runSpeed
-      : config.walkSpeed) * speedMultiplier;
+    : config.walkSpeed) * speedMultiplier;
 
   const targetVelocityX = moveLength > 0 ? moveX * maxSpeed : 0;
   const targetVelocityZ = moveLength > 0 ? moveZ * maxSpeed : 0;

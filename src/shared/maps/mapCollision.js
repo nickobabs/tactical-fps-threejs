@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { getMapLayout } from './mapLayouts.js';
 import { getMapManifestEntry } from './mapManifest.js';
+import { findNamedSpawnPoint } from './mapSpawnMarkers.js';
+
+function isNodeServerRuntime() {
+  return typeof process !== 'undefined' && Boolean(process?.versions?.node);
+}
 
 function createBoxCollisionGeometry(box) {
   const geometry = new THREE.BoxGeometry(box.size.x, box.size.y, box.size.z);
@@ -68,6 +73,64 @@ export function createCollisionMapFromLayoutData(layout, { mapId = layout?.mapId
   };
 }
 
+function resolveGroundedSpawnPoint(spawnPoint, groundHeight, collisionGeometry) {
+  const resolvedGroundHeight = Number(groundHeight ?? spawnPoint?.y ?? 0);
+  if (!spawnPoint) {
+    return {
+      x: 0,
+      y: resolvedGroundHeight,
+      z: 0,
+    };
+  }
+
+  if (!collisionGeometry) {
+    return {
+      x: Number(spawnPoint.x ?? 0),
+      y: resolvedGroundHeight,
+      z: Number(spawnPoint.z ?? 0),
+    };
+  }
+
+  const collisionWorld = new THREE.Mesh(collisionGeometry);
+  const world = {
+    mesh: collisionWorld,
+  };
+  const collision = new (class {
+    constructor() {
+      this.groundHeight = resolvedGroundHeight;
+      this.raycaster = new THREE.Raycaster();
+    }
+    getGroundHeightAt(x, z, currentY, maxStepUp = 2, maxDrop = 8) {
+      this.raycaster.set(
+        new THREE.Vector3(x, currentY + maxStepUp, z),
+        new THREE.Vector3(0, -1, 0),
+      );
+      const hits = this.raycaster.intersectObject(world.mesh, false);
+      for (const hit of hits) {
+        const drop = currentY + maxStepUp - hit.point.y;
+        if (drop >= -0.001 && drop <= maxStepUp + maxDrop) {
+          return hit.point.y;
+        }
+      }
+      return this.groundHeight;
+    }
+  })();
+
+  const groundedY = collision.getGroundHeightAt(
+    Number(spawnPoint.x ?? 0),
+    Number(spawnPoint.z ?? 0),
+    Number(spawnPoint.y ?? resolvedGroundHeight) + 0.5,
+    2,
+    8,
+  );
+
+  return {
+    x: Number(spawnPoint.x ?? 0),
+    y: Number(groundedY ?? resolvedGroundHeight),
+    z: Number(spawnPoint.z ?? 0),
+  };
+}
+
 export function createCollisionMapForMapId(mapId) {
   const layout = getMapLayout(mapId);
   if (!layout) {
@@ -78,7 +141,7 @@ export function createCollisionMapForMapId(mapId) {
 }
 
 function getNodePublicAssetUrl(assetPath) {
-  if (typeof window !== 'undefined') {
+  if (!isNodeServerRuntime()) {
     return null;
   }
 
@@ -111,6 +174,47 @@ async function loadNodeGltfScene(assetPath) {
   return gltf.scene;
 }
 
+async function resolveNamedSpawnFromManifestEntry(entry) {
+  const spawnMarkers = entry?.gameplay?.spawnMarkers;
+  if (!Array.isArray(spawnMarkers) || spawnMarkers.length === 0) {
+    return null;
+  }
+
+  const candidatePaths = [
+    entry.assets?.render?.source === 'gltf-scene' ? entry.assets?.render?.path : null,
+    entry.assets?.collision?.path,
+  ].filter(Boolean);
+
+  const loadedScenes = [];
+  try {
+    for (const assetPath of candidatePaths) {
+      loadedScenes.push(await loadNodeGltfScene(assetPath));
+    }
+
+    for (const spawnMarker of spawnMarkers) {
+      for (const scene of loadedScenes) {
+        const namedSpawn = findNamedSpawnPoint(scene, [spawnMarker]);
+        if (namedSpawn) {
+          return namedSpawn;
+        }
+      }
+    }
+  } finally {
+    for (const scene of loadedScenes) {
+      scene.traverse((child) => {
+        child.geometry?.dispose?.();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((material) => material?.dispose?.());
+        } else {
+          child.material?.dispose?.();
+        }
+      });
+    }
+  }
+
+  return null;
+}
+
 export async function createCollisionMapFromManifestEntry(entry) {
   if (!entry) {
     return null;
@@ -122,7 +226,7 @@ export async function createCollisionMapFromManifestEntry(entry) {
   }
 
   if (collisionSource === 'gltf-scene') {
-    if (typeof window !== 'undefined') {
+    if (!isNodeServerRuntime()) {
       throw new Error('Manifest-based glTF collision loading is only intended for the Node server path.');
     }
 
@@ -130,17 +234,33 @@ export async function createCollisionMapFromManifestEntry(entry) {
       throw new Error(`Map "${entry.id}" is missing a collision glTF path.`);
     }
 
+    const namedSpawn = await resolveNamedSpawnFromManifestEntry(entry);
     const scene = await loadNodeGltfScene(entry.assets.collision.path);
     try {
+      const collisionGeometry = createCollisionGeometryFromScene(scene);
+      const spawnPoint = namedSpawn
+        ?? {
+          position: {
+            x: Number(entry.gameplay?.spawnPoint?.x ?? 0),
+            y: Number(entry.gameplay?.spawnPoint?.y ?? 0),
+            z: Number(entry.gameplay?.spawnPoint?.z ?? 0),
+          },
+        };
+      const fallbackGroundHeight = Number(entry.gameplay?.groundHeight ?? spawnPoint.position.y ?? 0);
+      const groundedSpawnPoint = resolveGroundedSpawnPoint(
+        spawnPoint.position,
+        fallbackGroundHeight,
+        collisionGeometry,
+      );
       return {
         mapId: entry.id,
-        groundHeight: entry.gameplay?.groundHeight ?? 0,
+        groundHeight: groundedSpawnPoint.y,
         spawnPoint: new THREE.Vector3(
-          Number(entry.gameplay?.spawnPoint?.x ?? 0),
-          Number(entry.gameplay?.spawnPoint?.y ?? 0),
-          Number(entry.gameplay?.spawnPoint?.z ?? 0),
+          groundedSpawnPoint.x,
+          groundedSpawnPoint.y,
+          groundedSpawnPoint.z,
         ),
-        collisionGeometry: createCollisionGeometryFromScene(scene),
+        collisionGeometry,
       };
     } finally {
       scene.traverse((child) => {

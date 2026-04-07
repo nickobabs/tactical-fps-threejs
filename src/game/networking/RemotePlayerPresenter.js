@@ -7,6 +7,11 @@ import {
   REMOTE_HITBOX_HEAD_OFFSET,
 } from '../../shared/remoteHitboxes.js';
 import {
+  describeRemoteHitboxAudit,
+  resolveRemoteHitBones,
+  resolveRemoteRootJoint,
+} from '../../shared/remoteSkeleton.js';
+import {
   DEFAULT_REMOTE_SOCKET_POSES,
   REMOTE_CHARACTER_AIM_SETTINGS,
   REMOTE_CHARACTER_HITBOX_SETTINGS,
@@ -88,7 +93,7 @@ const REMOTE_CHARACTER_ASSET_PROMISES = new Map();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
 let REMOTE_CCDIK_SOLVER_PROMISE = null;
 const REMOTE_EXPERIMENTAL_CLIP_PROMISES = new Map();
-const REMOTE_ROOT_MOTION_BONE_NAMES = ['mixamorighips', 'hips', 'root', '_rootjoint', 'armature'];
+const REMOTE_ROOT_MOTION_BONE_NAMES = ['mixamorighips', 'hips', 'root', '_rootjoint', 'armature', 'bip01'];
 const REMOTE_EXPERIMENTAL_LOWER_BODY_PATTERNS = [
   /bip01$/i,
   /bip01 pelvis/i,
@@ -1036,49 +1041,9 @@ function createRemoteHitVolumeDebugGroup() {
   return { group, head, torso, pelvis, arms, hands, legs };
 }
 
-function findRemoteBoneByHints(root, names = [], fallbackPattern = null) {
-  for (const name of names) {
-    const match = root.getObjectByName(name);
-    if (match?.isBone) {
-      return match;
-    }
-  }
-
-  if (!fallbackPattern) {
-    return null;
-  }
-
-  let resolved = null;
-  root.traverse((child) => {
-    if (!resolved && child.isBone && fallbackPattern.test(child.name)) {
-      resolved = child;
-    }
-  });
-  return resolved;
-}
-
 function findRemoteHitBones(root, definition) {
   const skeleton = definition?.skeleton ?? {};
-  return {
-    head: findRemoteBoneByHints(root, ['Bip01 Head', 'Bip01_Head', skeleton.head].filter(Boolean), /head/i),
-    neck: findRemoteBoneByHints(root, ['Bip01 Neck', 'Bip01_Neck', skeleton.neck].filter(Boolean), /neck/i),
-    spine: findRemoteBoneByHints(root, ['Bip01 Spine', 'Bip01_Spine', skeleton.spine].filter(Boolean), /^bip01[\s_]?spine$/i),
-    pelvis: findRemoteBoneByHints(root, ['Bip01 Pelvis', 'Bip01_Pelvis', skeleton.pelvis, skeleton.rootJoint].filter(Boolean), /pelvis|hips|^bip01$/i),
-    leftClavicle: findRemoteBoneByHints(root, ['Bip01 L Clavicle', 'Bip01_L_Clavicle', skeleton.leftClavicle].filter(Boolean), /(left|l).*clavicle|clavicle.*(left|l)/i),
-    leftUpperArm: findRemoteBoneByHints(root, ['Bip01 L UpperArm', 'Bip01_L_UpperArm', skeleton.leftUpperArm].filter(Boolean), /(left|l).*upper.*arm|upper.*arm.*(left|l)/i),
-    leftForearm: findRemoteBoneByHints(root, ['Bip01 L Forearm', 'Bip01_L_Forearm', skeleton.leftForearm].filter(Boolean), /(left|l).*forearm|forearm.*(left|l)/i),
-    leftHand: findRemoteBoneByHints(root, ['Bip01 L Hand', 'Bip01_L_Hand', skeleton.leftHand].filter(Boolean), /(left|l).*hand|hand.*(left|l)/i),
-    rightClavicle: findRemoteBoneByHints(root, ['Bip01 R Clavicle', 'Bip01_R_Clavicle', skeleton.rightClavicle].filter(Boolean), /(right|r).*clavicle|clavicle.*(right|r)/i),
-    rightUpperArm: findRemoteBoneByHints(root, ['Bip01 R UpperArm', 'Bip01_R_UpperArm', skeleton.rightUpperArm].filter(Boolean), /(right|r).*upper.*arm|upper.*arm.*(right|r)/i),
-    rightForearm: findRemoteBoneByHints(root, ['Bip01 R Forearm', 'Bip01_R_Forearm', skeleton.rightForearm].filter(Boolean), /(right|r).*forearm|forearm.*(right|r)/i),
-    rightHand: findRemoteBoneByHints(root, ['Bip01 R Hand', 'Bip01_R_Hand', skeleton.rightHand].filter(Boolean), /(right|r).*hand|hand.*(right|r)/i),
-    leftThigh: findRemoteBoneByHints(root, ['Bip01 L Thigh', 'Bip01_L_Thigh', skeleton.leftThigh].filter(Boolean), /(left|l).*(thigh|upleg)|(thigh|upleg).*(left|l)/i),
-    leftCalf: findRemoteBoneByHints(root, ['Bip01 L Calf', 'Bip01_L_Calf', skeleton.leftCalf].filter(Boolean), /(left|l).*calf|calf.*(left|l)/i),
-    leftFoot: findRemoteBoneByHints(root, ['Bip01 L Foot', 'Bip01_L_Foot', skeleton.leftFoot].filter(Boolean), /(left|l).*foot|foot.*(left|l)/i),
-    rightThigh: findRemoteBoneByHints(root, ['Bip01 R Thigh', 'Bip01_R_Thigh', skeleton.rightThigh].filter(Boolean), /(right|r).*(thigh|upleg)|(thigh|upleg).*(right|r)/i),
-    rightCalf: findRemoteBoneByHints(root, ['Bip01 R Calf', 'Bip01_R_Calf', skeleton.rightCalf].filter(Boolean), /(right|r).*calf|calf.*(right|r)/i),
-    rightFoot: findRemoteBoneByHints(root, ['Bip01 R Foot', 'Bip01_R_Foot', skeleton.rightFoot].filter(Boolean), /(right|r).*foot|foot.*(right|r)/i),
-  };
+  return resolveRemoteHitBones(root, skeleton);
 }
 
 function hasCompleteRemoteHitBones(bones) {
@@ -1197,6 +1162,18 @@ function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones) {
   }, REMOTE_LOCAL_HITBOX_SNAPSHOT);
 
   return updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, localSnapshot);
+}
+
+function pickAuditCoreSnapshot(snapshot) {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    head: snapshot.head ?? null,
+    torso: snapshot.torso ?? null,
+    pelvis: snapshot.pelvis ?? null,
+  };
 }
 
 function createRemotePlayerVisual(displayName, bodyMaterial) {
@@ -1645,11 +1622,7 @@ function attachRemoteCharacterModel(visual, asset) {
 
   characterRoot.updateMatrixWorld(true);
   REMOTE_CHARACTER_BOX.setFromObject(characterRoot);
-  const rootJoint = characterRoot.getObjectByName('_rootJoint')
-    ?? characterRoot.getObjectByName(definition.skeleton?.rootJoint ?? '')
-    ?? characterRoot.getObjectByName('belly_01')
-    ?? characterRoot.getObjectByName('mixamorigHips')
-    ?? null;
+  const rootJoint = resolveRemoteRootJoint(characterRoot, definition.skeleton);
   if (rootJoint) {
     rootJoint.getWorldPosition(REMOTE_CHARACTER_ROOT_WORLD);
     characterRoot.position.set(-REMOTE_CHARACTER_ROOT_WORLD.x, -REMOTE_CHARACTER_BOX.min.y, -REMOTE_CHARACTER_ROOT_WORLD.z);
@@ -1663,6 +1636,14 @@ function attachRemoteCharacterModel(visual, asset) {
   visual.characterDefinition = definition;
   visual.characterAimBones = findRemoteAimBones(characterRoot);
   visual.characterHitBones = findRemoteHitBones(characterRoot, definition);
+  if (!visual.hitboxAuditLogged) {
+    const audit = describeRemoteHitboxAudit({
+      root: rootJoint,
+      bones: visual.characterHitBones,
+    });
+    console.info('[RemotePlayerPresenter] Hitbox audit:', audit);
+    visual.hitboxAuditLogged = true;
+  }
   visual.characterScaleBase = REMOTE_PLAYER_STAND_HEIGHT / baseHeight;
   visual.characterModelScaleAtAttach = getRemoteCharacterModelScale();
   visual.characterMixer = new THREE.AnimationMixer(characterRoot);
@@ -2053,8 +2034,11 @@ function disposeRemotePlayerVisual(visual) {
 }
 
 export class RemotePlayerPresenter {
-  constructor(scene) {
+  constructor(scene, options = {}) {
     this.scene = scene;
+    this.sendHitboxAudit = typeof options.sendHitboxAudit === 'function'
+      ? options.sendHitboxAudit
+      : null;
     this.remotePlayerMeshes = new Map();
     this.showHitVolumeDebug = false;
     this.weaponTuningPanel = createRemoteWeaponTuningPanel();
@@ -2142,6 +2126,7 @@ export class RemotePlayerPresenter {
         alive: this.remotePlayerMaterial,
         dead: this.remotePlayerDeadMaterial,
       });
+      this.maybeSendHitboxAudit(visual, renderPlayer, authoritativeState);
     }
 
     for (const [playerId, visual] of this.remotePlayerMeshes) {
@@ -2172,5 +2157,100 @@ export class RemotePlayerPresenter {
     this.characterTuningPanel?.destroy?.();
     this.remotePlayerMaterial.dispose();
     this.remotePlayerDeadMaterial.dispose();
+  }
+
+  maybeSendHitboxAudit(visual, renderPlayer, authoritativeState) {
+    if (!this.showHitVolumeDebug || !this.sendHitboxAudit || !visual?.characterHitBones || !authoritativeState?.hitboxDebug) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - (visual.lastSentHitboxAuditAt ?? 0) < 750) {
+      return;
+    }
+
+    for (const [key, point] of Object.entries(REMOTE_LOCAL_HITBOX_POINTS)) {
+      const bone = visual.characterHitBones[key];
+      if (!bone?.getWorldPosition) {
+        continue;
+      }
+      bone.getWorldPosition(REMOTE_HITBOX_WORLD_POINT_A);
+      point.x = REMOTE_HITBOX_WORLD_POINT_A.x;
+      point.y = REMOTE_HITBOX_WORLD_POINT_A.y;
+      point.z = REMOTE_HITBOX_WORLD_POINT_A.z;
+    }
+
+    const localSnapshot = buildRemoteHitboxSnapshotFromPoints({
+      points: REMOTE_LOCAL_HITBOX_POINTS,
+      headOffset: getRemoteHitboxSettings().headOffset,
+      headRadius: getRemoteHitboxSettings().headRadius,
+    }, createRemoteHitboxSnapshot());
+
+    const signature = JSON.stringify({
+      playerId: renderPlayer?.playerId,
+      activeClip: authoritativeState.hitboxDebug.activeClip,
+      clipTime: Number(authoritativeState.hitboxDebug.clipTime ?? 0).toFixed(3),
+      position: authoritativeState.position,
+      localHead: localSnapshot?.head?.center ?? null,
+      serverHead: authoritativeState.hitboxes?.head?.center ?? null,
+    });
+    if (visual.lastSentHitboxAuditSignature === signature) {
+      return;
+    }
+    visual.lastSentHitboxAuditAt = now;
+    visual.lastSentHitboxAuditSignature = signature;
+
+    const visiblePoints = {};
+    for (const [key, bone] of Object.entries(visual.characterHitBones)) {
+      if (!bone?.getWorldPosition) {
+        visiblePoints[key] = null;
+        continue;
+      }
+      bone.getWorldPosition(REMOTE_HITBOX_WORLD_POINT_A);
+      visiblePoints[key] = {
+        x: REMOTE_HITBOX_WORLD_POINT_A.x,
+        y: REMOTE_HITBOX_WORLD_POINT_A.y,
+        z: REMOTE_HITBOX_WORLD_POINT_A.z,
+      };
+    }
+
+    const activeClientAction = visual.activeCharacterClip
+      ? findRemoteClipAction(visual, visual.activeCharacterClip)
+      : null;
+
+    this.sendHitboxAudit({
+      capturedAt: Date.now(),
+      playerId: renderPlayer?.playerId ?? authoritativeState.playerId ?? null,
+      renderPlayer: {
+        position: renderPlayer?.position ?? null,
+        yaw: renderPlayer?.yaw ?? null,
+        pitch: renderPlayer?.pitch ?? null,
+        currentHeight: renderPlayer?.currentHeight ?? null,
+        presentationState: renderPlayer?.presentationState ?? null,
+      },
+      authoritativeState: {
+        position: authoritativeState.position,
+        yaw: authoritativeState.yaw,
+        pitch: authoritativeState.pitch,
+        currentHeight: authoritativeState.currentHeight,
+        presentationState: authoritativeState.presentationState,
+        hitboxes: authoritativeState.hitboxes ?? null,
+        hitboxDebug: authoritativeState.hitboxDebug ?? null,
+      },
+      clientAnimationDebug: {
+        activeClip: visual.activeCharacterClip ?? null,
+        clipTime: activeClientAction ? Number(activeClientAction.time ?? 0) : null,
+        clipPlaybackSpeed: activeClientAction
+          ? Number(activeClientAction.getEffectiveTimeScale?.() ?? 1)
+          : null,
+      },
+      clientVisibleBones: {
+        head: visiblePoints.head ?? null,
+        neck: visiblePoints.neck ?? null,
+        spine: visiblePoints.spine ?? null,
+        pelvis: visiblePoints.pelvis ?? null,
+      },
+      clientLocalSnapshot: pickAuditCoreSnapshot(localSnapshot),
+    });
   }
 }

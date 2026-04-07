@@ -37,7 +37,7 @@ export const SHARED_WEAPON_DATA = {
     automatic: false,
     canScope: false,
     hipfireSpread: 0,
-    movementSpeedMultiplier: 1.2,
+    movementSpeedMultiplier: 1.25,
   },
 };
 

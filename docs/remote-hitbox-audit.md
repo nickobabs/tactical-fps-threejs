@@ -147,3 +147,14 @@ The key lesson from this branch is:
 ## Short Summary
 
 The remote hitbox branch is now in a usable state. The main breakthrough was removing left-hand IK from the authoritative hitbox rig, which was the primary cause of upper-body pose drift relative to the visible remote mesh. Additional server rig fixes, shared hitbox snapshot logic, and a pose-relative head sphere anchor completed the system. Final head tuning values were baked into shared defaults, and `F6` now includes a local hitbox debug mode so future visual tuning can be done safely without changing real server-authoritative hitreg.
+
+## Follow-up Root Cause
+
+The later locomotion and jump mismatch was not caused by aim pitch, late weapon attachment, or IK. Stage-by-stage audit showed the divergence already existed immediately after base clip sampling on the client and server.
+
+The actual regression was inconsistent root-motion stripping:
+
+- the server removed translation tracks from `Bip01.position`
+- the client removed root motion from `mixamorigHips` / `hips` / `root` / `_rootJoint` / `armature`, but not `Bip01`
+
+That meant the visible client rig could still carry baked `Bip01` translation during run and jump while the authoritative server rig did not. Once the client root-motion strip list was updated to include `Bip01`, remote authoritative hitboxes and the visible remote mesh returned to near-perfect parity across idle, locomotion, and air states.

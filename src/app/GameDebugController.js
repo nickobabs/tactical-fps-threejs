@@ -12,6 +12,7 @@ export class GameDebugController {
     this.scene = scene;
     this.ignoreLocalCorrections = false;
     this.markDebugSnapshotRequested = false;
+    this.movementTraceRecording = false;
     this.debugMarkers = [];
     this.nextDebugMarkerId = 1;
     this.showCollisionDebug = false;
@@ -32,6 +33,15 @@ export class GameDebugController {
 
   requestDebugSnapshot() {
     this.markDebugSnapshotRequested = true;
+  }
+
+  isMovementTraceRecording() {
+    return this.movementTraceRecording;
+  }
+
+  toggleMovementTraceRecording() {
+    this.movementTraceRecording = !this.movementTraceRecording;
+    return this.movementTraceRecording;
   }
 
   consumeMarkDebugSnapshotRequested() {

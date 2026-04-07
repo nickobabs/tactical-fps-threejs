@@ -34,6 +34,7 @@
 - Mouse fire input is only registered after pointer lock has been acquired.
 - General mouse-down handling is mirrored onto the frame state so multi-button combinations such as hold-right-click plus left-click fire work reliably.
 - Browser context menu is suppressed while pointer lock is active.
+- Browser default actions are also suppressed for the main debug hotkeys (`F3`, `F6`, `F7`, `F9`, `F10`) so they behave as reliable in-game toggles.
 - Input buffers are cleared only when `consumeFrameState()` is called.
 - Frame input is intentionally lightweight and synchronous.
 

@@ -1,4 +1,5 @@
 const MOVEMENT_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
+const PREVENT_DEFAULT_KEYS = new Set(['F3', 'F6', 'F7', 'F9', 'F10']);
 const GAMEPLAY_SHORTCUT_BLOCK_KEYS = new Set([
   'KeyW',
   'KeyA',
@@ -55,6 +56,10 @@ export class InputManager {
 
   handleKeyDown(event) {
     if (this.pointerLocked && GAMEPLAY_SHORTCUT_BLOCK_KEYS.has(event.code) && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+    }
+
+    if (PREVENT_DEFAULT_KEYS.has(event.code)) {
       event.preventDefault();
     }
 

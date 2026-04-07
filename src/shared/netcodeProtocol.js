@@ -65,6 +65,7 @@ export function createPlayerStatusMessage(state) {
 export function normalizeAuthoritativePlayerState(playerId, state) {
   return {
     playerId,
+    mapId: String(state?.mapId ?? 'training-ground'),
     position: {
       x: Number(state?.position?.x ?? 0),
       y: Number(state?.position?.y ?? 0),
@@ -91,12 +92,14 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     isScoped: Boolean(state?.isScoped ?? false),
     presentationState: String(state?.presentationState ?? 'idle'),
     hitboxes: state?.hitboxes ?? null,
+    hitboxDebug: state?.hitboxDebug ?? null,
   };
 }
 
 export function serializeAuthoritativePlayerState(playerId, player) {
   return {
     playerId,
+    mapId: String(player?.mapId ?? 'training-ground'),
     position: {
       x: Number(player?.motionState?.position?.x ?? 0),
       y: Number(player?.motionState?.position?.y ?? 0),
@@ -123,5 +126,6 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     isScoped: Boolean(player?.isScoped ?? false),
     presentationState: String(player?.presentationState ?? 'idle'),
     hitboxes: player?.authoritativeHitboxes ?? null,
+    hitboxDebug: player?.hitboxRig?.debugState ?? null,
   };
 }
