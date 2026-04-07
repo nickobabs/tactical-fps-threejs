@@ -123,6 +123,15 @@ function buildHeadCenter(target, points, headOffset) {
 }
 
 function writeSegment(target, start, end, radius) {
+  if (!target) {
+    return;
+  }
+  if (!target.start) {
+    target.start = createPoint();
+  }
+  if (!target.end) {
+    target.end = createPoint();
+  }
   copyPoint(target.start, start);
   copyPoint(target.end, end);
   target.radius = radius;
@@ -175,23 +184,33 @@ export function buildRemoteHitboxSnapshotFromPoints({
   buildHeadCenter(target.head.center, finalPoints, headOffset);
   target.head.radius = Number.isFinite(Number(headRadius)) ? Number(headRadius) : REMOTE_HITBOX_RADII.head;
 
-  writeSegment(target.torso, finalPoints.spine, finalPoints.neck, REMOTE_HITBOX_RADII.torso);
-  writeSegment(target.pelvis, stablePoints.pelvis, stablePoints.spine, REMOTE_HITBOX_RADII.pelvis);
+  if (target.torso) {
+    writeSegment(target.torso, finalPoints.spine, finalPoints.neck, REMOTE_HITBOX_RADII.torso);
+  }
+  if (target.pelvis) {
+    writeSegment(target.pelvis, stablePoints.pelvis, stablePoints.spine, REMOTE_HITBOX_RADII.pelvis);
+  }
 
-  writeSegment(target.arms[0], finalPoints.leftClavicle, finalPoints.leftUpperArm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[1], finalPoints.leftUpperArm, finalPoints.leftForearm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[2], finalPoints.leftForearm, finalPoints.leftHand, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[3], finalPoints.rightClavicle, finalPoints.rightUpperArm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[4], finalPoints.rightUpperArm, finalPoints.rightForearm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(target.arms[5], finalPoints.rightForearm, finalPoints.rightHand, REMOTE_HITBOX_RADII.arm);
+  if (Array.isArray(target.arms)) {
+    writeSegment(target.arms[0], finalPoints.leftClavicle, finalPoints.leftUpperArm, REMOTE_HITBOX_RADII.arm);
+    writeSegment(target.arms[1], finalPoints.leftUpperArm, finalPoints.leftForearm, REMOTE_HITBOX_RADII.arm);
+    writeSegment(target.arms[2], finalPoints.leftForearm, finalPoints.leftHand, REMOTE_HITBOX_RADII.arm);
+    writeSegment(target.arms[3], finalPoints.rightClavicle, finalPoints.rightUpperArm, REMOTE_HITBOX_RADII.arm);
+    writeSegment(target.arms[4], finalPoints.rightUpperArm, finalPoints.rightForearm, REMOTE_HITBOX_RADII.arm);
+    writeSegment(target.arms[5], finalPoints.rightForearm, finalPoints.rightHand, REMOTE_HITBOX_RADII.arm);
+  }
 
-  writeSphere(target.hands[0], finalPoints.leftHand, REMOTE_HITBOX_RADII.hand);
-  writeSphere(target.hands[1], finalPoints.rightHand, REMOTE_HITBOX_RADII.hand);
+  if (Array.isArray(target.hands)) {
+    writeSphere(target.hands[0], finalPoints.leftHand, REMOTE_HITBOX_RADII.hand);
+    writeSphere(target.hands[1], finalPoints.rightHand, REMOTE_HITBOX_RADII.hand);
+  }
 
-  writeSegment(target.legs[0], finalPoints.leftThigh, finalPoints.leftCalf, REMOTE_HITBOX_RADII.leg);
-  writeSegment(target.legs[1], finalPoints.leftCalf, finalPoints.leftFoot, REMOTE_HITBOX_RADII.leg);
-  writeSegment(target.legs[2], finalPoints.rightThigh, finalPoints.rightCalf, REMOTE_HITBOX_RADII.leg);
-  writeSegment(target.legs[3], finalPoints.rightCalf, finalPoints.rightFoot, REMOTE_HITBOX_RADII.leg);
+  if (Array.isArray(target.legs)) {
+    writeSegment(target.legs[0], finalPoints.leftThigh, finalPoints.leftCalf, REMOTE_HITBOX_RADII.leg);
+    writeSegment(target.legs[1], finalPoints.leftCalf, finalPoints.leftFoot, REMOTE_HITBOX_RADII.leg);
+    writeSegment(target.legs[2], finalPoints.rightThigh, finalPoints.rightCalf, REMOTE_HITBOX_RADII.leg);
+    writeSegment(target.legs[3], finalPoints.rightCalf, finalPoints.rightFoot, REMOTE_HITBOX_RADII.leg);
+  }
 
   return target;
 }
