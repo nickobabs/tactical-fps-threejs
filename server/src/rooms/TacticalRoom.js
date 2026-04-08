@@ -61,6 +61,7 @@ const TARGET_HITBOX_LAYOUT = createPlayerHitboxLayout();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REMOTE_HITBOX_AUDIT_LOG_PATH = path.resolve(__dirname, '../../../debug/remote-hitbox-audit.log');
+const MAX_SCOREBOARD_PING_MS = 999;
 
 async function appendRemoteHitboxAudit(entry) {
   await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
@@ -374,6 +375,10 @@ export class TacticalRoom extends Room {
         yaw: Number(message?.yaw ?? player.motionState.yaw),
         pitch: Number(message?.pitch ?? player.pitch ?? 0),
       }, sequence, inputTimestamp);
+      player.pingMs = Math.max(
+        0,
+        Math.min(MAX_SCOREBOARD_PING_MS, Date.now() - inputTimestamp),
+      );
       player.pendingInputs.push(normalizedInput);
       player.lastQueuedSequence = sequence;
       player.lastQueuedTimestamp = inputTimestamp;
@@ -481,6 +486,10 @@ export class TacticalRoom extends Room {
     this.players[client.sessionId] = {
       playerId: client.sessionId,
       displayName: `Player ${this.nextPlayerNumber}`,
+      team: 'attackers',
+      kills: 0,
+      deaths: 0,
+      pingMs: 0,
       motionState: createPlayerMovementState(),
       pendingInputs: [],
       mapId: 'training-ground',
@@ -739,6 +748,8 @@ export class TacticalRoom extends Room {
 
     bestTarget.health = Math.max(0, bestTarget.health - weapon.damage);
     if (bestTarget.health === 0) {
+      player.kills = Number(player.kills ?? 0) + 1;
+      bestTarget.deaths = Number(bestTarget.deaths ?? 0) + 1;
       bestTarget.isAlive = false;
       bestTarget.respawnAt = now + PLAYER_RESPAWN_DELAY_MS;
       bestTarget.pendingInputs.length = 0;

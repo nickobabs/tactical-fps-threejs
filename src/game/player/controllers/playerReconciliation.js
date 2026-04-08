@@ -48,7 +48,7 @@ export function getReconciliationOutcome({
 
   if (correctionDistance <= softCorrectionMinDistance) {
     return {
-      action: 'apply_exact',
+      action: isCorrectionActive ? 'stop' : 'ignore',
       correctionDistance,
     };
   }

@@ -36,6 +36,26 @@ function formatSigned(value) {
   return Number(value ?? 0).toFixed(2);
 }
 
+function formatVectorText(vector) {
+  return `${formatSigned(vector?.x)}, ${formatSigned(vector?.z)}`;
+}
+
+function formatPositionText(vector) {
+  return `${formatSigned(vector?.x)}, ${formatSigned(vector?.y)}, ${formatSigned(vector?.z)}`;
+}
+
+function getPlanarUnitVector(x, z) {
+  const length = Math.hypot(x, z);
+  if (length <= 1e-6) {
+    return null;
+  }
+
+  return {
+    x: x / length,
+    z: z / length,
+  };
+}
+
 export class FirstPersonController {
   constructor(camera, input, options = {}) {
     this.camera = camera;
@@ -104,6 +124,20 @@ export class FirstPersonController {
     this.correctionEvents = [];
     this.correctionEnqueueEvents = [];
     this.isCorrectionActive = false;
+    this.lastReconciliationAction = 'none';
+    this.lastReplayInputCount = 0;
+    this.lastCorrectionDeltaText = '0.00, 0.00';
+    this.lastCorrectionDeltaY = 0;
+    this.lastCorrectionDistanceXZ = 0;
+    this.lastCorrectionAlongVelocity = 0;
+    this.lastCorrectionPerpendicularVelocity = 0;
+    this.lastCorrectionAlongInput = 0;
+    this.lastCorrectionPerpendicularInput = 0;
+    this.lastAuthoritativeVelocityText = '0.00, 0.00';
+    this.lastReplayVelocityText = '0.00, 0.00';
+    this.lastCurrentPositionText = '0.00, 0.00, 0.00';
+    this.lastAuthoritativePositionText = '0.00, 0.00, 0.00';
+    this.lastReplayPositionText = '0.00, 0.00, 0.00';
   }
 
   getObject() {
@@ -184,6 +218,20 @@ export class FirstPersonController {
       simulationDeltaMagnitude: horizontalSpeed * NETCODE_SIMULATION_STEP,
       lastCorrectionDistance: this.lastCorrectionDistance,
       correctionRatePerSecond: this.correctionEvents.length,
+      reconciliationAction: this.lastReconciliationAction,
+      replayInputCount: this.lastReplayInputCount,
+      correctionDeltaText: this.lastCorrectionDeltaText,
+      correctionDeltaY: this.lastCorrectionDeltaY,
+      correctionDistanceXZ: this.lastCorrectionDistanceXZ,
+      correctionAlongVelocity: this.lastCorrectionAlongVelocity,
+      correctionPerpendicularVelocity: this.lastCorrectionPerpendicularVelocity,
+      correctionAlongInput: this.lastCorrectionAlongInput,
+      correctionPerpendicularInput: this.lastCorrectionPerpendicularInput,
+      authoritativeVelocityText: this.lastAuthoritativeVelocityText,
+      replayVelocityText: this.lastReplayVelocityText,
+      currentPositionDetailText: this.lastCurrentPositionText,
+      authoritativePositionText: this.lastAuthoritativePositionText,
+      replayPositionText: this.lastReplayPositionText,
     };
 
     if (includeVectors) {
@@ -561,6 +609,53 @@ export class FirstPersonController {
     });
     const { action, correctionDistance } = reconciliationOutcome;
     this.lastCorrectionDistance = correctionDistance;
+    this.lastReconciliationAction = action;
+    this.lastReplayInputCount = correction.replayInputs?.length ?? 0;
+    this.lastCorrectionDeltaText = formatVectorText(SOFT_CORRECTION_DELTA);
+    this.lastCorrectionDeltaY = Number(SOFT_CORRECTION_DELTA.y ?? 0);
+    this.lastCorrectionDistanceXZ = Math.hypot(SOFT_CORRECTION_DELTA.x, SOFT_CORRECTION_DELTA.z);
+    const velocityDirection = getPlanarUnitVector(this.velocity.x, this.velocity.z);
+    const replayVelocityDirection = getPlanarUnitVector(replayState?.velocity?.x ?? 0, replayState?.velocity?.z ?? 0);
+    const inputDirection = getPlanarUnitVector(
+      (replayState?.velocity?.x ?? 0) || (correction.authoritativeState?.velocity?.x ?? 0),
+      (replayState?.velocity?.z ?? 0) || (correction.authoritativeState?.velocity?.z ?? 0),
+    );
+    const referenceVelocityDirection = replayVelocityDirection ?? velocityDirection;
+    const correctionX = Number(SOFT_CORRECTION_DELTA.x ?? 0);
+    const correctionZ = Number(SOFT_CORRECTION_DELTA.z ?? 0);
+    if (referenceVelocityDirection) {
+      const alongVelocity = (
+        correctionX * referenceVelocityDirection.x
+        + correctionZ * referenceVelocityDirection.z
+      );
+      this.lastCorrectionAlongVelocity = alongVelocity;
+      this.lastCorrectionPerpendicularVelocity = Math.sqrt(Math.max(
+        0,
+        (correctionX * correctionX + correctionZ * correctionZ) - (alongVelocity * alongVelocity),
+      ));
+    } else {
+      this.lastCorrectionAlongVelocity = 0;
+      this.lastCorrectionPerpendicularVelocity = 0;
+    }
+    if (inputDirection) {
+      const alongInput = (
+        correctionX * inputDirection.x
+        + correctionZ * inputDirection.z
+      );
+      this.lastCorrectionAlongInput = alongInput;
+      this.lastCorrectionPerpendicularInput = Math.sqrt(Math.max(
+        0,
+        (correctionX * correctionX + correctionZ * correctionZ) - (alongInput * alongInput),
+      ));
+    } else {
+      this.lastCorrectionAlongInput = 0;
+      this.lastCorrectionPerpendicularInput = 0;
+    }
+    this.lastAuthoritativeVelocityText = formatVectorText(correction.authoritativeState?.velocity);
+    this.lastReplayVelocityText = formatVectorText(replayState?.velocity);
+    this.lastCurrentPositionText = formatPositionText(this.position);
+    this.lastAuthoritativePositionText = formatPositionText(correction.authoritativeState?.position);
+    this.lastReplayPositionText = formatPositionText(replayState?.position);
     if (action === 'apply_exact') {
       this.isCorrectionActive = false;
       this.bufferedCanonicalCorrection.set(0, 0, 0);

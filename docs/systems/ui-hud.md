@@ -58,7 +58,15 @@
   - `F10` toggles a local movement trace capture
     - active capture is shown in the movement line as `TRACE(F10)`
     - trace data is stored in browser `localStorage` under `tactical-fps-threejs-movement-trace`
-    - export helper:
+    - the same payload is also written through the Node/Colyseus server to `debug/movement-traces/`
+    - current trace/debug fields now include:
+      - correction action
+      - replay input count
+      - authoritative/current/replay positions
+      - horizontal vs vertical correction split
+      - correction projected along velocity/input direction
+      - cadence-normalized drift fields for later analysis
+    - `localStorage` export helper:
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
 
 ## Near-Term Direction

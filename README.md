@@ -27,7 +27,7 @@ The current prototype is a multiplayer-capable tactical FPS foundation with:
 It already supports real play loops:
 
 - spawn into a map
-- move, sprint, crouch, jump, and fight
+- move, crouch, jump, and fight
 - switch weapons
 - shoot through a server-authoritative PvP path
 - die and respawn
@@ -37,7 +37,7 @@ It already supports real play loops:
 
 ### Core Gameplay
 
-- Tactical first-person movement with walk, sprint, crouch, jump, and fly/debug mode
+- Tactical first-person movement with walk, crouch, jump, and fly/debug mode
 - Hitscan rifle, pistol, sniper, and knife slots
 - ADS / scoped state
 - Weapon-dependent movement speed
@@ -87,7 +87,7 @@ It already supports real play loops:
 - `F7` remote weapon/socket tuning
 - `F8` network debug toggle
 - `F9` ignore-local-corrections toggle
-- `F10` debug snapshot dump
+- `F10` movement trace capture to `debug/movement-traces/`
 - Offline navmesh generation script
 
 ## Technology Stack

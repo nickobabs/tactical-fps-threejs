@@ -58,6 +58,42 @@ export function createHud({
         <div class="hud__loading-status"></div>
       </div>
     </div>
+    <div class="hud__scoreboard">
+      <div class="hud__scoreboard-panel">
+        <div class="hud__scoreboard-head">
+          <div class="hud__scoreboard-title"></div>
+          <div class="hud__scoreboard-subtitle"></div>
+        </div>
+        <div class="hud__scoreboard-teams">
+          <section class="hud__scoreboard-team hud__scoreboard-team--attackers">
+            <div class="hud__scoreboard-teambar">
+              <div class="hud__scoreboard-teamname"></div>
+              <div class="hud__scoreboard-teamscore"></div>
+            </div>
+            <div class="hud__scoreboard-columns">
+              <span>Name</span>
+              <span>K</span>
+              <span>D</span>
+              <span>Ping</span>
+            </div>
+            <div class="hud__scoreboard-rows"></div>
+          </section>
+          <section class="hud__scoreboard-team hud__scoreboard-team--defenders">
+            <div class="hud__scoreboard-teambar">
+              <div class="hud__scoreboard-teamname"></div>
+              <div class="hud__scoreboard-teamscore"></div>
+            </div>
+            <div class="hud__scoreboard-columns">
+              <span>Name</span>
+              <span>K</span>
+              <span>D</span>
+              <span>Ping</span>
+            </div>
+            <div class="hud__scoreboard-rows"></div>
+          </section>
+        </div>
+      </div>
+    </div>
     <div class="hud__bottom">
       <div class="hud__health"></div>
       <div class="hud__weapon"></div>
@@ -105,9 +141,13 @@ export function createHud({
   const scopeEl = hud.querySelector('.hud__scope');
   const loadingEl = hud.querySelector('.hud__loading');
   const loadingStatusEl = hud.querySelector('.hud__loading-status');
+  const scoreboardEl = hud.querySelector('.hud__scoreboard');
+  const scoreboardSubtitleEl = hud.querySelector('.hud__scoreboard-subtitle');
+  const scoreboardTeamEls = [...hud.querySelectorAll('.hud__scoreboard-team')];
   const netDebugEl = hud.querySelector('.hud__netdebug');
   let paused = false;
   let showNetDebug = false;
+  let showScoreboard = false;
   let displaySpeed = 0;
   let lastRoundText = '';
   let lastFpsText = '';
@@ -123,6 +163,9 @@ export function createHud({
   let lastAdsReticle = null;
   let lastScopeOverlay = null;
   let lastLoading = null;
+  let lastScoreboardHidden = null;
+  let lastScoreboardSubtitle = '';
+  const lastScoreboardTeamMarkup = new Map();
   let lastNetDebugText = '';
   let currentNetDebugText = '';
   let lastDamageVignette = -1;
@@ -151,6 +194,14 @@ export function createHud({
     return `${min.toFixed(3)}/${avg.toFixed(3)}/${max.toFixed(3)}`;
   }
 
+  function getSafeRate(value, divisor) {
+    if (!Number.isFinite(value) || !Number.isFinite(divisor) || divisor <= 0) {
+      return 0;
+    }
+
+    return value / divisor;
+  }
+
   function buildDebugSummary() {
     if (debugHistory.length === 0) {
       return currentNetDebugText;
@@ -165,6 +216,14 @@ export function createHud({
       `snapshot_age_ms(min/avg/max)=${summarizeMetric(debugHistory, 'snapshotAgeMs')}`,
       `predicted_drift(min/avg/max)=${summarizeMetric(debugHistory, 'predictedDrift')}`,
       `corr_dist(min/avg/max)=${summarizeMetric(debugHistory, 'correctionDistance')}`,
+      `corr_dist_xz(min/avg/max)=${summarizeMetric(debugHistory, 'correctionDistanceXZ')}`,
+      `corr_delta_y(min/avg/max)=${summarizeMetric(debugHistory, 'correctionDeltaY')}`,
+      `corr_along_vel(min/avg/max)=${summarizeMetric(debugHistory, 'correctionAlongVelocity')}`,
+      `corr_perp_vel(min/avg/max)=${summarizeMetric(debugHistory, 'correctionPerpendicularVelocity')}`,
+      `corr_along_input(min/avg/max)=${summarizeMetric(debugHistory, 'correctionAlongInput')}`,
+      `corr_perp_input(min/avg/max)=${summarizeMetric(debugHistory, 'correctionPerpendicularInput')}`,
+      `corr_xz_per_snapshot_ms(min/avg/max)=${summarizeMetric(debugHistory, 'correctionXZPerSnapshotMs')}`,
+      `corr_along_vel_per_snapshot_ms(min/avg/max)=${summarizeMetric(debugHistory, 'correctionAlongVelocityPerSnapshotMs')}`,
       `present_offset(min/avg/max)=${summarizeMetric(debugHistory, 'presentationOffset')}`,
       `buffered_correction(min/avg/max)=${summarizeMetric(debugHistory, 'bufferedCorrection')}`,
       `corr_enqueue_per_sec(min/avg/max)=${summarizeMetric(debugHistory, 'correctionEnqueueRatePerSecond')}`,
@@ -178,6 +237,14 @@ export function createHud({
   }
 
   function buildDebugText(networkDebug, movement) {
+    const correctionXZPerSnapshotMs = getSafeRate(
+      movement.correctionDistanceXZ ?? 0,
+      Math.max(0, networkDebug.snapshotAgeMs),
+    );
+    const correctionAlongVelocityPerSnapshotMs = getSafeRate(
+      Math.abs(movement.correctionAlongVelocity ?? 0),
+      Math.max(0, networkDebug.snapshotAgeMs),
+    );
     return [
       'NETDEBUG',
       `ignore_local_corrections=${Boolean(getIgnoreLocalCorrections?.())}`,
@@ -190,8 +257,17 @@ export function createHud({
       `snapshot_age_ms=${networkDebug.snapshotAgeMs} auth_per_sec=${networkDebug.authoritativeUpdatesPerSecond}`,
       `predicted_drift=${networkDebug.lastPredictedDriftDistance.toFixed(3)} corr_per_sec=${movement.correctionRatePerSecond}`,
       `corr_dist=${movement.lastCorrectionDistance.toFixed(3)} present_offset=${movement.correctionOffsetMagnitude.toFixed(3)}`,
+      `corr_dist_xz=${(movement.correctionDistanceXZ ?? 0).toFixed(3)} corr_delta_y=${(movement.correctionDeltaY ?? 0).toFixed(3)}`,
+      `corr_along_vel=${(movement.correctionAlongVelocity ?? 0).toFixed(3)} corr_perp_vel=${(movement.correctionPerpendicularVelocity ?? 0).toFixed(3)}`,
+      `corr_along_input=${(movement.correctionAlongInput ?? 0).toFixed(3)} corr_perp_input=${(movement.correctionPerpendicularInput ?? 0).toFixed(3)}`,
+      `corr_xz_per_snapshot_ms=${correctionXZPerSnapshotMs.toFixed(5)} corr_along_vel_per_snapshot_ms=${correctionAlongVelocityPerSnapshotMs.toFixed(5)}`,
       `buffered_corr=${(movement.bufferedCanonicalCorrectionMagnitude ?? 0).toFixed(3)} responsive_offset=${(movement.responsiveOffsetMagnitude ?? 0).toFixed(3)}`,
       `corr_enqueue_per_sec=${(movement.correctionEnqueueRatePerSecond ?? 0).toFixed(3)} corr_active=${movement.correctionActive ? 'yes' : 'no'}`,
+      `corr_action=${movement.reconciliationAction ?? 'none'} replay_inputs=${movement.replayInputCount ?? 0} corr_delta_xz=${movement.correctionDeltaText ?? '0.00, 0.00'}`,
+      `auth_vel_xz=${movement.authoritativeVelocityText ?? '0.00, 0.00'} replay_vel_xz=${movement.replayVelocityText ?? '0.00, 0.00'}`,
+      `cur_pos=${movement.currentPositionDetailText ?? '0.00, 0.00, 0.00'}`,
+      `auth_pos=${movement.authoritativePositionText ?? '0.00, 0.00, 0.00'}`,
+      `replay_pos=${movement.replayPositionText ?? '0.00, 0.00, 0.00'}`,
       `input=${movement.inputFlags ?? '-'} target_speed=${(movement.targetSpeed ?? 0).toFixed(3)} speed_ratio=${(movement.speedRatio ?? 0).toFixed(3)}`,
       `target_xz=${movement.targetVectorText ?? '0.00, 0.00'} vel_xz=${movement.velocityVectorText ?? '0.00, 0.00'}`,
       `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,
@@ -200,19 +276,33 @@ export function createHud({
   }
 
   function handleKeyDown(event) {
-    if (event.code !== 'F8') {
+    if (event.code === 'F8') {
+      showNetDebug = !showNetDebug;
+      netDebugEl.hidden = !showNetDebug;
+      if (currentNetDebugText) {
+        console.log(buildDebugSummary());
+      }
+      event.preventDefault();
       return;
     }
 
-    showNetDebug = !showNetDebug;
-    netDebugEl.hidden = !showNetDebug;
-    if (currentNetDebugText) {
-      console.log(buildDebugSummary());
+    if (event.code === 'Tab') {
+      showScoreboard = true;
+      event.preventDefault();
     }
+  }
+
+  function handleKeyUp(event) {
+    if (event.code !== 'Tab') {
+      return;
+    }
+
+    showScoreboard = false;
     event.preventDefault();
   }
 
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('keyup', handleKeyUp);
 
   function setTextIfChanged(element, nextText, lastText) {
     if (lastText !== nextText) {
@@ -223,9 +313,40 @@ export function createHud({
     return lastText;
   }
 
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function getScoreboardRowMarkup(players = [], localPlayerId) {
+    if (players.length === 0) {
+      return '<div class="hud__scoreboard-empty">No players</div>';
+    }
+
+    return players.map((player) => {
+      const playerName = escapeHtml(player.displayName ?? player.playerId ?? 'Player');
+      const kills = Number(player.kills ?? 0);
+      const deaths = Number(player.deaths ?? 0);
+      const ping = Math.max(0, Math.round(Number(player.pingMs ?? 0)));
+      const aliveClass = player.isAlive === false ? ' hud__scoreboard-row--dead' : '';
+      const localClass = player.playerId === localPlayerId ? ' hud__scoreboard-row--local' : '';
+      return `<div class="hud__scoreboard-row${aliveClass}${localClass}">
+        <span class="hud__scoreboard-name">${playerName}</span>
+        <span>${kills}</span>
+        <span>${deaths}</span>
+        <span>${ping}</span>
+      </div>`;
+    }).join('');
+  }
+
   return {
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
       pauseMenu.destroy();
       hud.remove();
     },
@@ -273,6 +394,20 @@ export function createHud({
           snapshotAgeMs: Math.max(0, networkDebug.snapshotAgeMs),
           predictedDrift: networkDebug.lastPredictedDriftDistance,
           correctionDistance: movement.lastCorrectionDistance ?? 0,
+          correctionDistanceXZ: movement.correctionDistanceXZ ?? 0,
+          correctionDeltaY: movement.correctionDeltaY ?? 0,
+          correctionAlongVelocity: movement.correctionAlongVelocity ?? 0,
+          correctionPerpendicularVelocity: movement.correctionPerpendicularVelocity ?? 0,
+          correctionAlongInput: movement.correctionAlongInput ?? 0,
+          correctionPerpendicularInput: movement.correctionPerpendicularInput ?? 0,
+          correctionXZPerSnapshotMs: getSafeRate(
+            movement.correctionDistanceXZ ?? 0,
+            Math.max(0, networkDebug.snapshotAgeMs),
+          ),
+          correctionAlongVelocityPerSnapshotMs: getSafeRate(
+            Math.abs(movement.correctionAlongVelocity ?? 0),
+            Math.max(0, networkDebug.snapshotAgeMs),
+          ),
           presentationOffset: movement.correctionOffsetMagnitude ?? 0,
           bufferedCorrection: movement.bufferedCanonicalCorrectionMagnitude ?? 0,
           correctionEnqueueRatePerSecond: movement.correctionEnqueueRatePerSecond ?? 0,
@@ -292,6 +427,10 @@ export function createHud({
         : 'Round --';
       const fpsText = `FPS: ${getFps?.() ?? '--'}`;
       const localPlayerState = networkClient?.getLocalPlayerState?.() ?? null;
+      const scoreboardState = networkClient?.getScoreboardState?.() ?? {
+        playerCount: 0,
+        teams: [],
+      };
       const healthText = `Health: ${localPlayerState?.health ?? '--'}/${localPlayerState?.maxHealth ?? '--'}${localPlayerState?.isAlive === false ? ' - DOWN' : ''}`;
       const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}`;
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
@@ -304,6 +443,34 @@ export function createHud({
         : input.pointerLocked
           ? 'Pointer locked'
           : 'Click to capture mouse';
+      const scoreboardVisible = showScoreboard && !paused;
+      if (scoreboardVisible !== lastScoreboardHidden) {
+        scoreboardEl.classList.toggle('hud__scoreboard--active', scoreboardVisible);
+        lastScoreboardHidden = scoreboardVisible;
+      }
+      const scoreboardSubtitle = `Players: ${scoreboardState.playerCount}`;
+      lastScoreboardSubtitle = setTextIfChanged(
+        scoreboardSubtitleEl,
+        scoreboardSubtitle,
+        lastScoreboardSubtitle,
+      );
+      scoreboardTeamEls.forEach((teamEl, index) => {
+        const teamState = scoreboardState.teams?.[index] ?? {
+          label: index === 0 ? 'Attackers' : 'Defenders',
+          roundsWon: 0,
+          players: [],
+        };
+        const teamNameEl = teamEl.querySelector('.hud__scoreboard-teamname');
+        const teamScoreEl = teamEl.querySelector('.hud__scoreboard-teamscore');
+        const teamRowsEl = teamEl.querySelector('.hud__scoreboard-rows');
+        teamNameEl.textContent = teamState.label;
+        teamScoreEl.textContent = String(teamState.roundsWon ?? 0);
+        const nextMarkup = getScoreboardRowMarkup(teamState.players, networkClient?.playerId ?? null);
+        if (lastScoreboardTeamMarkup.get(index) !== nextMarkup) {
+          teamRowsEl.innerHTML = nextMarkup;
+          lastScoreboardTeamMarkup.set(index, nextMarkup);
+        }
+      });
       lastRoundText = setTextIfChanged(roundEl, roundText, lastRoundText);
       lastFpsText = setTextIfChanged(fpsEl, fpsText, lastFpsText);
       lastHealthText = setTextIfChanged(healthEl, healthText, lastHealthText);

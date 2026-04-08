@@ -291,6 +291,174 @@ canvas {
   display: flex;
 }
 
+.hud__scoreboard {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 84px 32px 32px;
+}
+
+.hud__scoreboard--active {
+  display: flex;
+}
+
+.hud__scoreboard-panel {
+  width: min(960px, calc(100vw - 64px));
+  border: 1px solid rgba(197, 160, 92, 0.48);
+  background:
+    linear-gradient(180deg, rgba(49, 43, 34, 0.68), rgba(19, 18, 16, 0.46)),
+    rgba(8, 8, 8, 0.18);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 1px rgba(255, 223, 167, 0.09);
+  backdrop-filter: blur(5px);
+}
+
+.hud__scoreboard-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 16px 20px 10px;
+  border-bottom: 1px solid rgba(197, 160, 92, 0.22);
+  color: #dcb86d;
+}
+
+.hud__scoreboard-title {
+  display: none;
+}
+
+.hud__scoreboard-subtitle {
+  color: rgba(230, 193, 117, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.hud__scoreboard-teams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.hud__scoreboard-team {
+  min-height: 420px;
+  padding: 0 12px 12px;
+}
+
+.hud__scoreboard-team--attackers {
+  border-right: 1px solid rgba(128, 170, 223, 0.2);
+  background: linear-gradient(180deg, rgba(74, 115, 177, 0.14), rgba(74, 115, 177, 0.03) 20%, rgba(0, 0, 0, 0) 45%);
+  color: #b6d2ff;
+}
+
+.hud__scoreboard-team--defenders {
+  background: linear-gradient(180deg, rgba(182, 92, 92, 0.14), rgba(182, 92, 92, 0.03) 20%, rgba(0, 0, 0, 0) 45%);
+  color: #ef8c8c;
+}
+
+.hud__scoreboard-teambar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 14px;
+  padding: 12px 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hud__scoreboard-team--attackers .hud__scoreboard-teambar {
+  color: #d7e7ff;
+  background: linear-gradient(180deg, rgba(108, 146, 204, 0.34), rgba(45, 68, 107, 0.08));
+  border-bottom-color: rgba(128, 170, 223, 0.28);
+}
+
+.hud__scoreboard-team--defenders .hud__scoreboard-teambar {
+  color: #ffd5d5;
+  background: linear-gradient(180deg, rgba(156, 88, 88, 0.34), rgba(84, 36, 36, 0.08));
+  border-bottom-color: rgba(205, 112, 112, 0.28);
+}
+
+.hud__scoreboard-teamname {
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.hud__scoreboard-teamscore {
+  min-width: 44px;
+  text-align: right;
+  font-size: 56px;
+  line-height: 0.9;
+  font-weight: 400;
+  opacity: 0.95;
+}
+
+.hud__scoreboard-columns,
+.hud__scoreboard-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px 48px 64px;
+  gap: 10px;
+  align-items: center;
+}
+
+.hud__scoreboard-columns {
+  padding: 8px 8px 6px;
+  color: rgba(234, 226, 211, 0.7);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud__scoreboard-team--attackers .hud__scoreboard-columns {
+  color: rgba(160, 197, 255, 0.82);
+}
+
+.hud__scoreboard-team--defenders .hud__scoreboard-columns {
+  color: rgba(244, 137, 137, 0.82);
+}
+
+.hud__scoreboard-rows {
+  border-top: 1px solid rgba(215, 185, 118, 0.12);
+}
+
+.hud__scoreboard-row {
+  min-height: 34px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.hud__scoreboard-row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.hud__scoreboard-team--attackers .hud__scoreboard-row {
+  color: #aecdff;
+}
+
+.hud__scoreboard-team--defenders .hud__scoreboard-row {
+  color: #ef8f8f;
+}
+
+.hud__scoreboard-row--local {
+  background: rgba(255, 233, 173, 0.075);
+  box-shadow: inset 0 0 0 1px rgba(255, 219, 133, 0.18);
+}
+
+.hud__scoreboard-row--dead {
+  color: rgba(236, 229, 214, 0.54);
+}
+
+.hud__scoreboard-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud__scoreboard-empty {
+  padding: 14px 8px;
+  color: rgba(234, 226, 211, 0.58);
+  font-size: 13px;
+}
+
 .hud__loading-card {
   min-width: 240px;
   padding: 18px 20px;
@@ -445,4 +613,23 @@ canvas {
 .hud__skybox-option--active {
   background: rgba(176, 215, 255, 0.18);
   border-color: rgba(176, 215, 255, 0.34);
+}
+
+@media (max-width: 900px) {
+  .hud__scoreboard {
+    padding: 68px 16px 16px;
+  }
+
+  .hud__scoreboard-panel {
+    width: min(960px, calc(100vw - 32px));
+  }
+
+  .hud__scoreboard-teams {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__scoreboard-team--attackers {
+    border-right: 0;
+    border-bottom: 1px solid rgba(215, 185, 118, 0.14);
+  }
 }

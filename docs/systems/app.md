@@ -28,7 +28,7 @@
 - Active HDR skybox selection
 - Shared audio registration and lifecycle
 - Remote-player rendering from authoritative network state, with placeholder fallback and an active remote playermodel experiment
-- Local correction toggles and debug snapshot requests for multiplayer diagnosis
+- Local correction toggles and movement-trace capture for multiplayer diagnosis
 - Collision debug wireframe overlay
 
 ## Dependencies
@@ -73,7 +73,9 @@
 - Temporary multiplayer diagnostics are also coordinated here:
   - `F3` toggles remote hit-volume debug
   - `F9` toggles local correction application for A/B testing
-  - `F10` requests an immediate debug summary dump
+  - `F10` toggles local movement-trace capture
+  - when capture stops, the trace is kept in browser `localStorage`
+  - the same payload is also posted to the local/server runtime and written under `debug/movement-traces/`
 - Additional imported-map diagnostics are also coordinated here:
   - `V` toggles fly mode
   - `J`, `K`, `L` support coordinate/marker dumping

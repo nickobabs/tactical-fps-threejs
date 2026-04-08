@@ -180,7 +180,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Debug controls are now part of the active workflow:
   - `F8`: toggle `NETDEBUG`
   - `F9`: ignore local corrections
-  - `F10`: dump a debug snapshot
+  - `F10`: toggle local movement-trace capture
   - `V`: toggle fly mode
   - `J`: log current position
   - `K`: save a debug marker
@@ -477,6 +477,13 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - actual horizontal speed repeatedly landed on discrete stale values such as `4.10` and `4.5373`
     - that points more strongly to reconciliation replaying slightly older horizontal velocity than to pure acceleration tuning
     - next likely fix should be in grounded reconciliation / replay policy, not another blind speed-cap change
+  - follow-up trace instrumentation on 2026-04-08 narrowed the current accepted baseline further:
+    - the stop/reversal nudge no longer reproduced in the latest clean traces
+    - reconciliation action stayed at `ignore`
+    - the remaining ordinary disagreement was usually about `0.082` meters in XZ
+    - that offset projected almost entirely along movement direction
+    - `0.082` is effectively one `60 Hz` simulation step at `4.92 m/s`
+    - current read is that the residual drift is an accepted one-tick authority gap rather than an active visible correction bug
 
 ## Local Multiplayer Feel Baseline
 
@@ -496,7 +503,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - app-layer `NetworkClient` lifetime
   - temporary local movement-trace capture via `F10`
     - capture is stored in browser `localStorage` under `tactical-fps-threejs-movement-trace`
-    - export with:
+    - the same payload is also written through the server to `debug/movement-traces/`
+    - current trace payload includes correction action, replay counts, current/authoritative/replay positions, horizontal-vs-vertical correction split, directional correction projection, and cadence-normalized drift fields
+    - browser export helper remains:
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
 
 ## Near-Term Direction

@@ -173,6 +173,13 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - authoritative update cadence around `20 Hz`
   - predicted drift and correction distance typically around `0.02-0.03`, with small occasional spikes
   - presentation offset usually small as well
+- Latest movement-trace captures after the follow-up debug pass showed:
+  - reconciliation action remained `ignore` during the tested runs
+  - no meaningful vertical disagreement in the clean runs
+  - the remaining ordinary offset was typically about `0.082` meters on the horizontal plane
+  - that offset projected almost entirely along movement direction, not perpendicular to it
+  - `0.082` meters matches roughly one `60 Hz` movement tick at the grounded cap of `4.92 m/s`
+  - current interpretation is that this is a stable authority-cadence gap inside the accepted deadzone, not a visible correction bug
 - The most useful A/B check was toggling local correction off entirely. With correction disabled, local movement felt effectively correct, which confirmed that the remaining issue was correction policy rather than render cadence.
 - The current working baseline is to trust local prediction for tiny drift and only begin convergence once the correction clears a meaningful threshold.
 - For hitboxes, the important lesson is:

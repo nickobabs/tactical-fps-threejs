@@ -1,5 +1,5 @@
 const MOVEMENT_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
-const PREVENT_DEFAULT_KEYS = new Set(['F3', 'F6', 'F7', 'F9', 'F10']);
+const PREVENT_DEFAULT_KEYS = new Set(['F3', 'F6', 'F7', 'F9', 'F10', 'Tab']);
 const GAMEPLAY_SHORTCUT_BLOCK_KEYS = new Set([
   'KeyW',
   'KeyA',

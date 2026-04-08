@@ -13,6 +13,11 @@ import {
 } from '../../shared/netcodeProtocol.js';
 
 const ROOM_NAME = 'TacticalRoom';
+const SCOREBOARD_TEAMS = ['attackers', 'defenders'];
+const TEAM_LABELS = {
+  attackers: 'Attackers',
+  defenders: 'Defenders',
+};
 
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -143,6 +148,7 @@ export class NetworkClient {
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
     this.lastReceivedRemoteMaps = [];
+    this.scoreboardPlayers = new Map();
 
     void this.connect();
   }
@@ -177,6 +183,7 @@ export class NetworkClient {
 
       room.onMessage('player-left', (message) => {
         this.remotePlayerBuffers.delete(message?.playerId);
+        this.scoreboardPlayers.delete(message?.playerId);
         console.info('[NetworkClient] Player left:', message);
       });
 
@@ -233,11 +240,13 @@ export class NetworkClient {
 
       if (playerId === this.playerId) {
         if (activeMapId && normalizedState.mapId !== activeMapId) {
+          this.scoreboardPlayers.delete(playerId);
           continue;
         }
 
         this.localMapId = normalizedState.mapId;
         this.localPlayerState = normalizedState;
+        this.scoreboardPlayers.set(playerId, normalizedState);
         if (normalizedState.sequence > this.lastReconciledSequence) {
           const localEntry = this.pendingInputs.find((entry) => entry.sequence === normalizedState.sequence);
           this.lastCorrectionDistance = localEntry
@@ -268,11 +277,13 @@ export class NetworkClient {
       receivedRemoteMaps.add(normalizedState.mapId);
       if (activeMapId && normalizedState.mapId !== activeMapId) {
         filteredRemoteStateCount += 1;
+        this.scoreboardPlayers.delete(playerId);
         continue;
       }
 
       sameMapRemoteStateCount += 1;
       nextRemotePlayerIds.add(playerId);
+      this.scoreboardPlayers.set(playerId, normalizedState);
       const buffer = this.remotePlayerBuffers.get(playerId) ?? [];
       const previousSnapshot = buffer[buffer.length - 1];
       const isDuplicate = previousSnapshot
@@ -313,6 +324,12 @@ export class NetworkClient {
         this.remotePlayerBuffers.delete(playerId);
       }
     }
+
+    for (const playerId of [...this.scoreboardPlayers.keys()]) {
+      if (playerId !== this.playerId && !nextRemotePlayerIds.has(playerId)) {
+        this.scoreboardPlayers.delete(playerId);
+      }
+    }
   }
 
   initializeLocalPlayer(initialState) {
@@ -334,6 +351,7 @@ export class NetworkClient {
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
     this.lastReceivedRemoteMaps = [];
+    this.scoreboardPlayers.clear();
 
     if (this.room) {
       this.room.send('player-ready', this.pendingInitializationState);
@@ -440,6 +458,36 @@ export class NetworkClient {
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
     this.lastReceivedRemoteMaps = [];
+    this.scoreboardPlayers.clear();
+  }
+
+  getScoreboardState() {
+    const players = [...this.scoreboardPlayers.values()]
+      .sort((left, right) => {
+        const killDelta = Number(right.kills ?? 0) - Number(left.kills ?? 0);
+        if (killDelta !== 0) {
+          return killDelta;
+        }
+
+        const deathDelta = Number(left.deaths ?? 0) - Number(right.deaths ?? 0);
+        if (deathDelta !== 0) {
+          return deathDelta;
+        }
+
+        return String(left.displayName ?? left.playerId).localeCompare(String(right.displayName ?? right.playerId));
+      });
+
+    const teams = SCOREBOARD_TEAMS.map((teamKey) => ({
+      key: teamKey,
+      label: TEAM_LABELS[teamKey] ?? teamKey,
+      roundsWon: 0,
+      players: players.filter((player) => String(player.team ?? 'attackers') === teamKey),
+    }));
+
+    return {
+      playerCount: players.length,
+      teams,
+    };
   }
 
   getRemotePlayers() {

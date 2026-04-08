@@ -21,6 +21,31 @@ import { GameSessionController } from './GameSessionController.js';
 const DEFAULT_HORIZONTAL_FOV = 103;
 const MOVEMENT_TRACE_STORAGE_KEY = 'tactical-fps-threejs-movement-trace';
 
+function getMovementTraceUploadUrl(serverUrl) {
+  if (!serverUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(serverUrl);
+    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+    url.pathname = '/debug/movement-trace';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function getSafeRate(value, divisor) {
+  if (!Number.isFinite(value) || !Number.isFinite(divisor) || divisor <= 0) {
+    return 0;
+  }
+
+  return value / divisor;
+}
+
 export class GameApp {
   constructor(root) {
     this.root = root;
@@ -515,11 +540,23 @@ export class GameApp {
 
     const movement = this.runtime.playerController.getDebugState();
     const network = this.networkClient.getDebugState();
+    const correctionXZPerSnapshotMs = getSafeRate(
+      movement.correctionDistanceXZ ?? 0,
+      Math.max(0, network.snapshotAgeMs),
+    );
+    const correctionAlongVelocityPerSnapshotMs = getSafeRate(
+      Math.abs(movement.correctionAlongVelocity ?? 0),
+      Math.max(0, network.snapshotAgeMs),
+    );
     this.movementTraceSamples.push({
       recordedAt: Date.now(),
       perfNow: now,
       mapId: this.selectedMapId,
-      movement,
+      movement: {
+        ...movement,
+        correctionXZPerSnapshotMs,
+        correctionAlongVelocityPerSnapshotMs,
+      },
       network: {
         connectionState: network.connectionState,
         localMapId: network.localMapId,
@@ -535,19 +572,47 @@ export class GameApp {
   }
 
   flushMovementTrace() {
+    const payload = {
+      recordedAt: Date.now(),
+      mapId: this.selectedMapId,
+      samples: this.movementTraceSamples,
+    };
+
     if (typeof window === 'undefined' || !window.localStorage) {
       return;
     }
 
     try {
-      window.localStorage.setItem(MOVEMENT_TRACE_STORAGE_KEY, JSON.stringify({
-        recordedAt: Date.now(),
-        samples: this.movementTraceSamples,
-      }));
+      window.localStorage.setItem(MOVEMENT_TRACE_STORAGE_KEY, JSON.stringify(payload));
       console.info(`[GameApp] Saved movement trace samples=${this.movementTraceSamples.length} to localStorage key "${MOVEMENT_TRACE_STORAGE_KEY}".`);
     } catch (error) {
       console.warn('[GameApp] Failed to persist movement trace.', error);
     }
+
+    const uploadUrl = getMovementTraceUploadUrl(this.networkClient?.serverUrl);
+    if (!uploadUrl || typeof fetch !== 'function') {
+      return;
+    }
+
+    void fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.info(`[GameApp] Wrote movement trace to ${result.filePath ?? 'debug file'}.`);
+      })
+      .catch((error) => {
+        console.warn('[GameApp] Failed to write movement trace file.', error);
+      });
   }
 
   animate() {

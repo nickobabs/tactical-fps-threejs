@@ -91,6 +91,12 @@
   - direction-change slowdown was reproduced even when `targetSpeed` stayed at the full grounded cap
   - repeated observed speeds such as `4.10` and `4.5373` point to stale/replayed horizontal velocity rather than simple acceleration limits
   - the next likely fix is in reconciliation behavior for small grounded corrections, not another blind max-speed tweak
+- Follow-up trace work on 2026-04-08 clarified the newer baseline:
+  - the obvious stop-nudge / reversal-correction symptom no longer reproduced after the latest queueing/restart/debug pass
+  - current traces show reconciliation action staying at `ignore`
+  - residual disagreement is now typically a stable horizontal offset of about `0.082`
+  - that offset projects almost entirely along movement direction rather than sideways
+  - `0.082` is effectively one `60 Hz` movement step at `4.92 m/s`, which is consistent with an accepted authority-cadence gap rather than a visible correction bug
 - The next scheduled movement pass is acceleration / deceleration / momentum tuning in shared movement:
   - fast acceleration to speed
   - explicit deceleration and opposition braking
