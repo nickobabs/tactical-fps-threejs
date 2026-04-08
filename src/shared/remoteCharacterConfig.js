@@ -59,12 +59,12 @@ export const REMOTE_CHARACTER_HITBOX_SETTINGS = {
 
 export function getRemoteSocketPoseKey(weaponKey, isScoped) {
   if (weaponKey === 'sniper') {
-    return isScoped ? 'sniperScoped' : 'sniperHip';
+    return 'sniperHip';
   }
   if (weaponKey === 'knife') {
     return 'knife';
   }
-  return isScoped ? 'rifleScoped' : 'rifleHip';
+  return 'rifleHip';
 }
 
 export const REMOTE_AIM_PITCH_MIN = -0.9;

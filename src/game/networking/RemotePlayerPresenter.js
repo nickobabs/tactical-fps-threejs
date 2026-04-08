@@ -25,6 +25,7 @@ import {
   REMOTE_CLIPS,
   getRemoteSocketPoseKey,
 } from '../../shared/remoteCharacterConfig.js';
+import { PLAYER_MOVEMENT_DEFAULTS } from '../../shared/playerMovement.js';
 import { createRemoteTuningStore } from './remoteTuningStore.js';
 import {
   createRemoteCharacterTuningPanelUi,
@@ -59,6 +60,8 @@ const REMOTE_AIM_PROXY_WEAPON_FACTOR = 0.75;
 const REMOTE_AIM_WEAPON_AXIS = 'y';
 const REMOTE_AIM_PROXY_WEAPON_AXIS = 'y';
 const REMOTE_AIM_BONE_LOCAL_AXIS = new THREE.Vector3(0, 0, 1);
+const REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE = 0.55;
+const REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE = 1.45;
 const DEFAULT_REMOTE_DEBUG_SETTINGS = {
   freezePose: false,
   freezeClip: REMOTE_CLIPS.idle,
@@ -1819,7 +1822,36 @@ function selectTargetClip(authoritativeState, presentationState) {
     : selectMovementClip(authoritativeState, presentationState);
 }
 
-function updateClipPlaybackParameters(visual, targetClip) {
+function getRemoteMovementPlaybackScale(authoritativeState, targetClip) {
+  const velocity = authoritativeState?.velocity ?? null;
+  if (!velocity) {
+    return 1;
+  }
+
+  const horizontalSpeed = Math.hypot(
+    Number(velocity.x ?? 0),
+    Number(velocity.z ?? 0),
+  );
+  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
+    return 1;
+  }
+
+  const crouchClip = targetClip === REMOTE_CLIPS.crouchWalk || targetClip === REMOTE_CLIPS.crouchBackward;
+  const baselineSpeed = crouchClip
+    ? PLAYER_MOVEMENT_DEFAULTS.crouchSpeed
+    : PLAYER_MOVEMENT_DEFAULTS.walkSpeed;
+  if (!Number.isFinite(baselineSpeed) || baselineSpeed <= 0) {
+    return 1;
+  }
+
+  return THREE.MathUtils.clamp(
+    horizontalSpeed / baselineSpeed,
+    REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE,
+    REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE,
+  );
+}
+
+function updateClipPlaybackParameters(visual, authoritativeState, targetClip) {
   const clipSettings = visual.characterDefinition?.clips ?? null;
   for (const action of visual.characterActions.values()) {
     action.paused = false;
@@ -1828,8 +1860,9 @@ function updateClipPlaybackParameters(visual, targetClip) {
 
   const targetClipSettings = clipSettings?.[targetClip] ?? null;
   const targetAction = findRemoteClipAction(visual, targetClip);
+  const movementPlaybackScale = getRemoteMovementPlaybackScale(authoritativeState, targetClip);
   if (targetAction && Number.isFinite(targetClipSettings?.playbackSpeed)) {
-    targetAction.setEffectiveTimeScale(targetClipSettings.playbackSpeed);
+    targetAction.setEffectiveTimeScale(targetClipSettings.playbackSpeed * movementPlaybackScale);
   }
 
   const jumpAction = findRemoteClipAction(visual, REMOTE_CLIPS.jump);
@@ -1929,7 +1962,7 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
     } else {
       const fullBodyActionClip = updateRemoteFullBodyAction(visual, delta);
       setRemoteCharacterClip(visual, fullBodyActionClip ?? targetClip);
-      updateClipPlaybackParameters(visual, targetClip);
+      updateClipPlaybackParameters(visual, authoritativeState, targetClip);
       updateRemoteUpperBodyAction(visual, delta);
       visual.characterMixer.update(delta);
       captureRemoteAimBoneBasePose(visual);

@@ -169,6 +169,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - build the client at repo root
   - start the Colyseus server from `server/`
   - serve the built frontend and multiplayer backend from the same Railway domain
+  - current RTT-based ping readings against Railway EU West (Amsterdam) have tested in a believable `15-20 ms` range from Copenhagen
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests to the server
   - the server validates simple player hits from authoritative state
@@ -177,8 +178,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - HUD feedback now covers local health, damage taken/dealt, and respawn countdown
 - Multiplayer correction now uses a deadzone/hysteresis policy and remains the current baseline.
 - HUD shows round state, FPS, weapon, utility, pointer-lock state, movement state, and current position/movement mode.
+- HUD now also includes a hold-`Tab` scoreboard with kills, deaths, ping, and placeholder team scores.
 - Debug controls are now part of the active workflow:
   - `F8`: toggle `NETDEBUG`
+    - includes a `Copy` button for exact clipboard export of the live panel
   - `F9`: ignore local corrections
   - `F10`: toggle local movement-trace capture
   - `V`: toggle fly mode
@@ -222,6 +225,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `RemotePlayerPresenter` currently supports both a legacy remote character path (`public/models/players/tester3.glb`) and an experimental path (`public/models/players/newtest.glb`)
   - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
   - remote rifle presentation uses authored socket helpers and the current stable full-body locomotion path
+  - remote locomotion playback now scales from actual replicated movement speed on both the visible client presenter and the authoritative server hitbox rig
   - standing fire uses the full-body `newtest_fire.fbx` clip
   - remote vertical-aim readability currently comes from weapon/socket pitch plus a narrow neck/head procedural layer
   - client prediction with replay/reconciliation
@@ -318,12 +322,14 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - current jump handling still uses the tucked airborne hold behavior
   - remote rifle presentation still attaches through `weapon_socket_r` on the character plus `grip_socket` / `muzzle_socket` on `public/models/weapons/newak.glb`
   - remote rifle scaling still compensates for inherited world scale from the socket/bone chain
+  - remote scoped weapon transform offsets currently reuse the hip socket-pose values until a real separate remote ADS pose exists
   - `F6` still tunes remote model scale and `F7` still tunes socket-relative weapon pose values in-browser through `localStorage`
   - left-arm CCD IK still exists as a client-side experiment, but it is intentionally disabled in the authoritative hitbox rig because it caused upper-body pose drift
   - runtime subclips from the long `Take 001` strip are usable for many motions, but loop quality was not good enough for locomotion
   - the first standalone Max-exported run clip, `public/models/players/newtest_run.fbx`, now plays cleanly in-engine and overrides the experimental `run` clip
   - current conclusion: standalone exported clips from the source DCC are the preferred path for locomotion quality, while the long-strip subclip path remains a temporary bridge
   - later parity work aligned client/server root-motion stripping on `Bip01.position`, which removed the remaining locomotion and jump mismatch; see `docs/remote-hitbox-audit.md` for the full debugging record
+  - later playback follow-up aligned client and authoritative hitbox locomotion speed scaling against the shared movement baselines, and excluded jump playback from that scaling on the server rig
 - The project README was updated from scaffold-level notes to a current project overview with actual runtime/deploy/architecture context.
 - Local combat HUD feedback was added:
   - stronger damage vignette
@@ -484,6 +490,13 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - that offset projected almost entirely along movement direction
     - `0.082` is effectively one `60 Hz` simulation step at `4.92 m/s`
     - current read is that the residual drift is an accepted one-tick authority gap rather than an active visible correction bug
+  - later RTT ping diagnostics on the deployed Railway build showed a sane sample:
+    - `ping_rtt_ms=16`
+    - `ping_server_turn_ms=0`
+    - `ping_net_est_ms=16`
+    - `snapshot_age_ms=15`
+    - `auth_per_sec=61`
+  - current read is that the deployed path is not showing suspicious server turnaround under normal conditions
 
 ## Local Multiplayer Feel Baseline
 
@@ -501,6 +514,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - deadzone/hysteresis correction
   - debug controls still available during development
   - app-layer `NetworkClient` lifetime
+  - live `F8` debug panel now includes server URL plus RTT/turnaround ping diagnostics
   - temporary local movement-trace capture via `F10`
     - capture is stored in browser `localStorage` under `tactical-fps-threejs-movement-trace`
     - the same payload is also written through the server to `debug/movement-traces/`

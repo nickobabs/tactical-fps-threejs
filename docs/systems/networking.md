@@ -17,6 +17,7 @@ The current networking slice supports:
 - Client-side local movement prediction with replay-based reconciliation and a separate local presentation layer
 - Remote-player placeholder rendering through replicated authoritative state, now including visible weapon and simple labels
 - Remote-player placeholder rendering now also uses replicated crouch / current-height state plus lightweight remote fire events for readability
+- Remote locomotion playback on both the visible client presenter and the authoritative server hitbox rig now scales against shared movement-speed baselines instead of only fixed clip constants
 - A server-authoritative remote-hitbox snapshot path now exists for PvP debug and hit validation work
 
 Multiplayer is still optional. If no Colyseus server is reachable, the game continues to run fully in single-player mode.
@@ -35,6 +36,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Local authoritative corrections for reconciliation
 - Replicated local-player health / respawn timing
 - Combat event stream for local hit / damage feedback
+- Replicated scoreboard ping values based on client-observed RTT
 
 ## Dependencies
 
@@ -68,6 +70,12 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - local weapon presentation stays immediate
   - the server owns PvP hit validation, damage, death, and respawn timing
   - the client consumes replicated combat state and feedback events
+- Scoreboard ping now uses a lightweight RTT path instead of `Date.now() - clientTimestamp`:
+  - client sends periodic `ping`
+  - server immediately responds with `pong`
+  - client computes RTT from a monotonic local clock and smooths it
+  - client reports the smoothed value for scoreboard replication
+  - server stamps `pong` with receive/send times so `F8` can separate RTT from server turnaround
 - The current remote-hitbox path has moved from coarse fallback gameplay capsules to server-authoritative bone-driven segmented hit volumes.
 
 ## Current Status
@@ -108,6 +116,12 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - the first standalone exported locomotion proof, `public/models/players/newtest_run.fbx`, now overrides the experimental `run` clip and plays cleanly in-engine
   - current direction is to export the rest of the locomotion set as standalone clips from the original 3ds Max source instead of continuing to rely on runtime subclips for loop-critical motions
   - a later parity audit aligned client/server root-motion stripping on `Bip01.position`, which removed the remaining locomotion and jump mismatch; see `docs/remote-hitbox-audit.md` for the detailed debugging record
+  - remote scoped weapon transform offsets currently reuse the hip socket-pose values until there is a real separate remote ADS animation/pose
+  - visible remote locomotion playback now multiplies the authored clip speed by the replicated horizontal-speed ratio:
+    - standing baseline uses shared rifle walk speed `4.92`
+    - crouch baseline uses shared crouch speed `2.64`
+  - the authoritative server hitbox rig now mirrors that same locomotion-speed scaling so `F3` stays aligned with the visible remote mesh
+  - jump playback on the authoritative rig no longer runs through the movement-speed scaling path, which resolved a small jump-ahead mismatch in `F3`
   - remote pitch is now replicated
   - a new authored rifle upper-body base clip still exists for the experimental remote path:
     - `public/models/players/animations/newtest_rifle_upper_idle.fbx`
@@ -134,6 +148,14 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - `headOffset = { x: 0, y: 0.035, z: -0.005 }`
     - `headRadius = 0.15`
 - `NETDEBUG` instrumentation exists in the HUD/devtools path for local multiplayer diagnosis and is intentionally being kept available while multiplayer expands
+- Current live ping diagnostics include:
+  - `server_url`
+  - `ping_rtt_ms`
+  - `ping_avg_ms`
+  - `ping_server_turn_ms`
+  - `ping_net_est_ms`
+  - `ping_age_ms`
+  - `ping_pending`
 
 ## Limitations
 
@@ -173,6 +195,16 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - authoritative update cadence around `20 Hz`
   - predicted drift and correction distance typically around `0.02-0.03`, with small occasional spikes
   - presentation offset usually small as well
+- A later deployed Railway sample after the RTT ping change showed:
+  - `ping_rtt_ms=16`
+  - `ping_avg_ms=16`
+  - `ping_server_turn_ms=0`
+  - `ping_net_est_ms=16`
+  - `snapshot_age_ms=15`
+  - `auth_per_sec=61`
+- Current interpretation of that sample:
+  - deployed ping looks believable for Copenhagen -> Amsterdam
+  - there was no visible server-side turnaround delay in that run
 - Latest movement-trace captures after the follow-up debug pass showed:
   - reconciliation action remained `ignore` during the tested runs
   - no meaningful vertical disagreement in the clean runs
@@ -227,6 +259,10 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - promoting that path to the server exposed deeper parity issues
   - the decisive fix was removing authoritative left-hand IK
   - head follow then needed a pose-relative anchor plus tuned shared head offset/radius values
+- Later remote playback follow-up:
+  - visible remote locomotion now scales with actual replicated horizontal speed, so knife and slower weapons no longer animate at rifle-like travel cadence
+  - the authoritative hitbox rig now uses the same scaling
+  - jump playback on the authoritative rig was explicitly exempted from that scaling so hitboxes do not run ahead during jumps
 
 ## Current Conclusion
 

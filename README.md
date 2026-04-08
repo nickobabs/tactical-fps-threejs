@@ -50,6 +50,7 @@ It already supports real play loops:
 - Client-side prediction
 - Replay-based reconciliation
 - Remote player interpolation
+- Remote locomotion playback scaled from actual replicated movement speed
 - Server-authoritative fire requests and hit validation
 - Replicated health, alive state, respawn timing, pitch, stance, weapon, and presentation state
 
@@ -75,6 +76,7 @@ It already supports real play loops:
 ### UI / Feedback
 
 - HUD with round state, FPS, weapon, utility, movement state, pointer lock state, and position
+- Hold-`Tab` scoreboard with team panels, player names, kills, deaths, and ping
 - Scope overlay and reticle handling
 - Pause menu for map/skybox/sensitivity/volume/FOV
 - Damage feedback, damage numbers, death overlay, respawn countdown
@@ -85,7 +87,7 @@ It already supports real play loops:
 - `F4` first-person weapon/viewmodel tuning
 - `F6` remote body and hitbox tuning
 - `F7` remote weapon/socket tuning
-- `F8` network debug toggle
+- `F8` network debug toggle with copy-to-clipboard
 - `F9` ignore-local-corrections toggle
 - `F10` movement trace capture to `debug/movement-traces/`
 - Offline navmesh generation script

@@ -19,6 +19,7 @@ import {
 import {
   createRemoteHitboxPointCache,
 } from '../../src/shared/remoteHitboxes.js';
+import { PLAYER_MOVEMENT_DEFAULTS } from '../../src/shared/playerMovement.js';
 import {
   describeRemoteHitboxAudit,
   resolveRemoteHitBones,
@@ -38,6 +39,8 @@ const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
 const REMOTE_JUMP_TIME_SCALE = 0.76;
 const REMOTE_JUMP_END_HOLD_RATIO = 0.58;
 const REMOTE_USE_LEFT_HAND_IK = false;
+const REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE = 0.55;
+const REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE = 1.45;
 
 const CLIPS = {
   idle: 'idle',
@@ -426,6 +429,39 @@ function selectMovementClip(player) {
   return strafeAmount >= 0 ? CLIPS.strafeRight : CLIPS.strafeLeft;
 }
 
+function getRigMovementPlaybackScale(player, targetClip) {
+  if (targetClip === CLIPS.jump || targetClip === CLIPS.fire || targetClip === CLIPS.idle || targetClip === CLIPS.crouchIdle) {
+    return 1;
+  }
+
+  const velocity = player?.motionState?.velocity ?? null;
+  if (!velocity) {
+    return 1;
+  }
+
+  const horizontalSpeed = Math.hypot(
+    Number(velocity.x ?? 0),
+    Number(velocity.z ?? 0),
+  );
+  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
+    return 1;
+  }
+
+  const crouchClip = targetClip === CLIPS.crouchWalk || targetClip === CLIPS.crouchBackward;
+  const baselineSpeed = crouchClip
+    ? PLAYER_MOVEMENT_DEFAULTS.crouchSpeed
+    : PLAYER_MOVEMENT_DEFAULTS.walkSpeed;
+  if (!Number.isFinite(baselineSpeed) || baselineSpeed <= 0) {
+    return 1;
+  }
+
+  return THREE.MathUtils.clamp(
+    horizontalSpeed / baselineSpeed,
+    REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE,
+    REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE,
+  );
+}
+
 function createServerRifleGroup(asset) {
   const group = new THREE.Group();
   group.rotation.order = REMOTE_WEAPON_ROTATION_ORDER;
@@ -600,13 +636,14 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   const targetClip = rig.fireTime > 0 && ['idle', 'scoped-idle'].includes(String(player.presentationState ?? 'idle'))
     ? CLIPS.fire
     : selectMovementClip(player);
+  const movementPlaybackScale = getRigMovementPlaybackScale(player, targetClip);
 
   if (rig.activeClip !== targetClip) {
     for (const [name, entry] of rig.actions.entries()) {
       if (name === targetClip) {
         entry.action.enabled = true;
         entry.action.reset();
-        entry.action.setEffectiveTimeScale(entry.playbackSpeed);
+        entry.action.setEffectiveTimeScale(entry.playbackSpeed * movementPlaybackScale);
         entry.action.paused = false;
       } else {
         entry.action.enabled = false;
@@ -622,7 +659,11 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   }
   activeEntry.action.enabled = true;
   activeEntry.action.paused = false;
-  activeEntry.action.setEffectiveTimeScale(activeEntry.playbackSpeed);
+  if (rig.activeClip === CLIPS.jump) {
+    activeEntry.action.setEffectiveTimeScale(REMOTE_JUMP_TIME_SCALE);
+  } else {
+    activeEntry.action.setEffectiveTimeScale(activeEntry.playbackSpeed * movementPlaybackScale);
+  }
   restoreAimBoneBasePose(rig);
   rig.container.position.set(
     player.motionState.position.x,
@@ -632,15 +673,17 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   rig.container.rotation.set(0, player.motionState.yaw, 0);
   rig.root.position.copy(rig.basePosition);
   rig.root.quaternion.copy(rig.baseQuaternion);
-  rig.mixer.update(delta);
   if (rig.activeClip === CLIPS.jump) {
     const jumpDuration = Math.max(0.001, activeEntry.action.getClip().duration);
     const holdTime = jumpDuration * REMOTE_JUMP_END_HOLD_RATIO;
     activeEntry.action.setEffectiveTimeScale(REMOTE_JUMP_TIME_SCALE);
+    rig.mixer.update(delta);
     if (activeEntry.action.time >= holdTime) {
       activeEntry.action.time = holdTime;
       activeEntry.action.paused = true;
     }
+  } else {
+    rig.mixer.update(delta);
   }
   if (!rig.aimBones) {
     rig.aimBones = createAimBoneEntries(rig.bones);
@@ -654,7 +697,7 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   rig.debugState = {
     activeClip: rig.activeClip,
     clipTime: Number(activeEntry.action.time ?? 0),
-    clipPlaybackSpeed: Number(activeEntry.playbackSpeed ?? 1),
+    clipPlaybackSpeed: Number(activeEntry.action.getEffectiveTimeScale?.() ?? activeEntry.playbackSpeed ?? 1),
     fireTime: Number(rig.fireTime ?? 0),
     points: {
       head: rig.hitboxPoints.head ? { ...rig.hitboxPoints.head } : null,

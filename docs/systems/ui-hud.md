@@ -51,9 +51,19 @@
 
 - Implemented and active
 - Includes pause/resume flow, key bindings view, map selection view, skybox selection view, volume control, sensitivity control with numeric feedback, horizontal FOV control, FPS display, scoped reticles, and a centered map-loading overlay
+- Includes a hold-`Tab` scoreboard overlay with two team panels, player name/kills/deaths/ping columns, and placeholder round-score display
 - The file structure is now split so HUD shell logic and pause-menu construction are no longer in one file
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`
+    - live panel now includes a `Copy` button so the exact text can be pasted without screenshots
+    - ping/network fields now include:
+      - `server_url`
+      - `ping_rtt_ms`
+      - `ping_avg_ms`
+      - `ping_server_turn_ms`
+      - `ping_net_est_ms`
+      - `ping_age_ms`
+      - `ping_pending`
   - `F9` state is shown in the HUD network line
   - `F10` toggles a local movement trace capture
     - active capture is shown in the movement line as `TRACE(F10)`
@@ -66,6 +76,7 @@
       - horizontal vs vertical correction split
       - correction projected along velocity/input direction
       - cadence-normalized drift fields for later analysis
+    - `F8` copy exports the live panel text, while `F10` remains the trace/file workflow
     - `localStorage` export helper:
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
 
