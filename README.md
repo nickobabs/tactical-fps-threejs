@@ -4,44 +4,47 @@
 
 The project is aiming for a Counter-Strike-like feel:
 
-- grounded first-person movement
+- grounded, readable first-person movement
 - low time-to-kill hitscan combat
-- readable lanes and long sightlines
-- authored map spaces instead of only procedural grayboxes
-- server-authoritative multiplayer instead of cosmetic peer-state sync
+- authored maps instead of only graybox spaces
+- server-authoritative multiplayer
+- visible remote players backed by authoritative hit validation
 
-This repo should be read as a playable game-tech showcase, not just a rendering demo.
+This repo should be read as a playable game-tech prototype, not just a rendering demo.
 
-## What The Game Is
+## Current State
 
-The current prototype is a multiplayer-capable tactical FPS foundation with:
+The current build is a real multiplayer-capable tactical FPS foundation with:
 
-- first-person weapons and combat
+- shared client/server movement simulation
+- local prediction plus server reconciliation
 - imported maps with separate visual and collision assets
 - baked navmesh support
-- local prediction plus server authority
+- first-person weapons and damage feedback
 - remote third-person player presentation
-- authoritative PvP hit validation
-- segmented server-authoritative remote hit volumes
+- server-authoritative PvP hit validation
+- server-authoritative segmented remote hit volumes
+- live in-browser debug tooling for movement, networking, hitboxes, and weapon/model tuning
 
 It already supports real play loops:
 
 - spawn into a map
 - move, crouch, jump, and fight
 - switch weapons
-- shoot through a server-authoritative PvP path
-- die and respawn
-- inspect and tune systems live with in-browser debug tooling
+- kill and respawn
+- inspect network/movement state live
+- validate remote pose/hitbox parity with debug overlays
 
-## Showroom
+## Feature Snapshot
 
 ### Core Gameplay
 
 - Tactical first-person movement with walk, crouch, jump, and fly/debug mode
-- Hitscan rifle, pistol, sniper, and knife slots
-- ADS / scoped state
+- Shared movement rules between client and server
 - Weapon-dependent movement speed
-- World-geometry shot blocking
+- Hitscan rifle, pistol, sniper, and knife
+- ADS / scoped state
+- World geometry shot blocking
 - Replicated damage, death, and respawn
 
 ### Multiplayer
@@ -49,82 +52,80 @@ It already supports real play loops:
 - Colyseus authoritative room simulation
 - Client-side prediction
 - Replay-based reconciliation
+- Deadzone/hysteresis correction policy for local feel
 - Remote player interpolation
-- Remote locomotion playback scaled from actual replicated movement speed
+- RTT-based scoreboard ping
 - Server-authoritative fire requests and hit validation
 - Replicated health, alive state, respawn timing, pitch, stance, weapon, and presentation state
 
-### Remote Character Tech
+### Remote Character / Hitbox Tech
 
-- Third-person remote playermodels driven from authoritative state
+- Active remote skinned-character path using `public/models/players/newtest.glb`
+- Legacy fallback path still available if the active model path fails
 - Full-body locomotion clips with imported FBX overrides
-- Remote weapon sockets and authored rifle helpers
-- Remote pitch readability through weapon plus narrow neck/head aiming
+- Remote weapon attachment through authored sockets/helpers
+- Remote pitch readability through weapon/socket pitch plus narrow neck/head aiming
 - Server-authoritative segmented hit volumes for head, torso, pelvis, arms, hands, and legs
-- `F3` hit volume debug and `F6` local hitbox debug workflow
+- `F3` authoritative hit-volume debug
+- `F6` local hitbox/model debug workflow
 
-### World / Map Tech
+### World / Content Tech
 
 - Runtime map switching
 - Imported visual `.glb` map scenes
 - Separate imported collision `.glb` scenes
-- Baked navmesh binaries
 - Shared manifest-driven map metadata
+- Baked navmesh binaries
 - HDR skybox switching
-- Collision debug overlays and traversal debugging tools
+- Collision and traversal debugging tools
 
 ### UI / Feedback
 
-- HUD with round state, FPS, weapon, utility, movement state, pointer lock state, and position
+- HUD with round state, FPS, weapon, utility, movement state, pointer state, and position
 - Hold-`Tab` scoreboard with team panels, player names, kills, deaths, and ping
-- Scope overlay and reticle handling
+- Scope overlay and ADS reticle handling
 - Pause menu for map/skybox/sensitivity/volume/FOV
-- Damage feedback, damage numbers, death overlay, respawn countdown
-- Multiplayer debug instrumentation in the active HUD workflow
+- Damage vignette, hit damage numbers, dead overlay, and respawn countdown
+- Live `NETDEBUG` panel with clipboard copy support
 
 ### Tooling / Live Tuning
 
+- `F3` authoritative remote hit-volume debug
 - `F4` first-person weapon/viewmodel tuning
-- `F6` remote body and hitbox tuning
+- `F6` remote body / aim / local hitbox tuning
 - `F7` remote weapon/socket tuning
 - `F8` network debug toggle with copy-to-clipboard
 - `F9` ignore-local-corrections toggle
 - `F10` movement trace capture to `debug/movement-traces/`
+- Collision wireframe and marker/position debug tools
 - Offline navmesh generation script
 
-## Technology Stack
+## Current Gameplay Snapshot
 
-### Rendering And App Runtime
+### Maps
 
-- `Three.js`
-- `Vite`
-- ES module JavaScript
+- `Training Ground`
+- `Desert Compound`
+- `Dust2 Import Test`
 
-### Multiplayer And Authority
+### Weapons
 
-- `Colyseus`
-- Shared client/server movement and netcode protocol modules
+- `Rifle`
+- `Pistol`
+- `Sniper`
+- `Knife`
 
-### Collision And Spatial Queries
+### Multiplayer Baseline
 
-- `three-mesh-bvh`
-- Custom `CollisionWorld` capsule-vs-triangle movement resolution
-- Server-side world raycasts for shot blocking
+- multiple local tabs can join the same room
+- remote players render with weapon and posture state
+- server validates hits and replicates combat state
+- respawn loop is active
+- Railway deployment is working as a one-service frontend + multiplayer backend setup
 
-### Navigation
+## Architecture Overview
 
-- `recast-navigation`
-- Baked navmesh workflow with offline generation
-
-### Assets And Content
-
-- glTF map and character assets
-- FBX locomotion/action clip imports
-- Authored helper sockets for remote weapon attachment and remote pose tuning
-
-## How The Systems Work
-
-### 1. Game Composition
+### Game Composition
 
 [`GameApp.js`](src/app/GameApp.js) is the composition root.
 
@@ -140,154 +141,72 @@ It owns:
 
 Map-bound systems are assembled under [`MapRuntime.js`](src/game/maps/MapRuntime.js), which keeps collision, navigation, controller, weapons, rounds, targets, and utility scoped to the active map.
 
-### 2. Movement
+### Movement
 
-Movement is not a purely local controller.
+Shared locomotion math lives in [`playerMovement.js`](src/shared/playerMovement.js), so the browser and the server evolve around the same movement rules.
 
-The project uses shared movement logic in [`playerMovement.js`](src/shared/playerMovement.js), so the browser and the server evolve around the same locomotion rules.
-
-The current movement stack:
+Current movement stack:
 
 - local fixed-step prediction for immediate feel
 - authoritative server simulation for truth
-- replay-based reconciliation rather than direct hard replacement
-- deadzone/hysteresis correction policy so tiny disagreement is not constantly visible
+- replay-based reconciliation
+- deadzone/hysteresis correction so tiny disagreement is not constantly visible
 
 Collision comes from [`CollisionWorld.js`](src/core/physics/CollisionWorld.js), which uses `three-mesh-bvh` against authored static collision geometry.
 
-### 3. Weapons
+### Multiplayer
 
-Weapons are split into smaller modules instead of one large weapon script:
-
-- manager/state orchestration
-- firing and shot resolution
-- first-person presentation
-- effects/audio
-- weapon config data
-
-The current weapon set:
-
-- `Rifle`
-- `Pistol`
-- `Sniper`
-- `Knife`
-
-Rifle, pistol, and knife use imported animated prototype viewmodels. Sniper still uses a procedural fallback path.
-
-### 4. Maps, Collision, And Navigation
-
-The repo supports both graybox-style runtime maps and imported authored maps.
-
-Imported maps are built around a clean asset contract:
-
-- one visual `.glb`
-- one collision `.glb`
-- one baked navmesh binary
-- one shared manifest entry
-
-The clearest live example is `Dust2 Import Test`, which is not just a visual import. It is a real testbed for:
-
-- traversal scale
-- collision correctness
-- navmesh queries
-- multiplayer combat space
-
-### 5. Multiplayer
-
-Multiplayer is now a real gameplay system, not just replicated transforms.
-
-The active baseline includes:
+The active multiplayer baseline includes:
 
 - authoritative room simulation in [`TacticalRoom.js`](server/src/rooms/TacticalRoom.js)
 - shared protocol helpers in [`netcodeProtocol.js`](src/shared/netcodeProtocol.js)
-- input snapshots from the browser
+- per-step input snapshots from the browser
 - authoritative movement/state on the server
 - fire requests validated on the server
 - replicated damage, death, and respawn
+- RTT ping probes for scoreboard/network diagnostics
 
-### 6. Remote Player Presentation
+### Remote Presentation
 
-[`RemotePlayerPresenter.js`](src/game/networking/RemotePlayerPresenter.js) is the remote playermodel presentation layer.
+[`RemotePlayerPresenter.js`](src/game/networking/RemotePlayerPresenter.js) handles the visible remote playermodel path.
 
-It is doing real runtime work:
+It is responsible for:
 
 - loading the remote character asset
-- choosing locomotion clips
+- selecting locomotion clips
 - applying remote pitch readability
-- attaching the remote weapon to authored sockets
-- showing hit volume debug
-- handling remote fire/hit/death presentation feedback
+- attaching the remote weapon
+- handling remote fire/hit/death presentation
+- drawing authoritative/local hitbox debug views
 
-### 7. Authoritative Remote Hitboxes
+Remote locomotion playback now scales from actual replicated movement speed, and the authoritative server hitbox rig mirrors that same locomotion-speed scaling so visible mesh and hit validation stay aligned.
 
-The project now has a working server-authoritative segmented hitbox pipeline.
+### Authoritative Remote Hitboxes
 
-The important pieces are:
+The server-authoritative segmented hitbox pipeline is built around:
 
-- shared skeleton/hitbox constants in [`remoteCharacterConfig.js`](src/shared/remoteCharacterConfig.js)
-- shared hitbox snapshot construction in [`remoteHitboxes.js`](src/shared/remoteHitboxes.js)
-- authoritative remote rig evaluation in [`remoteHitboxRig.js`](server/src/remoteHitboxRig.js)
+- [`remoteCharacterConfig.js`](src/shared/remoteCharacterConfig.js)
+- [`remoteHitboxes.js`](src/shared/remoteHitboxes.js)
+- [`remoteSkeleton.js`](src/shared/remoteSkeleton.js)
+- [`remoteHitboxRig.js`](server/src/remoteHitboxRig.js)
 
-The main lesson from that feature:
+The active foundation is no longer locked to one rig naming style. Shared skeleton resolution now supports both the current Bip-style names and common Mixamo-style names at the mapping layer, which makes future model swaps much less invasive.
 
-- the authoritative rig worked once it was simplified to match the visible remote pose
-- left-hand IK was removed from the authoritative hitbox rig because it was the major upper-body parity bug
+## Current Character / Rig Baseline
 
-## What Is Already Implemented
+The active remote model/animation path is the former “experimental” branch, now effectively the default baseline:
 
-### Playable Systems
+- active character: `public/models/players/newtest.glb`
+- active rifle asset: `public/models/weapons/newak.glb`
+- active locomotion proof clip: `public/models/players/newtest_run.fbx`
 
-- First-person controller
-- Four-weapon loadout
-- Multiplayer room connection
-- Authoritative PvP combat
-- Remote third-person player rendering
-- Map switching
-- Skybox switching
-- HUD and pause menu
-- AI/navmesh target sandbox
-- Imported-map workflow
-- Baked navmesh generation
+Important current notes:
 
-### Remote Character / Animation Systems
-
-- Legacy and experimental remote character paths (`tester3.glb` and `newtest.glb`)
-- Standalone FBX locomotion clip support
-- Authored rifle socket/grip/muzzle helpers
-- Runtime remote weapon pose tuning
-- Runtime remote body/hitbox tuning
-- Authoritative segmented remote hit volumes
-
-### Debug And Developer Workflow
-
-- Collision wireframe overlay
-- Position and marker logging
-- Multiplayer correction inspection
-- Freeze-pose remote tuning
-- First-person muzzle/viewmodel tuning
-- Remote hitbox visual tuning without affecting live hitreg
-
-## Current Content Snapshot
-
-### Maps
-
-- `Training Ground`
-- `Desert Compound`
-- `Dust2 Import Test`
-
-### Weapons
-
-- `Rifle`
-- `Pistol`
-- `Sniper`
-- `Knife`
-
-### Multiplayer State
-
-- Multiple local tabs can join the same room
-- Remote players render with weapons and posture state
-- Server validates hits and replicates combat state
-- Respawn loop is active
+- scoped remote weapon transform offsets currently reuse hip socket-pose values
+- visible locomotion scales from actual movement speed
+- authoritative hitbox locomotion uses the same speed scaling
+- jump playback on the authoritative rig is explicitly excluded from movement-speed scaling to keep `F3` aligned
+- left-hand IK is still not part of the authoritative hitbox rig
 
 ## Local Development
 
@@ -339,6 +258,8 @@ Build Command: npm install && npm --prefix server install && npm run build
 Start Command: npm --prefix server start
 ```
 
+Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested in a believable `15-20 ms` range from Copenhagen.
+
 ## Repo Structure
 
 ```text
@@ -357,12 +278,13 @@ scripts/
 
 ## Docs
 
-If you want the deeper system writeups, start with:
+Start with:
 
 - [MASTER_CONTEXT.md](docs/MASTER_CONTEXT.md)
 - [networking.md](docs/systems/networking.md)
-- [weapons.md](docs/systems/weapons.md)
-- [physics.md](docs/systems/physics.md)
 - [player-controller.md](docs/systems/player-controller.md)
 - [ui-hud.md](docs/systems/ui-hud.md)
+- [weapons.md](docs/systems/weapons.md)
+- [physics.md](docs/systems/physics.md)
 - [remote-hitbox-audit.md](docs/remote-hitbox-audit.md)
+- [remote-character-asset-contract.md](docs/remote-character-asset-contract.md)

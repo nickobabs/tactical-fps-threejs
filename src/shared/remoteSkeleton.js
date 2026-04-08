@@ -5,79 +5,80 @@ const REMOTE_ROOT_NAME_CANDIDATES = [
   'Bip01',
   'belly_01',
   'mixamorigHips',
+  'Hips',
 ];
 
 const REMOTE_HIT_BONE_SPECS = {
   head: {
-    names: ['Bip01 Head', 'Bip01_Head'],
+    names: ['Bip01 Head', 'Bip01_Head', 'mixamorigHead', 'Head'],
     fallbackPattern: /head/i,
   },
   neck: {
-    names: ['Bip01 Neck', 'Bip01_Neck'],
+    names: ['Bip01 Neck', 'Bip01_Neck', 'mixamorigNeck', 'Neck'],
     fallbackPattern: /neck/i,
   },
   spine: {
-    names: ['Bip01 Spine', 'Bip01_Spine'],
-    fallbackPattern: /^bip01[\s_]?spine$/i,
+    names: ['Bip01 Spine', 'Bip01_Spine', 'mixamorigSpine', 'Spine'],
+    fallbackPattern: /^bip01[\s_]?spine$|mixamorigspine|^spine$/i,
   },
   pelvis: {
-    names: ['Bip01 Pelvis', 'Bip01_Pelvis'],
+    names: ['Bip01 Pelvis', 'Bip01_Pelvis', 'mixamorigHips', 'Hips'],
     fallbackPattern: /pelvis|hips|^bip01$/i,
   },
   leftClavicle: {
-    names: ['Bip01 L Clavicle', 'Bip01_L_Clavicle'],
+    names: ['Bip01 L Clavicle', 'Bip01_L_Clavicle', 'mixamorigLeftShoulder', 'LeftShoulder'],
     fallbackPattern: /(left|l).*clavicle|clavicle.*(left|l)/i,
   },
   leftUpperArm: {
-    names: ['Bip01 L UpperArm', 'Bip01_L_UpperArm'],
+    names: ['Bip01 L UpperArm', 'Bip01_L_UpperArm', 'mixamorigLeftArm', 'LeftArm'],
     fallbackPattern: /(left|l).*upper.*arm|upper.*arm.*(left|l)/i,
   },
   leftForearm: {
-    names: ['Bip01 L Forearm', 'Bip01_L_Forearm'],
+    names: ['Bip01 L Forearm', 'Bip01_L_Forearm', 'mixamorigLeftForeArm', 'LeftForeArm'],
     fallbackPattern: /(left|l).*forearm|forearm.*(left|l)/i,
   },
   leftHand: {
-    names: ['Bip01 L Hand', 'Bip01_L_Hand'],
+    names: ['Bip01 L Hand', 'Bip01_L_Hand', 'mixamorigLeftHand', 'LeftHand'],
     fallbackPattern: /(left|l).*hand|hand.*(left|l)/i,
   },
   rightClavicle: {
-    names: ['Bip01 R Clavicle', 'Bip01_R_Clavicle'],
+    names: ['Bip01 R Clavicle', 'Bip01_R_Clavicle', 'mixamorigRightShoulder', 'RightShoulder'],
     fallbackPattern: /(right|r).*clavicle|clavicle.*(right|r)/i,
   },
   rightUpperArm: {
-    names: ['Bip01 R UpperArm', 'Bip01_R_UpperArm'],
+    names: ['Bip01 R UpperArm', 'Bip01_R_UpperArm', 'mixamorigRightArm', 'RightArm'],
     fallbackPattern: /(right|r).*upper.*arm|upper.*arm.*(right|r)/i,
   },
   rightForearm: {
-    names: ['Bip01 R Forearm', 'Bip01_R_Forearm'],
+    names: ['Bip01 R Forearm', 'Bip01_R_Forearm', 'mixamorigRightForeArm', 'RightForeArm'],
     fallbackPattern: /(right|r).*forearm|forearm.*(right|r)/i,
   },
   rightHand: {
-    names: ['Bip01 R Hand', 'Bip01_R_Hand'],
+    names: ['Bip01 R Hand', 'Bip01_R_Hand', 'mixamorigRightHand', 'RightHand'],
     fallbackPattern: /(right|r).*hand|hand.*(right|r)/i,
   },
   leftThigh: {
-    names: ['Bip01 L Thigh', 'Bip01_L_Thigh'],
+    names: ['Bip01 L Thigh', 'Bip01_L_Thigh', 'mixamorigLeftUpLeg', 'LeftUpLeg'],
     fallbackPattern: /(left|l).*(thigh|upleg)|(thigh|upleg).*(left|l)/i,
   },
   leftCalf: {
-    names: ['Bip01 L Calf', 'Bip01_L_Calf'],
+    names: ['Bip01 L Calf', 'Bip01_L_Calf', 'mixamorigLeftLeg', 'LeftLeg'],
     fallbackPattern: /(left|l).*calf|calf.*(left|l)/i,
   },
   leftFoot: {
-    names: ['Bip01 L Foot', 'Bip01_L_Foot'],
+    names: ['Bip01 L Foot', 'Bip01_L_Foot', 'mixamorigLeftFoot', 'LeftFoot'],
     fallbackPattern: /(left|l).*foot|foot.*(left|l)/i,
   },
   rightThigh: {
-    names: ['Bip01 R Thigh', 'Bip01_R_Thigh'],
+    names: ['Bip01 R Thigh', 'Bip01_R_Thigh', 'mixamorigRightUpLeg', 'RightUpLeg'],
     fallbackPattern: /(right|r).*(thigh|upleg)|(thigh|upleg).*(right|r)/i,
   },
   rightCalf: {
-    names: ['Bip01 R Calf', 'Bip01_R_Calf'],
+    names: ['Bip01 R Calf', 'Bip01_R_Calf', 'mixamorigRightLeg', 'RightLeg'],
     fallbackPattern: /(right|r).*calf|calf.*(right|r)/i,
   },
   rightFoot: {
-    names: ['Bip01 R Foot', 'Bip01_R_Foot'],
+    names: ['Bip01 R Foot', 'Bip01_R_Foot', 'mixamorigRightFoot', 'RightFoot'],
     fallbackPattern: /(right|r).*foot|foot.*(right|r)/i,
   },
 };

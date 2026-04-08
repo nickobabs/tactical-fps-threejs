@@ -261,6 +261,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - [`server/src/remoteHitboxRig.js`](C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js): authoritative remote skeleton evaluation for segmented remote hitboxes.
 - [`src/shared/remoteHitboxes.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/remoteHitboxes.js): shared hitbox snapshot construction from named remote bones.
 - [`src/shared/remoteCharacterConfig.js`](C:/Users/nicko/tactical-fps-threejs/src/shared/remoteCharacterConfig.js): shared remote clip/aim/skeleton constants used by both client and server.
+- [`docs/remote-character-asset-contract.md`](C:/Users/nicko/tactical-fps-threejs/docs/remote-character-asset-contract.md): current swap contract for replacing the active remote character/hitbox rig without reworking unrelated systems.
 
 ## Imported Map Workflow Snapshot
 
@@ -330,6 +331,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - current conclusion: standalone exported clips from the source DCC are the preferred path for locomotion quality, while the long-strip subclip path remains a temporary bridge
   - later parity work aligned client/server root-motion stripping on `Bip01.position`, which removed the remaining locomotion and jump mismatch; see `docs/remote-hitbox-audit.md` for the full debugging record
   - later playback follow-up aligned client and authoritative hitbox locomotion speed scaling against the shared movement baselines, and excluded jump playback from that scaling on the server rig
+  - shared skeleton resolution now explicitly includes both the current Bip-style names and common Mixamo-style names so a future rig swap is less invasive
 - The project README was updated from scaffold-level notes to a current project overview with actual runtime/deploy/architecture context.
 - Local combat HUD feedback was added:
   - stronger damage vignette

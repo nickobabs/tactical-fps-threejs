@@ -13,7 +13,7 @@ import {
   REMOTE_AIM_PITCH_MAX,
   REMOTE_AIM_PITCH_MIN,
   REMOTE_AIM_STATE_FACTORS,
-  REMOTE_EXPERIMENTAL_SKELETON,
+  REMOTE_PRIMARY_CHARACTER_SKELETON,
   getRemoteSocketPoseKey,
 } from '../../src/shared/remoteCharacterConfig.js';
 import {
@@ -268,7 +268,7 @@ async function loadRemoteRigAsset() {
       template.scale.setScalar(scale);
       template.updateMatrixWorld(true);
       TMP_BOX.setFromObject(template);
-      const rootJoint = resolveRemoteRootJoint(template, REMOTE_EXPERIMENTAL_SKELETON);
+      const rootJoint = resolveRemoteRootJoint(template, REMOTE_PRIMARY_CHARACTER_SKELETON);
       if (rootJoint) {
         rootJoint.getWorldPosition(TMP_ROOT_WORLD);
         template.position.set(-TMP_ROOT_WORLD.x, -TMP_BOX.min.y, -TMP_ROOT_WORLD.z);
@@ -291,10 +291,10 @@ async function loadRemoteRigAsset() {
 }
 
 function findRigBones(root) {
-  const bones = resolveRemoteHitBones(root, REMOTE_EXPERIMENTAL_SKELETON);
+  const bones = resolveRemoteHitBones(root, REMOTE_PRIMARY_CHARACTER_SKELETON);
   return {
     ...bones,
-    weaponSocket: root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.weaponSocket),
+    weaponSocket: root.getObjectByName(REMOTE_PRIMARY_CHARACTER_SKELETON.weaponSocket),
   };
 }
 
@@ -500,9 +500,9 @@ async function ensureLeftHandIk(rig) {
 
   const skeleton = rig.skinnedMesh.skeleton;
   const findBoneIndex = (boneName) => skeleton.bones.findIndex((bone) => bone?.name === boneName);
-  const upperArmIndex = findBoneIndex(REMOTE_EXPERIMENTAL_SKELETON.leftUpperArm);
-  const forearmIndex = findBoneIndex(REMOTE_EXPERIMENTAL_SKELETON.leftForearm);
-  const handIndex = findBoneIndex(REMOTE_EXPERIMENTAL_SKELETON.leftHand);
+  const upperArmIndex = findBoneIndex(REMOTE_PRIMARY_CHARACTER_SKELETON.leftUpperArm);
+  const forearmIndex = findBoneIndex(REMOTE_PRIMARY_CHARACTER_SKELETON.leftForearm);
+  const handIndex = findBoneIndex(REMOTE_PRIMARY_CHARACTER_SKELETON.leftHand);
   if (upperArmIndex < 0 || forearmIndex < 0 || handIndex < 0) {
     return;
   }
@@ -579,7 +579,7 @@ export async function createRemoteHitboxRig() {
     actions.set(name, { action, playbackSpeed: entry.playbackSpeed });
   }
   const weaponAnchor = new THREE.Group();
-  const weaponSocket = root.getObjectByName(REMOTE_EXPERIMENTAL_SKELETON.weaponSocket);
+  const weaponSocket = root.getObjectByName(REMOTE_PRIMARY_CHARACTER_SKELETON.weaponSocket);
   weaponAnchor.scale.setScalar(1 / Math.max(REMOTE_CHARACTER_MODEL_SCALE, 1e-6));
   if (weaponSocket) {
     weaponSocket.add(weaponAnchor);
@@ -613,7 +613,7 @@ export async function createRemoteHitboxRig() {
     leftHandIkTargetBone: null,
   };
   console.info('[remoteHitboxRig] Hitbox audit:', describeRemoteHitboxAudit({
-    root: resolveRemoteRootJoint(root, REMOTE_EXPERIMENTAL_SKELETON),
+    root: resolveRemoteRootJoint(root, REMOTE_PRIMARY_CHARACTER_SKELETON),
     bones: rig.bones,
   }));
   await ensureLeftHandIk(rig);

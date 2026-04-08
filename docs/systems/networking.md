@@ -65,6 +65,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - tuning persistence / normalization now lives in `src/game/networking/remoteTuningStore.js`
   - `F6` / `F7` browser tuning panels now live in `src/game/networking/remoteTuningPanels.js`
   - core remote visual update, animation playback, hit-bone discovery, and `F3` hit-volume debug still remain in `RemotePlayerPresenter.js`
+  - the current swap/integration contract is documented in `docs/remote-character-asset-contract.md`
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 - The current combat slice is intentionally narrow:
   - local weapon presentation stays immediate
@@ -116,6 +117,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - the first standalone exported locomotion proof, `public/models/players/newtest_run.fbx`, now overrides the experimental `run` clip and plays cleanly in-engine
   - current direction is to export the rest of the locomotion set as standalone clips from the original 3ds Max source instead of continuing to rely on runtime subclips for loop-critical motions
   - a later parity audit aligned client/server root-motion stripping on `Bip01.position`, which removed the remaining locomotion and jump mismatch; see `docs/remote-hitbox-audit.md` for the detailed debugging record
+  - shared skeleton resolution now supports both the current Bip-style names and common Mixamo-style names at the mapping layer
   - remote scoped weapon transform offsets currently reuse the hip socket-pose values until there is a real separate remote ADS animation/pose
   - visible remote locomotion playback now multiplies the authored clip speed by the replicated horizontal-speed ratio:
     - standing baseline uses shared rifle walk speed `4.92`

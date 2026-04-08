@@ -11,7 +11,7 @@ export const REMOTE_CLIPS = {
   fire: 'fire',
 };
 
-export const REMOTE_EXPERIMENTAL_SKELETON = {
+export const REMOTE_PRIMARY_CHARACTER_SKELETON = {
   rootJoint: 'Bip01',
   pelvis: 'Bip01_Pelvis',
   spine: 'Bip01_Spine',
@@ -33,6 +33,9 @@ export const REMOTE_EXPERIMENTAL_SKELETON = {
   rightCalf: 'Bip01_R_Calf',
   rightFoot: 'Bip01_R_Foot',
 };
+
+// Backward-compatible alias while older docs/code paths are being retired.
+export const REMOTE_EXPERIMENTAL_SKELETON = REMOTE_PRIMARY_CHARACTER_SKELETON;
 
 export const DEFAULT_REMOTE_SOCKET_POSES = {
   sniperScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 0.92 },
@@ -84,13 +87,13 @@ export const REMOTE_AIM_STATE_FACTORS = {
 export const REMOTE_AIM_BONE_SPECS = [
   {
     key: 'neck',
-    names: ['Bip01_Neck', 'Bip01 Neck'],
+    names: ['Bip01_Neck', 'Bip01 Neck', 'mixamorigNeck', 'Neck'],
     fallbackPattern: /neck/i,
     weight: 0.42,
   },
   {
     key: 'head',
-    names: ['Bip01_Head', 'Bip01 Head'],
+    names: ['Bip01_Head', 'Bip01 Head', 'mixamorigHead', 'Head'],
     fallbackPattern: /head/i,
     weight: 0.2,
   },
