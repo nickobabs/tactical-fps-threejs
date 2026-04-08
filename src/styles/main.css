@@ -90,6 +90,30 @@ canvas {
   white-space: pre-wrap;
 }
 
+.hud__netdebug-copy {
+  position: absolute;
+  top: 68px;
+  right: 24px;
+  z-index: 1;
+  padding: 8px 12px;
+  border: 1px solid rgba(174, 211, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(7, 12, 16, 0.9);
+  color: #d5e9ff;
+  font: 600 12px/1 "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.hud__netdebug-copy:hover {
+  background: rgba(22, 34, 46, 0.94);
+}
+
+.hud__netdebug-copy:not([hidden]) + .hud__netdebug {
+  padding-top: 44px;
+}
+
 .hud__crosshair {
   position: absolute;
   top: 50%;

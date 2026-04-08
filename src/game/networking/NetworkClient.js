@@ -18,6 +18,9 @@ const TEAM_LABELS = {
   attackers: 'Attackers',
   defenders: 'Defenders',
 };
+const PING_INTERVAL_MS = 2000;
+const PING_TIMEOUT_MS = 10000;
+const MAX_REPORTED_PING_MS = 999;
 
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -149,6 +152,15 @@ export class NetworkClient {
     this.lastFilteredRemoteStateCount = 0;
     this.lastReceivedRemoteMaps = [];
     this.scoreboardPlayers = new Map();
+    this.nextPingId = 1;
+    this.lastPingSentAt = 0;
+    this.pendingPingId = 0;
+    this.pendingPingSentAt = 0;
+    this.averagePingMs = 0;
+    this.lastPingRoundTripMs = 0;
+    this.lastPingServerTurnaroundMs = 0;
+    this.lastPingEstimatedNetworkMs = 0;
+    this.lastPingReceivedAt = 0;
 
     void this.connect();
   }
@@ -195,6 +207,10 @@ export class NetworkClient {
         this.pendingCombatEvents.push(message);
       });
 
+      room.onMessage('pong', (message) => {
+        this.handlePong(message);
+      });
+
       room.onLeave((code) => {
         this.room = null;
         this.remotePlayerBuffers.clear();
@@ -212,6 +228,14 @@ export class NetworkClient {
       }
 
       room.send('request-player-state');
+      this.lastPingSentAt = 0;
+      this.pendingPingId = 0;
+      this.pendingPingSentAt = 0;
+      this.lastPingRoundTripMs = 0;
+      this.lastPingServerTurnaroundMs = 0;
+      this.lastPingEstimatedNetworkMs = 0;
+      this.lastPingReceivedAt = 0;
+      this.sendPingProbe(true);
     } catch (error) {
       this.client = null;
       this.room = null;
@@ -391,7 +415,62 @@ export class NetworkClient {
   }
 
   update() {
+    this.sendPingProbe();
     return false;
+  }
+
+  handlePong(message) {
+    const pongId = Number(message?.id ?? 0);
+    if (pongId <= 0 || pongId !== this.pendingPingId || this.pendingPingSentAt <= 0) {
+      return;
+    }
+
+    const now = getNow();
+    const roundTripMs = Math.max(0, Math.round(now - this.pendingPingSentAt));
+    const serverReceivedAt = Number(message?.serverReceivedAt ?? 0);
+    const serverSentAt = Number(message?.serverSentAt ?? serverReceivedAt);
+    const serverTurnaroundMs = serverSentAt >= serverReceivedAt
+      ? Math.max(0, Math.round(serverSentAt - serverReceivedAt))
+      : 0;
+    const estimatedNetworkMs = Math.max(0, Math.round(roundTripMs - serverTurnaroundMs));
+    this.pendingPingId = 0;
+    this.pendingPingSentAt = 0;
+    this.lastPingRoundTripMs = roundTripMs;
+    this.lastPingServerTurnaroundMs = serverTurnaroundMs;
+    this.lastPingEstimatedNetworkMs = estimatedNetworkMs;
+    this.lastPingReceivedAt = now;
+    this.averagePingMs = this.averagePingMs > 0
+      ? Math.round((this.averagePingMs * 0.7) + (roundTripMs * 0.3))
+      : roundTripMs;
+
+    if (this.room) {
+      this.room.send('player-ping', {
+        pingMs: Math.max(0, Math.min(MAX_REPORTED_PING_MS, this.averagePingMs)),
+      });
+    }
+  }
+
+  sendPingProbe(force = false) {
+    if (!this.room) {
+      return;
+    }
+
+    const now = getNow();
+    if (this.pendingPingId > 0 && now - this.pendingPingSentAt >= PING_TIMEOUT_MS) {
+      this.pendingPingId = 0;
+      this.pendingPingSentAt = 0;
+    }
+
+    if (!force && (this.pendingPingId > 0 || now - this.lastPingSentAt < PING_INTERVAL_MS)) {
+      return;
+    }
+
+    const pingId = this.nextPingId;
+    this.nextPingId += 1;
+    this.pendingPingId = pingId;
+    this.pendingPingSentAt = now;
+    this.lastPingSentAt = now;
+    this.room.send('ping', { id: pingId });
   }
 
   sendFireRequest(fireRequest) {
@@ -459,10 +538,26 @@ export class NetworkClient {
     this.lastFilteredRemoteStateCount = 0;
     this.lastReceivedRemoteMaps = [];
     this.scoreboardPlayers.clear();
+    this.lastPingSentAt = 0;
+    this.pendingPingId = 0;
+    this.pendingPingSentAt = 0;
+    this.averagePingMs = 0;
+    this.lastPingRoundTripMs = 0;
+    this.lastPingServerTurnaroundMs = 0;
+    this.lastPingEstimatedNetworkMs = 0;
+    this.lastPingReceivedAt = 0;
   }
 
   getScoreboardState() {
     const players = [...this.scoreboardPlayers.values()]
+      .map((player) => (
+        player.playerId === this.playerId && this.averagePingMs > 0
+          ? {
+            ...player,
+            pingMs: this.averagePingMs,
+          }
+          : player
+      ))
       .sort((left, right) => {
         const killDelta = Number(right.kills ?? 0) - Number(left.kills ?? 0);
         if (killDelta !== 0) {
@@ -594,6 +689,13 @@ export class NetworkClient {
       lastPredictedDriftDistance: this.lastCorrectionDistance,
       authoritativeUpdatesPerSecond: this.authoritativeEvents.length,
       pendingJumpSend: this.pendingJumpSend,
+      serverUrl: this.serverUrl,
+      pingRoundTripMs: this.lastPingRoundTripMs,
+      pingAverageMs: this.averagePingMs,
+      pingServerTurnaroundMs: this.lastPingServerTurnaroundMs,
+      pingEstimatedNetworkMs: this.lastPingEstimatedNetworkMs,
+      pingAgeMs: this.lastPingReceivedAt > 0 ? Math.round(now - this.lastPingReceivedAt) : -1,
+      pingPending: this.pendingPingId > 0,
     };
   }
 
@@ -612,6 +714,14 @@ export class NetworkClient {
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
     this.lastReceivedRemoteMaps = [];
+    this.lastPingSentAt = 0;
+    this.pendingPingId = 0;
+    this.pendingPingSentAt = 0;
+    this.averagePingMs = 0;
+    this.lastPingRoundTripMs = 0;
+    this.lastPingServerTurnaroundMs = 0;
+    this.lastPingEstimatedNetworkMs = 0;
+    this.lastPingReceivedAt = 0;
 
     if (this.room) {
       void this.room.leave().catch((error) => {

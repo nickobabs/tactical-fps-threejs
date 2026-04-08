@@ -103,6 +103,7 @@ export function createHud({
       <div class="hud__position"></div>
       <div class="hud__pointer"></div>
     </div>
+    <button class="hud__netdebug-copy" type="button" hidden>Copy</button>
     <pre class="hud__netdebug" hidden></pre>
   `;
 
@@ -144,6 +145,7 @@ export function createHud({
   const scoreboardEl = hud.querySelector('.hud__scoreboard');
   const scoreboardSubtitleEl = hud.querySelector('.hud__scoreboard-subtitle');
   const scoreboardTeamEls = [...hud.querySelectorAll('.hud__scoreboard-team')];
+  const netDebugCopyEl = hud.querySelector('.hud__netdebug-copy');
   const netDebugEl = hud.querySelector('.hud__netdebug');
   let paused = false;
   let showNetDebug = false;
@@ -167,7 +169,10 @@ export function createHud({
   let lastScoreboardSubtitle = '';
   const lastScoreboardTeamMarkup = new Map();
   let lastNetDebugText = '';
+  let lastNetDebugCopyHidden = true;
   let currentNetDebugText = '';
+  let copyFeedbackTimeoutId = 0;
+  let lastCopyButtonLabel = 'Copy';
   let lastDamageVignette = -1;
   let lastDeadOverlay = null;
   let lastHitDamageHtml = '';
@@ -249,11 +254,14 @@ export function createHud({
       'NETDEBUG',
       `ignore_local_corrections=${Boolean(getIgnoreLocalCorrections?.())}`,
       `state=${networkDebug.connectionState}`,
+      `server_url=${networkDebug.serverUrl ?? 'unknown'}`,
       `map_id=${networkDebug.localMapId ?? 'unknown'}`,
       `player_state_count=${networkDebug.receivedPlayerStateCount ?? 0} same_map_remote=${networkDebug.sameMapRemoteStateCount ?? 0} filtered_remote=${networkDebug.filteredRemoteStateCount ?? 0}`,
       `remote_maps=${(networkDebug.receivedRemoteMaps ?? []).join(',') || 'none'}`,
       `seq_local=${networkDebug.latestSequence} seq_ack=${networkDebug.acknowledgedSequence} seq_gap=${networkDebug.sequenceGap}`,
       `pending_inputs=${networkDebug.pendingInputCount} jump_latched=${networkDebug.pendingJumpSend}`,
+      `ping_rtt_ms=${networkDebug.pingRoundTripMs ?? 0} ping_avg_ms=${networkDebug.pingAverageMs ?? 0} ping_age_ms=${networkDebug.pingAgeMs ?? -1} ping_pending=${networkDebug.pingPending ? 'yes' : 'no'}`,
+      `ping_server_turn_ms=${networkDebug.pingServerTurnaroundMs ?? 0} ping_net_est_ms=${networkDebug.pingEstimatedNetworkMs ?? 0}`,
       `snapshot_age_ms=${networkDebug.snapshotAgeMs} auth_per_sec=${networkDebug.authoritativeUpdatesPerSecond}`,
       `predicted_drift=${networkDebug.lastPredictedDriftDistance.toFixed(3)} corr_per_sec=${movement.correctionRatePerSecond}`,
       `corr_dist=${movement.lastCorrectionDistance.toFixed(3)} present_offset=${movement.correctionOffsetMagnitude.toFixed(3)}`,
@@ -279,6 +287,7 @@ export function createHud({
     if (event.code === 'F8') {
       showNetDebug = !showNetDebug;
       netDebugEl.hidden = !showNetDebug;
+      netDebugCopyEl.hidden = !showNetDebug;
       if (currentNetDebugText) {
         console.log(buildDebugSummary());
       }
@@ -303,6 +312,34 @@ export function createHud({
 
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
+
+  async function copyNetDebugToClipboard() {
+    const debugText = netDebugEl.textContent?.trim() || currentNetDebugText?.trim() || '';
+    if (!debugText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(debugText);
+      netDebugCopyEl.textContent = 'Copied';
+    } catch (error) {
+      console.warn('[Hud] Failed to copy net debug to clipboard.', error);
+      netDebugCopyEl.textContent = 'Copy failed';
+    }
+
+    if (copyFeedbackTimeoutId > 0) {
+      window.clearTimeout(copyFeedbackTimeoutId);
+    }
+
+    copyFeedbackTimeoutId = window.setTimeout(() => {
+      netDebugCopyEl.textContent = lastCopyButtonLabel;
+      copyFeedbackTimeoutId = 0;
+    }, 1500);
+  }
+
+  netDebugCopyEl.addEventListener('click', () => {
+    void copyNetDebugToClipboard();
+  });
 
   function setTextIfChanged(element, nextText, lastText) {
     if (lastText !== nextText) {
@@ -347,6 +384,9 @@ export function createHud({
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      if (copyFeedbackTimeoutId > 0) {
+        window.clearTimeout(copyFeedbackTimeoutId);
+      }
       pauseMenu.destroy();
       hud.remove();
     },
@@ -561,6 +601,12 @@ export function createHud({
       if (markDebugSnapshotRequested) {
         currentNetDebugText = buildDebugText(networkDebug, movement);
         console.log(buildDebugSummary());
+      }
+
+      const netDebugCopyHidden = !showNetDebug;
+      if (netDebugCopyHidden !== lastNetDebugCopyHidden) {
+        netDebugCopyEl.hidden = netDebugCopyHidden;
+        lastNetDebugCopyHidden = netDebugCopyHidden;
       }
 
       pauseMenu.updateSelections({

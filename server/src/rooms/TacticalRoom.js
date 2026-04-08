@@ -375,13 +375,30 @@ export class TacticalRoom extends Room {
         yaw: Number(message?.yaw ?? player.motionState.yaw),
         pitch: Number(message?.pitch ?? player.pitch ?? 0),
       }, sequence, inputTimestamp);
-      player.pingMs = Math.max(
-        0,
-        Math.min(MAX_SCOREBOARD_PING_MS, Date.now() - inputTimestamp),
-      );
       player.pendingInputs.push(normalizedInput);
       player.lastQueuedSequence = sequence;
       player.lastQueuedTimestamp = inputTimestamp;
+    });
+
+    this.onMessage('ping', (client, message) => {
+      const serverReceivedAt = Date.now();
+      client.send('pong', {
+        id: Number(message?.id ?? 0),
+        serverReceivedAt,
+        serverSentAt: Date.now(),
+      });
+    });
+
+    this.onMessage('player-ping', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player) {
+        return;
+      }
+
+      player.pingMs = Math.max(
+        0,
+        Math.min(MAX_SCOREBOARD_PING_MS, Number(message?.pingMs ?? 0)),
+      );
     });
 
     this.onMessage('player-ready', async (client, message) => {
