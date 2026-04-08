@@ -27,7 +27,7 @@
 - A staged map-loading state with visible loading feedback
 - Active HDR skybox selection
 - Shared audio registration and lifecycle
-- Remote-player rendering from authoritative network state, with placeholder fallback and an active remote playermodel experiment
+- Remote-player rendering from authoritative network state, with placeholder fallback and an active skinned-character baseline
 - Local correction toggles and movement-trace capture for multiplayer diagnosis
 - Collision debug wireframe overlay
 
@@ -72,6 +72,8 @@
 - `GameApp` owns app-level multiplayer composition, but remote-player rendering is delegated to `RemotePlayerPresenter` and gameplay-network wiring is delegated to `GameplayNetworkingCoordinator`.
 - Temporary multiplayer diagnostics are also coordinated here:
   - `F3` toggles remote hit-volume debug
+  - `F8` toggles live `NETDEBUG`
+  - the `NETDEBUG` panel includes a clipboard `Copy` action in the HUD
   - `F9` toggles local correction application for A/B testing
   - `F10` toggles local movement-trace capture
   - when capture stops, the trace is kept in browser `localStorage`
@@ -100,7 +102,7 @@
   - `GameApp` owns the `NetworkClient` and forwards authoritative snapshots / combat events
   - `RemotePlayerPresenter` owns remote placeholder fallback, remote model loading, animation selection, external clip loading, and socket-based weapon attachment
   - `RemotePlayerPresenter` also owns the temporary `F3`/`F6`/`F7` remote debug and tuning surfaces used during current animation/hitbox work
-  - `RemotePlayerPresenter` currently supports both a legacy remote character path (`tester3.glb`) and an experimental path (`newtest.glb` plus standalone FBX overrides such as `newtest_run.fbx`)
+  - `RemotePlayerPresenter` currently uses the `newtest.glb` path with standalone FBX overrides such as `newtest_run.fbx` as the active baseline, while still keeping the older `tester3.glb` path as a fallback
   - the remote hitbox branch is now functionally resolved enough for live authoritative PvP use and documented in `docs/remote-hitbox-audit.md`
 
 ## Near-Term Direction

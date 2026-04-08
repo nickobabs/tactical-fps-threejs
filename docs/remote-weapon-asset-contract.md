@@ -33,8 +33,8 @@ Important:
 - The current runtime assumes the server-replicated actor transform is authoritative
 - Character animation root motion is stripped in code
 - Character scale is normalized in runtime, then multiplied by a live remote-model scale setting
-- The current remote character experiment now mixes asset sources:
-  - the experimental character mesh path uses `newtest.glb`, while the runtime still retains a legacy fallback path
+- The current active remote character baseline now mixes asset sources:
+  - the primary character mesh path uses `newtest.glb`, while the runtime still retains a legacy fallback path
   - the first clean locomotion proof came from a standalone Max-exported `newtest_run.fbx` clip
   - this confirmed that standalone exported clips are the preferred path for locomotion quality, while long-strip runtime subclips remain only a temporary bridge
 
@@ -87,6 +87,7 @@ Important:
 Current remote rifle path has one important runtime detail:
 
 - The weapon is attached under a skinned character/socket chain, so runtime compensates for inherited world scale before applying the imported weapon scale.
+- Scoped remote weapon transform offsets currently reuse hip socket-pose values until a distinct remote ADS pose is worth supporting.
 
 That means future weapon imports should not reintroduce old ad-hoc normalization hacks unless a specific asset proves it needs them.
 
@@ -102,6 +103,7 @@ Current status:
 - `F7` is the active tool for weapon hold tuning
 - `F6` now also exposes temporary weapon/proxy/bone axis and strength controls for remote aim debugging
 - Left-arm IK is now an active experiment, and the current rifle path can use the authored `left_hand_grip` helper when present
+- Visible remote locomotion and the authoritative server hitbox rig now both scale locomotion playback from actual replicated movement speed, so future weapon imports should be checked under rifle, sniper, pistol, and knife movement speeds
 
 ## What Worked
 
