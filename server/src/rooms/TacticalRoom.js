@@ -19,6 +19,7 @@ import {
   createPlayerStatusMessage,
   serializeAuthoritativePlayerState,
 } from '../../../src/shared/netcodeProtocol.js';
+import { TEAMS } from '../../../src/shared/constants.js';
 import { createCollisionMapForMapIdAsync } from '../../../src/shared/maps/mapCollision.js';
 import {
   getSharedWeaponData,
@@ -62,6 +63,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REMOTE_HITBOX_AUDIT_LOG_PATH = path.resolve(__dirname, '../../../debug/remote-hitbox-audit.log');
 const MAX_SCOREBOARD_PING_MS = 999;
+const MAX_DISPLAY_NAME_LENGTH = 24;
 
 async function appendRemoteHitboxAudit(entry) {
   await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
@@ -268,6 +270,18 @@ function getAuthoritativeHitboxSnapshotDistance(ray, hitboxes, maxDistance, curr
 }
 
 export class TacticalRoom extends Room {
+  sanitizeTeam(team) {
+    return team === TEAMS.DEFENDERS ? TEAMS.DEFENDERS : TEAMS.ATTACKERS;
+  }
+
+  sanitizeDisplayName(value, fallback = 'Player') {
+    const normalized = String(value ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, MAX_DISPLAY_NAME_LENGTH);
+    return normalized || fallback;
+  }
+
   onCreate() {
     this.setPrivate(false);
     this.players = {};
@@ -410,6 +424,8 @@ export class TacticalRoom extends Room {
       try {
         const readyState = createPlayerReadyMessage(message);
         player.mapId = readyState.mapId;
+        player.team = this.sanitizeTeam(readyState.team);
+        player.displayName = this.sanitizeDisplayName(readyState.displayName, player.displayName);
         player.isReady = false;
         player.pendingInputs.length = 0;
         player.inputTimestampGate = Date.now();
@@ -738,6 +754,7 @@ export class TacticalRoom extends Room {
         target.playerId === player.playerId
         || !target.isAlive
         || target.mapId !== player.mapId
+        || target.team === player.team
       ) {
         continue;
       }

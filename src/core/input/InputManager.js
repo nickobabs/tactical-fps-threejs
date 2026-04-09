@@ -54,7 +54,28 @@ export class InputManager {
     this.domElement.removeEventListener('pointerdown', this.handlePointerDown);
   }
 
+  isEditableTarget(target) {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    const tagName = target.tagName;
+    return target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+  }
+
+  clearGameplayState() {
+    this.keys.clear();
+    this.justPressed.clear();
+    this.mouseButtons.clear();
+    this.mouseButtonsJustPressed.clear();
+    this.lookDelta.x = 0;
+    this.lookDelta.y = 0;
+  }
+
   handleKeyDown(event) {
+    if (this.isEditableTarget(event.target)) {
+      return;
+    }
+
     if (this.pointerLocked && GAMEPLAY_SHORTCUT_BLOCK_KEYS.has(event.code) && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
     }
@@ -75,6 +96,10 @@ export class InputManager {
   }
 
   handleKeyUp(event) {
+    if (this.isEditableTarget(event.target)) {
+      return;
+    }
+
     this.keys.delete(event.code);
   }
 

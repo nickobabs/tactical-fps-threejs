@@ -135,6 +135,7 @@ function createBorrowedAnimatedViewModel({
   muzzlePosition,
   muzzleFlashFactory,
   rootOffset = null,
+  reloadPlaybackRate = 1,
 }) {
   const group = new THREE.Group();
   const content = new THREE.Group();
@@ -152,7 +153,9 @@ function createBorrowedAnimatedViewModel({
   let equipFinishedHandlerAttached = false;
   let isLoaded = false;
   let isEquipping = true;
+  let isReloading = false;
   let pendingEquip = false;
+  let pendingReload = false;
 
   const ensureActions = () => {
     if (!actions) {
@@ -214,6 +217,7 @@ function createBorrowedAnimatedViewModel({
     pendingEquip = false;
     liveActions.hold?.stop();
     liveActions.fire?.stop();
+    liveActions.reload?.stop();
 
     if (!liveActions.equip) {
       isEquipping = false;
@@ -223,6 +227,30 @@ function createBorrowedAnimatedViewModel({
 
     isEquipping = true;
     playOneShot(liveActions.equip);
+  };
+
+  const playReloadSequence = () => {
+    const liveActions = ensureActions();
+    if (!liveActions) {
+      pendingReload = true;
+      isReloading = true;
+      return;
+    }
+
+    pendingReload = false;
+    liveActions.hold?.stop();
+    liveActions.fire?.stop();
+    liveActions.equip?.stop();
+
+    if (!liveActions.reload) {
+      isReloading = false;
+      playLoop(liveActions.hold);
+      return;
+    }
+
+    isReloading = true;
+    liveActions.reload.setEffectiveTimeScale(reloadPlaybackRate);
+    playOneShot(liveActions.reload);
   };
 
   loadBorrowedViewModelAsset()
@@ -261,6 +289,7 @@ function createBorrowedAnimatedViewModel({
         hold: null,
         equip: null,
         fire: null,
+        reload: null,
       };
 
       for (const clip of gltf.animations) {
@@ -268,19 +297,21 @@ function createBorrowedAnimatedViewModel({
           continue;
         }
         const suffix = clip.name.slice(animationPrefix.length + 1);
-        if (suffix === 'hold' || suffix === 'equip' || suffix === 'fire') {
+        if (suffix === 'hold' || suffix === 'equip' || suffix === 'fire' || suffix === 'reload') {
           actions[suffix] = mixer.clipAction(clip, root);
         }
       }
 
       if (!equipFinishedHandlerAttached) {
         mixer.addEventListener('finished', (event) => {
-          if (event.action !== actions?.equip) {
+          if (event.action !== actions?.equip && event.action !== actions?.reload) {
             return;
           }
           isEquipping = false;
+          isReloading = false;
           if ((actions?.hold?.getClip?.().duration ?? 0) <= 0.0001) {
             actions?.equip?.stop();
+            actions?.reload?.stop();
             playLoop(actions?.hold);
           } else if (actions?.hold) {
             actions.hold.enabled = true;
@@ -288,7 +319,7 @@ function createBorrowedAnimatedViewModel({
             actions.hold.setLoop(THREE.LoopRepeat, Infinity);
             actions.hold.clampWhenFinished = false;
             actions.hold.play();
-            actions.hold.crossFadeFrom(actions.equip, 0.06, false);
+            actions.hold.crossFadeFrom(event.action, 0.06, false);
           } else {
             playLoop(actions?.hold);
           }
@@ -298,9 +329,13 @@ function createBorrowedAnimatedViewModel({
 
       isLoaded = true;
 
-      if (group.visible || pendingEquip) {
+      if (group.visible || pendingEquip || pendingReload) {
         content.visible = false;
-        playEquipSequence();
+        if (pendingReload) {
+          playReloadSequence();
+        } else {
+          playEquipSequence();
+        }
         mixer.update(1 / 120);
         content.visible = true;
       }
@@ -332,6 +367,12 @@ function createBorrowedAnimatedViewModel({
       }
       playOneShot(liveActions.fire);
     },
+    playReload() {
+      content.visible = false;
+      playReloadSequence();
+      mixer?.update(1 / 120);
+      content.visible = true;
+    },
     getMuzzleOffset() {
       return {
         x: muzzle.position.x,
@@ -347,7 +388,7 @@ function createBorrowedAnimatedViewModel({
       );
     },
     canFire() {
-      return isLoaded && !isEquipping;
+      return isLoaded && !isEquipping && !isReloading;
     },
   };
 }
@@ -445,6 +486,7 @@ function createRifleViewModel() {
     animationPrefix: 'AK47',
     muzzlePosition: new THREE.Vector3(0.676, 0.048, -1.265),
     muzzleFlashFactory: createMuzzleFlash,
+    reloadPlaybackRate: 0.84,
     rootOffset: {
       position: new THREE.Vector3(0.18, -1.02, -0.18),
       rotation: { x: 0, y: Math.PI / 2, z: 0 },

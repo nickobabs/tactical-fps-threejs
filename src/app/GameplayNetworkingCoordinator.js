@@ -17,6 +17,8 @@ export class GameplayNetworkingCoordinator {
   syncLocalPlayer({
     authoritativeNetworkingEnabled,
     mapId,
+    team,
+    displayName,
     playerController,
     weaponManager,
   }) {
@@ -26,6 +28,8 @@ export class GameplayNetworkingCoordinator {
 
     this.networkClient.initializeLocalPlayer({
       mapId,
+      team,
+      displayName,
       position: {
         x: playerController.position.x,
         y: playerController.position.y,

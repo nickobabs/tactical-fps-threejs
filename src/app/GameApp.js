@@ -17,9 +17,65 @@ import { GameplayNetworkingCoordinator } from './GameplayNetworkingCoordinator.j
 import { GamePauseController } from './GamePauseController.js';
 import { GameDebugController } from './GameDebugController.js';
 import { GameSessionController } from './GameSessionController.js';
+import { TEAMS } from '../shared/constants.js';
 
 const DEFAULT_HORIZONTAL_FOV = 103;
 const MOVEMENT_TRACE_STORAGE_KEY = 'tactical-fps-threejs-movement-trace';
+const PLAYER_NAME_STORAGE_KEY = 'tactical-fps-threejs-player-name';
+const HUD_MODE_STORAGE_KEY = 'tactical-fps-threejs-hud-mode';
+const MAX_PLAYER_NAME_LENGTH = 24;
+
+function sanitizePlayerName(value, fallback = 'Player') {
+  const normalized = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_PLAYER_NAME_LENGTH);
+  return normalized || fallback;
+}
+
+function loadStoredPlayerName() {
+  if (typeof window === 'undefined') {
+    return 'Player';
+  }
+  try {
+    return sanitizePlayerName(window.localStorage.getItem(PLAYER_NAME_STORAGE_KEY), 'Player');
+  } catch {
+    return 'Player';
+  }
+}
+
+function persistPlayerName(playerName) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(PLAYER_NAME_STORAGE_KEY, sanitizePlayerName(playerName, 'Player'));
+  } catch {
+    // Ignore localStorage write failures.
+  }
+}
+
+function loadStoredHudMode() {
+  if (typeof window === 'undefined') {
+    return 'debug';
+  }
+  try {
+    return window.localStorage.getItem(HUD_MODE_STORAGE_KEY) === 'classic' ? 'classic' : 'debug';
+  } catch {
+    return 'debug';
+  }
+}
+
+function persistHudMode(hudMode) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(HUD_MODE_STORAGE_KEY, hudMode === 'classic' ? 'classic' : 'debug');
+  } catch {
+    // Ignore localStorage write failures.
+  }
+}
 
 function getMovementTraceUploadUrl(serverUrl) {
   if (!serverUrl) {
@@ -63,6 +119,10 @@ export class GameApp {
     this.gameplayNetworking = new GameplayNetworkingCoordinator(this.networkClient);
     this.damageVignette = 0;
     this.hitDamagePopups = [];
+    this.selectedTeam = null;
+    this.selectedPlayerName = loadStoredPlayerName();
+    this.hudMode = loadStoredHudMode();
+    this.lastLocalPlayerAlive = true;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c1218);
@@ -188,12 +248,17 @@ export class GameApp {
       getMouseSensitivity: () => this.mouseSensitivity,
       getHorizontalFov: () => this.baseHorizontalFov,
       onResume: () => this.resumeGame(),
+      onSelectTeam: (team, playerName) => void this.selectTeam(team, playerName),
+      onToggleHudMode: () => this.toggleHudMode(),
       onSelectMap: (mapId) => this.loadMap(mapId),
       onSensitivityChange: (value) => this.setMouseSensitivity(value),
       onFovChange: (value) => this.setHorizontalFov(value),
       onVolumeChange: (volume) => this.audioManager.setMasterVolume(volume),
       maps: MAP_OPTIONS,
       getSelectedMapId: () => this.selectedMapId,
+      getSelectedTeam: () => this.selectedTeam,
+      getSelectedPlayerName: () => this.selectedPlayerName,
+      getHudMode: () => this.hudMode,
       getIsLoading: () => this.isLoadingMap,
       getLoadingStatus: () => this.loadingStatus,
       getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
@@ -210,6 +275,12 @@ export class GameApp {
     this.sessionController.unloadCurrentRuntime({
       remotePlayerPresenter: this.remotePlayerPresenter,
     });
+  }
+
+  toggleHudMode() {
+    this.hudMode = this.hudMode === 'classic' ? 'debug' : 'classic';
+    persistHudMode(this.hudMode);
+    this.rebuildHud();
   }
 
   toggleFlyMode() {
@@ -235,6 +306,8 @@ export class GameApp {
       this.gameplayNetworking.syncLocalPlayer({
         authoritativeNetworkingEnabled: this.authoritativeNetworkingEnabled,
         mapId: this.selectedMapId,
+        team: this.selectedTeam ?? TEAMS.ATTACKERS,
+        displayName: this.selectedPlayerName,
         playerController: this.runtime.playerController,
         weaponManager: this.runtime.weaponManager,
       });
@@ -267,6 +340,7 @@ export class GameApp {
 
   async loadMap(mapId) {
     this.networkJumpQueued = false;
+    this.selectedTeam = null;
     await this.sessionController.loadMap(mapId, {
       mouseSensitivity: this.mouseSensitivity,
       localSimulationLoop: this.localSimulationLoop,
@@ -276,6 +350,13 @@ export class GameApp {
       },
       onRuntimeActivated: () => {
         this.networkJumpQueued = false;
+        this.input.clearGameplayState();
+        this.runtime?.weaponManager?.refillAllAmmo?.();
+        this.pauseController.pause(this.localSimulationLoop, {
+          mode: 'team-select',
+          canResume: false,
+        });
+        this.rebuildHud();
       },
       onLoadStateChanged: () => {
         this.rebuildHud();
@@ -337,11 +418,17 @@ export class GameApp {
   }
 
   handleGlobalHotkeys(frameInput) {
+    const teamSelectActive = this.pauseController.isInMode('team-select');
+
     if (frameInput.justPressed.has('Escape')) {
       void this.pauseController.toggle({
         isLoadingMap: this.isLoadingMap,
         localSimulationLoop: this.localSimulationLoop,
       });
+    }
+
+    if (teamSelectActive) {
+      return;
     }
 
     if (frameInput.justPressed.has('F9')) {
@@ -512,6 +599,17 @@ export class GameApp {
   updateGameplayFrame(delta, frameInput) {
     const localCombatState = this.networkClient.getLocalPlayerState?.();
     const localPlayerAlive = localCombatState?.isAlive !== false;
+    if (!this.lastLocalPlayerAlive && localPlayerAlive) {
+      this.runtime?.weaponManager?.refillAllAmmo?.();
+    }
+    this.lastLocalPlayerAlive = localPlayerAlive;
+
+    if (this.pauseController.isPaused) {
+      this.updateNetworkState(delta);
+      this.updatePlayerPresentation(delta);
+      this.updateRemotePlayers(delta);
+      return;
+    }
 
     this.queueJumpIfRequested(frameInput);
     this.runLocalSimulation(delta, frameInput, localPlayerAlive);
@@ -650,6 +748,48 @@ export class GameApp {
       });
     } catch (error) {
       console.error('Failed to resume pointer lock.', error);
+    }
+  }
+
+  async selectTeam(teamKey, playerName = this.selectedPlayerName) {
+    if (!this.runtime?.playerController) {
+      return;
+    }
+
+    const resolvedTeam = teamKey === TEAMS.DEFENDERS ? TEAMS.DEFENDERS : TEAMS.ATTACKERS;
+    const resolvedPlayerName = sanitizePlayerName(playerName, this.selectedPlayerName);
+    const spawnState = this.runtime.getSpawnStateForTeam(resolvedTeam);
+    this.selectedTeam = resolvedTeam;
+    this.selectedPlayerName = resolvedPlayerName;
+    persistPlayerName(resolvedPlayerName);
+    this.networkJumpQueued = false;
+    this.localSimulationLoop.accumulator = 0;
+    this.runtime.playerController.spawnAt(spawnState);
+
+    if (this.getGameplaySyncEnabled()) {
+      this.gameplayNetworking.syncLocalPlayer({
+        authoritativeNetworkingEnabled: this.authoritativeNetworkingEnabled,
+        mapId: this.selectedMapId,
+        team: this.selectedTeam,
+        displayName: this.selectedPlayerName,
+        playerController: this.runtime.playerController,
+        weaponManager: this.runtime.weaponManager,
+      });
+    } else {
+      this.networkClient.suspendGameplaySync();
+    }
+
+    this.syncCombatNetworkingMode();
+    this.rebuildHud();
+
+    try {
+      await this.pauseController.resume({
+        isLoadingMap: this.isLoadingMap,
+        localSimulationLoop: this.localSimulationLoop,
+        force: true,
+      });
+    } catch (error) {
+      console.error('Failed to resume pointer lock after team selection.', error);
     }
   }
 }

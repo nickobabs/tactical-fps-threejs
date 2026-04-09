@@ -31,6 +31,7 @@ import {
   createRemoteCharacterTuningPanelUi,
   createRemoteWeaponTuningPanelUi,
 } from './remoteTuningPanels.js';
+import { TEAMS } from '../../shared/constants.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_PLAYER_BODY_RADIUS = 0.35;
@@ -41,13 +42,35 @@ const REMOTE_HIT_REACTION_DURATION = 0.18;
 const REMOTE_DEATH_TRANSITION_DURATION = 0.26;
 const REMOTE_CHARACTER_MODEL_PATH = '/models/players/tester3.glb';
 const REMOTE_EXPERIMENTAL_CHARACTER_MODEL_PATH = '/models/players/newtest.glb';
+const REMOTE_DEFENDER_CHARACTER_MODEL_PATH = '/models/players/defender.glb';
 const REMOTE_EXPERIMENTAL_ANIMATION_ROOT = '/models/players/animations';
 const REMOTE_RIFLE_MODEL_PATH = '/models/weapons/newak.glb';
+const REMOTE_BORROWED_WEAPON_MODEL_PATH = '/models/viewmodels/cube-gunman/hand_base.glb';
+const REMOTE_BORROWED_WEAPON_TEXTURES = {
+  pistol: '/models/viewmodels/cube-gunman/textures/weapon.USP.jpg',
+  knife: '/models/viewmodels/cube-gunman/textures/weapon.M9.jpg',
+};
+const REMOTE_BORROWED_WEAPON_DEFINITIONS = {
+  pistol: {
+    meshName: 'USP_1',
+    rootNodeName: 'USP',
+    muzzlePosition: [0.72, 0.1, -0.86],
+    targetLength: 0.34,
+    hideFlash: false,
+  },
+  knife: {
+    meshName: 'M9_1',
+    rootNodeName: 'M9',
+    muzzlePosition: [0, 0, 0],
+    targetLength: 0.42,
+    hideFlash: true,
+  },
+};
 const MOVEMENT_DIRECTION_EPSILON = 0.08;
 const REMOTE_JUMP_TIME_SCALE = 0.76;
 const REMOTE_JUMP_END_HOLD_RATIO = 0.58;
 const REMOTE_RIFLE_TARGET_LENGTH = 0.82;
-const REMOTE_WEAPON_TUNING_STORAGE_KEY = 'remoteWeaponTuning.v2';
+const REMOTE_WEAPON_TUNING_STORAGE_KEY = 'remoteWeaponTuning.v3';
 const REMOTE_UPPER_BODY_FADE_DURATION = 0.08;
 const REMOTE_UPPER_BODY_ACTION_DURATION = 0.22;
 const REMOTE_FULL_BODY_FIRE_ACTION_DURATION = 0.18;
@@ -94,8 +117,10 @@ const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
 const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 const REMOTE_CHARACTER_ASSET_PROMISES = new Map();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
+let REMOTE_BORROWED_WEAPON_ASSET_PROMISE = null;
 let REMOTE_CCDIK_SOLVER_PROMISE = null;
 const REMOTE_EXPERIMENTAL_CLIP_PROMISES = new Map();
+const REMOTE_WEAPON_TEXTURE_PROMISES = new Map();
 const REMOTE_ROOT_MOTION_BONE_NAMES = ['mixamorighips', 'hips', 'root', '_rootjoint', 'armature', 'bip01'];
 const REMOTE_EXPERIMENTAL_LOWER_BODY_PATTERNS = [
   /bip01$/i,
@@ -126,6 +151,61 @@ const REMOTE_CHARACTER_DEFINITIONS = {
     modelYawOffset: 0,
     supportsUpperBodyOverlay: true,
     supportsLeftHandIk: true,
+    prefersFullBodyRifleFire: true,
+    prefersFullBodyPistolFire: true,
+    externalClips: {
+      idle: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_idle.fbx` },
+      run: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_run.fbx`, playbackSpeed: 1.05 },
+      'run back': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_run_back.fbx`, playbackSpeed: 1.9 },
+      'strafe left': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_strafe_left.fbx`, playbackSpeed: 1.8 },
+      'strafe right': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_strafe_right.fbx`, playbackSpeed: 1.8 },
+      'crouch walk': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_walk.fbx`, playbackSpeed: 1.55 },
+      'crouch idle': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_idle.fbx` },
+      'crouch back': {
+        path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_walk.fbx`,
+        playbackSpeed: 1.55,
+        reverse: true,
+      },
+      jump: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_jump.fbx` },
+      fire: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_fire.fbx` },
+    },
+    skeleton: {
+      rootJoint: 'Bip01',
+      rightHand: 'Bip01 R Hand',
+      weaponSocket: 'weapon_socket_r',
+      leftUpperArm: 'Bip01 L UpperArm',
+      leftForearm: 'Bip01 L Forearm',
+      leftHand: 'Bip01 L Hand',
+    },
+    clips: {
+      idle: { type: 'pose', frame: 1280 },
+      run: { type: 'subclip', startFrame: 2050, endFrame: 2080, playbackSpeed: 1.05, loopBlendFrames: 5 },
+      'run back': { type: 'subclip', startFrame: 2005, endFrame: 2045, playbackSpeed: 1.9, loopBlendFrames: 6 },
+      'strafe left': { type: 'subclip', startFrame: 2190, endFrame: 2220, playbackSpeed: 1.8, loopBlendFrames: 5 },
+      'strafe right': { type: 'subclip', startFrame: 2225, endFrame: 2255, playbackSpeed: 1.8, loopBlendFrames: 5 },
+      'crouch walk': { type: 'subclip', startFrame: 2260, endFrame: 2300, playbackSpeed: 1.55, loopBlendFrames: 8 },
+      'crouch idle': { type: 'subclip', startFrame: 2300, endFrame: 2400 },
+      'crouch back': { type: 'subclip', startFrame: 2260, endFrame: 2300, playbackSpeed: 1.55, loopBlendFrames: 8, reverse: true },
+      jump: { type: 'subclip', startFrame: 2085, endFrame: 2110 },
+      fire: {
+        type: 'upper-body-subclip',
+        startFrame: 2425,
+        endFrame: 2435,
+        lowerBodyPatterns: REMOTE_EXPERIMENTAL_LOWER_BODY_PATTERNS,
+      },
+    },
+  },
+  defender: {
+    id: 'defender',
+    modelPath: REMOTE_DEFENDER_CHARACTER_MODEL_PATH,
+    animationMode: 'subclips',
+    sourceClipName: 'Take 001',
+    fps: 30,
+    modelYawOffset: 0,
+    supportsUpperBodyOverlay: true,
+    supportsLeftHandIk: true,
+    prefersFullBodyRifleFire: true,
+    prefersFullBodyPistolFire: true,
     externalClips: {
       idle: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_idle.fbx` },
       run: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_run.fbx`, playbackSpeed: 1.05 },
@@ -189,8 +269,16 @@ const remoteTuningStore = createRemoteTuningStore({
   defaultDebugSettings: DEFAULT_REMOTE_DEBUG_SETTINGS,
 });
 
-function getRequestedRemoteCharacterDefinition() {
+function getDefaultRemoteCharacterDefinition() {
   return REMOTE_CHARACTER_DEFINITIONS[REMOTE_CHARACTER_VARIANT] ?? REMOTE_CHARACTER_DEFINITIONS.legacy;
+}
+
+function getRequestedRemoteCharacterDefinition(teamKey = null) {
+  if (teamKey === TEAMS.DEFENDERS) {
+    return REMOTE_CHARACTER_DEFINITIONS.defender ?? getDefaultRemoteCharacterDefinition();
+  }
+
+  return getDefaultRemoteCharacterDefinition();
 }
 
 function getFallbackRemoteCharacterDefinition(definition) {
@@ -357,11 +445,15 @@ function buildRemoteCharacterAnimations(gltfAnimations, definition, externalClip
     };
   }
 
+  const needsEmbeddedSourceClip = Object.entries(definition.clips ?? {}).some(([clipName, clipDefinition]) => {
+    const externalOverride = externalClipOverrides[clipName] ?? null;
+    return !externalOverride && (clipDefinition.type === 'pose' || clipDefinition.type?.includes('subclip'));
+  });
   const sourceClip = gltfAnimations.find(
     (clip) => normalizeRemoteClipName(clip.name) === normalizeRemoteClipName(definition.sourceClipName),
   ) ?? gltfAnimations[0];
 
-  if (!sourceClip) {
+  if (needsEmbeddedSourceClip && !sourceClip) {
     throw new Error(`Remote character definition "${definition.id}" has no source animation clip.`);
   }
 
@@ -651,6 +743,58 @@ async function loadRemoteRifleAsset() {
   return REMOTE_RIFLE_ASSET_PROMISE;
 }
 
+function loadRemoteWeaponTexture(path) {
+  if (!REMOTE_WEAPON_TEXTURE_PROMISES.has(path)) {
+    const loader = new THREE.TextureLoader();
+    REMOTE_WEAPON_TEXTURE_PROMISES.set(path, loader.loadAsync(path).then((texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.flipY = false;
+      return texture;
+    }));
+  }
+  return REMOTE_WEAPON_TEXTURE_PROMISES.get(path);
+}
+
+async function loadRemoteBorrowedWeaponAsset() {
+  if (!REMOTE_BORROWED_WEAPON_ASSET_PROMISE) {
+    REMOTE_BORROWED_WEAPON_ASSET_PROMISE = (async () => {
+      const [{ GLTFLoader }, SkeletonUtils] = await Promise.all([
+        import('three/examples/jsm/loaders/GLTFLoader.js'),
+        import('three/examples/jsm/utils/SkeletonUtils.js'),
+      ]);
+      const loader = new GLTFLoader();
+      const gltf = await loader.loadAsync(REMOTE_BORROWED_WEAPON_MODEL_PATH);
+      const textures = Object.fromEntries(await Promise.all(
+        Object.entries(REMOTE_BORROWED_WEAPON_TEXTURES).map(async ([weaponKey, path]) => (
+          [weaponKey, await loadRemoteWeaponTexture(path)]
+        )),
+      ));
+      return {
+        scene: gltf.scene,
+        cloneSkinned: SkeletonUtils.clone,
+        textures,
+      };
+    })();
+  }
+
+  return REMOTE_BORROWED_WEAPON_ASSET_PROMISE;
+}
+
+async function loadRemoteWeaponAsset(weaponKey) {
+  if (weaponKey === 'rifle') {
+    return loadRemoteRifleAsset();
+  }
+  if (REMOTE_BORROWED_WEAPON_DEFINITIONS[weaponKey]) {
+    const baseAsset = await loadRemoteBorrowedWeaponAsset();
+    return {
+      ...baseAsset,
+      borrowedWeaponDefinition: REMOTE_BORROWED_WEAPON_DEFINITIONS[weaponKey],
+      weaponKey,
+    };
+  }
+  return null;
+}
+
 function normalizeRemoteClipName(name) {
   return String(name ?? '')
     .split(/[|/\\]/)
@@ -735,6 +879,20 @@ function createLabelTexture(text) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+function updateRemotePlayerLabel(visual, displayName) {
+  if (!visual?.labelSprite?.material) {
+    return;
+  }
+  const normalizedName = String(displayName ?? '').trim() || 'Player';
+  if (visual.displayName === normalizedName) {
+    return;
+  }
+  visual.labelSprite.material.map?.dispose?.();
+  visual.labelSprite.material.map = createLabelTexture(normalizedName);
+  visual.labelSprite.material.needsUpdate = true;
+  visual.displayName = normalizedName;
 }
 
 function createRemoteWeaponMesh(weaponKey) {
@@ -951,6 +1109,66 @@ function createRemoteRifleModelGroup(asset) {
     group.userData.leftHandGrip = runtimeLeftHandGrip;
   }
   return group;
+}
+
+function configureRemoteBorrowedWeaponMaterials(root, weaponDefinition, weaponTexture) {
+  const weaponMaterial = new THREE.MeshBasicMaterial({
+    map: weaponTexture,
+    side: THREE.DoubleSide,
+  });
+
+  root.traverse((object) => {
+    if (!object.isSkinnedMesh) {
+      return;
+    }
+    object.castShadow = true;
+    object.receiveShadow = true;
+    object.frustumCulled = false;
+    object.visible = object.name === weaponDefinition.meshName;
+    if (object.visible) {
+      object.material = weaponMaterial;
+    }
+  });
+}
+
+function createRemoteBorrowedWeaponModelGroup(asset) {
+  const weaponDefinition = asset.borrowedWeaponDefinition;
+  const group = createRemoteWeaponGroup();
+  const root = asset.cloneSkinned(asset.scene);
+  const flash = group.userData.flash;
+  const runtimeLeftHandGrip = group.userData.leftHandGrip;
+
+  configureRemoteBorrowedWeaponMaterials(root, weaponDefinition, asset.textures[asset.weaponKey]);
+  const rootNode = root.getObjectByName(weaponDefinition.rootNodeName);
+  if (rootNode) {
+    alignNodeToOrigin(root, rootNode);
+  }
+
+  root.updateMatrixWorld(true);
+  REMOTE_WEAPON_BOX.setFromObject(root);
+  REMOTE_WEAPON_BOX.getSize(REMOTE_WEAPON_SIZE);
+  const longestDimension = Math.max(REMOTE_WEAPON_SIZE.x, REMOTE_WEAPON_SIZE.y, REMOTE_WEAPON_SIZE.z, 1e-3);
+  group.userData.weaponLongestDimension = longestDimension;
+  group.userData.targetLength = weaponDefinition.targetLength;
+  group.add(root);
+
+  if (weaponDefinition.hideFlash) {
+    flash.visible = false;
+  } else {
+    flash.position.set(...weaponDefinition.muzzlePosition);
+    flash.visible = false;
+  }
+
+  runtimeLeftHandGrip.visible = false;
+  group.userData.leftHandGrip = runtimeLeftHandGrip;
+  return group;
+}
+
+function createRemoteWeaponModelGroup(asset) {
+  if (asset.borrowedWeaponDefinition) {
+    return createRemoteBorrowedWeaponModelGroup(asset);
+  }
+  return createRemoteRifleModelGroup(asset);
 }
 
 function createRemoteHitCapsuleDebugMesh(color) {
@@ -1232,6 +1450,7 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
 
   return {
     root,
+    displayName,
     body,
     bodyCylinder,
     bodyTop,
@@ -1258,6 +1477,8 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     fullBodyActionClip: null,
     fullBodyActionTime: 0,
     characterLoadState: 'idle',
+    requestedCharacterDefinitionId: null,
+    characterLoadRequestId: 0,
     characterWeaponBone: null,
     characterWeaponSocket: null,
     characterWeaponAnchor: null,
@@ -1269,6 +1490,7 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     characterScaleBase: 1,
     characterModelScaleAtAttach: 1,
     characterBasePosition: new THREE.Vector3(),
+    team: null,
   };
 }
 
@@ -1292,27 +1514,21 @@ function setRemotePlayerWeapon(visual, weaponKey) {
   }
 
   visual.weaponKey = nextWeaponKey;
-  if (nextWeaponKey !== 'rifle') {
-    visual.weaponMesh = createRemoteWeaponFallback(nextWeaponKey);
-    attachRemoteWeapon(visual, visual.weaponMesh);
-    return;
-  }
-
   visual.weaponMesh = createRemoteWeaponFallback(nextWeaponKey);
   attachRemoteWeapon(visual, visual.weaponMesh);
-  void loadRemoteRifleAsset()
+  void loadRemoteWeaponAsset(nextWeaponKey)
     .then((asset) => {
-      if (!visual.weaponMesh || visual.weaponKey !== nextWeaponKey) {
+      if (!asset || !visual.weaponMesh || visual.weaponKey !== nextWeaponKey) {
         return;
       }
 
       visual.weaponMesh.parent?.remove(visual.weaponMesh);
       visual.weaponMesh.userData.dispose?.();
-      visual.weaponMesh = createRemoteRifleModelGroup(asset);
+      visual.weaponMesh = createRemoteWeaponModelGroup(asset);
       attachRemoteWeapon(visual, visual.weaponMesh);
     })
     .catch((error) => {
-      console.warn('[RemotePlayerPresenter] Failed to load remote rifle model. Keeping fallback proxy.', error);
+      console.warn(`[RemotePlayerPresenter] Failed to load remote ${nextWeaponKey} model. Keeping fallback proxy.`, error);
     });
 }
 
@@ -1322,13 +1538,20 @@ function triggerRemotePlayerFireFlash(visual) {
   }
 
   visual.flashTime = REMOTE_FIRE_FLASH_DURATION;
-  if (visual.characterDefinition?.id === 'experimental' && visual.weaponKey === 'rifle') {
+  if (visual.characterDefinition?.prefersFullBodyRifleFire && visual.weaponKey === 'rifle') {
     if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
       visual.fullBodyActionClip = REMOTE_CLIPS.fire;
       visual.fullBodyActionTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
       return;
     }
     return;
+  }
+  if (visual.characterDefinition?.prefersFullBodyPistolFire && visual.weaponKey === 'pistol') {
+    if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
+      visual.fullBodyActionClip = REMOTE_CLIPS.fire;
+      visual.fullBodyActionTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
+      return;
+    }
   }
   playRemoteUpperBodyClip(visual, REMOTE_CLIPS.fire);
 }
@@ -1720,17 +1943,44 @@ function attachRemoteCharacterModel(visual, asset) {
 }
 
 function ensureRemoteCharacterModel(visual) {
-  if (!visual || visual.characterLoadState === 'loading' || visual.characterLoadState === 'ready') {
+  if (!visual) {
     return;
   }
 
-  const requestedDefinition = getRequestedRemoteCharacterDefinition();
+  const requestedDefinition = getRequestedRemoteCharacterDefinition(visual.team);
+  if (
+    visual.characterLoadState === 'loading'
+    && visual.requestedCharacterDefinitionId === requestedDefinition.id
+  ) {
+    return;
+  }
+
+  if (
+    visual.characterLoadState === 'ready'
+    && visual.characterDefinition?.id === requestedDefinition.id
+  ) {
+    return;
+  }
+
+  if (visual.characterLoadState === 'ready' && visual.characterDefinition?.id !== requestedDefinition.id) {
+    disposeRemoteCharacterModel(visual);
+  }
+
+  const requestId = visual.characterLoadRequestId + 1;
+  visual.characterLoadRequestId = requestId;
+  visual.requestedCharacterDefinitionId = requestedDefinition.id;
   visual.characterLoadState = 'loading';
   void loadRemoteCharacterAsset(requestedDefinition)
     .then((asset) => {
+      if (visual.characterLoadRequestId !== requestId) {
+        return;
+      }
       attachRemoteCharacterModel(visual, asset);
     })
     .catch((error) => {
+      if (visual.characterLoadRequestId !== requestId) {
+        return;
+      }
       const fallbackDefinition = getFallbackRemoteCharacterDefinition(requestedDefinition);
       if (!fallbackDefinition) {
         visual.characterLoadState = 'failed';
@@ -1744,9 +1994,15 @@ function ensureRemoteCharacterModel(visual) {
       );
       return loadRemoteCharacterAsset(fallbackDefinition)
         .then((fallbackAsset) => {
+          if (visual.characterLoadRequestId !== requestId) {
+            return;
+          }
           attachRemoteCharacterModel(visual, fallbackAsset);
         })
         .catch((fallbackError) => {
+          if (visual.characterLoadRequestId !== requestId) {
+            return;
+          }
           visual.characterLoadState = 'failed';
           console.warn('[RemotePlayerPresenter] Failed to load fallback remote character model. Falling back to proxy body.', fallbackError);
         });
@@ -1796,6 +2052,12 @@ function selectMovementClip(authoritativeState, presentationState) {
 }
 
 function getCharacterWeaponPose(weaponKey, isScoped) {
+  if (weaponKey === 'pistol') {
+    return isScoped
+      ? { position: [0.01, 0.18, -0.08], rotation: [0.02, -0.18, -0.02], scale: 0.88 }
+      : { position: [0.04, 0.14, -0.04], rotation: [0.08, -0.12, -0.08], scale: 0.9 };
+  }
+
   if (weaponKey === 'sniper') {
     return isScoped
       ? { position: [-0.02, -0.02, -0.38], rotation: [0.08, -0.24, -0.08], scale: 1.15 }
@@ -1998,12 +2260,18 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
       const normalizedRifleScale = (REMOTE_RIFLE_TARGET_LENGTH
         / Math.max(visual.weaponMesh.userData.rifleLongestDimension ?? 1, 1e-3))
         / inheritedAnchorScale;
-      const rifleScale = visual.weaponKey === 'rifle'
+      const targetLength = Number(visual.weaponMesh.userData.targetLength ?? 0);
+      const normalizedWeaponScale = targetLength > 0
+        ? (targetLength / Math.max(visual.weaponMesh.userData.weaponLongestDimension ?? 1, 1e-3)) / inheritedAnchorScale
+        : null;
+      const weaponScale = visual.weaponKey === 'rifle'
         ? normalizedRifleScale * Math.max(0.001, Number(pose.scale ?? 1))
-        : pose.scale;
+        : normalizedWeaponScale
+          ? normalizedWeaponScale * Math.max(0.001, Number(pose.scale ?? 1))
+          : pose.scale;
       visual.weaponMesh.position.set(...pose.position);
       visual.weaponMesh.rotation.set(...pose.rotation);
-      visual.weaponMesh.scale.setScalar(rifleScale);
+      visual.weaponMesh.scale.setScalar(weaponScale);
     } else {
       const pose = getCharacterWeaponPose(visual.weaponKey, isScopedStance);
       visual.weaponMesh.position.set(...pose.position);
@@ -2147,13 +2415,17 @@ export class RemotePlayerPresenter {
           pitch: authoritativeState.pitch,
           currentHeight: authoritativeState.currentHeight,
           isCrouched: authoritativeState.isCrouched,
+          team: authoritativeState.team,
           activeWeaponKey: authoritativeState.activeWeaponKey,
           isScoped: authoritativeState.isScoped,
           presentationState: authoritativeState.presentationState,
           isAlive: authoritativeState.isAlive,
         }
         : player;
+      visual.team = renderPlayer.team ?? authoritativeState?.team ?? null;
+      ensureRemoteCharacterModel(visual);
       setRemotePlayerWeapon(visual, authoritativeState?.activeWeaponKey ?? renderPlayer.activeWeaponKey);
+      updateRemotePlayerLabel(visual, renderPlayer.displayName ?? authoritativeState?.displayName ?? player.playerId);
       visual.labelSprite.visible = true;
       updateRemotePlayerVisual(visual, renderPlayer, delta, authoritativeState, {
         alive: this.remotePlayerMaterial,

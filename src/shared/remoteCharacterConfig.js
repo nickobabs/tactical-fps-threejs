@@ -38,9 +38,11 @@ export const REMOTE_PRIMARY_CHARACTER_SKELETON = {
 export const REMOTE_EXPERIMENTAL_SKELETON = REMOTE_PRIMARY_CHARACTER_SKELETON;
 
 export const DEFAULT_REMOTE_SOCKET_POSES = {
+  pistolScoped: { position: [0.004, 0.085, -0.016], rotation: [0.3, 3.03, -1.47], scale: 2.5 },
+  pistolHip: { position: [0.004, 0.085, -0.016], rotation: [0.3, 3.03, -1.47], scale: 2.5 },
   sniperScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 0.92 },
   sniperHip: { position: [-0.03, -0.03, 0.01], rotation: [1.44, 0.12, -1.38], scale: 0.96 },
-  knife: { position: [0.01, -0.01, -0.01], rotation: [0.2, -1.2, 0.5], scale: 0.95 },
+  knife: { position: [0.028, 0.008, -0.01], rotation: [0.17, 2.59, -1.82], scale: 2.5 },
   rifleScoped: { position: [-0.035, -0.025, 0.005], rotation: [1.5, 0.08, -1.5], scale: 1.08 },
   rifleHip: { position: [0.011, -0.002, -0.027], rotation: [-2.85, 1.67, 3.01], scale: 1.26 },
 };
@@ -61,6 +63,9 @@ export const REMOTE_CHARACTER_HITBOX_SETTINGS = {
 };
 
 export function getRemoteSocketPoseKey(weaponKey, isScoped) {
+  if (weaponKey === 'pistol') {
+    return isScoped ? 'pistolScoped' : 'pistolHip';
+  }
   if (weaponKey === 'sniper') {
     return 'sniperHip';
   }

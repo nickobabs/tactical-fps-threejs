@@ -83,19 +83,7 @@ export class GameSessionController {
       this.runtime.weaponManager?.setBaseFov(this.camera.fov);
       this.runtime.playerController?.setBaseFov(this.camera.fov);
       this.debugController.syncCollisionDebugMesh(this.runtime.map?.collisionGeometry);
-      if (this.gameplayNetworking.isGameplaySyncEnabled({
-        authoritativeNetworkingEnabled: this.authoritativeNetworkingEnabled,
-        playerController: this.runtime.playerController,
-      })) {
-        this.gameplayNetworking.syncLocalPlayer({
-          authoritativeNetworkingEnabled: this.authoritativeNetworkingEnabled,
-          mapId: this.selectedMapId,
-          playerController: this.runtime.playerController,
-          weaponManager: this.runtime.weaponManager,
-        });
-      } else {
-        this.networkClient.suspendGameplaySync();
-      }
+      this.networkClient.suspendGameplaySync();
       runtime = null;
 
       this.loadingStatus = '';

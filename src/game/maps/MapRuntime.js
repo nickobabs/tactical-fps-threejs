@@ -40,6 +40,22 @@ export class MapRuntime {
     this.targetManager = targetManager;
   }
 
+  getSpawnStateForTeam(teamKey) {
+    const teamSpawnPoints = this.map?.teamSpawnPoints?.[teamKey];
+    if (Array.isArray(teamSpawnPoints) && teamSpawnPoints.length > 0) {
+      const selectedSpawn = teamSpawnPoints[Math.floor(Math.random() * teamSpawnPoints.length)];
+      return {
+        position: selectedSpawn.position,
+        yaw: Number(selectedSpawn.yaw ?? 0),
+      };
+    }
+
+    return {
+      position: this.map?.spawnPoint ?? { x: 0, y: 0, z: 0 },
+      yaw: Number(this.map?.spawnYaw ?? 0),
+    };
+  }
+
   static async create({
     mapOption,
     camera,
@@ -135,6 +151,7 @@ export class MapRuntime {
         mouseSensitivity,
         getSpeedMultiplier: () => runtime.weaponManager?.getMovementSpeedMultiplier() ?? 1,
       });
+      runtime.weaponManager.setPlayerController(runtime.playerController);
 
       return runtime;
     } catch (error) {

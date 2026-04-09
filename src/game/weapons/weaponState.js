@@ -35,8 +35,14 @@ export function canWeaponFire({
   leftHeld,
   triggerHeld,
   cooldown,
+  isReloading = false,
+  ammoInMagazine = Infinity,
 }) {
-  if (currentWeapon.canFire === false || cooldown !== 0 || !canViewModelFire) {
+  if (currentWeapon.canFire === false || cooldown !== 0 || !canViewModelFire || isReloading) {
+    return false;
+  }
+
+  if (Number(currentWeapon.magazineSize ?? 0) > 0 && ammoInMagazine <= 0) {
     return false;
   }
 

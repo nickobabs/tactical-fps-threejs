@@ -36,6 +36,8 @@ export function createPlayerFireMessage(fireRequest, timestamp) {
 export function createPlayerReadyMessage(state) {
   return {
     mapId: String(state?.mapId ?? 'training-ground'),
+    team: String(state?.team ?? 'attackers'),
+    displayName: String(state?.displayName ?? '').trim(),
     position: {
       x: Number(state?.position?.x ?? 0),
       y: Number(state?.position?.y ?? 0),

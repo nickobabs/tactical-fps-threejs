@@ -5,11 +5,24 @@ export const SHARED_WEAPON_DATA = {
   rifle: {
     key: 'rifle',
     damage: 5,
-    fireInterval: 0.095,
+    fireInterval: 1 / 8,
     automatic: true,
     canScope: true,
     hipfireSpread: 0,
     movementSpeedMultiplier: 1,
+    magazineSize: 30,
+    reserveAmmo: 90,
+    reloadTime: 2.45,
+    visualRecoil: {
+      warmupShots: 4,
+      initialPitch: 0.024,
+      warmupPitch: 0.036,
+      curveShots: 8,
+      maxPitch: 0.14,
+      shotResetDelay: 0.22,
+      recoveryFast: 16,
+      recoverySlow: 6.5,
+    },
   },
   pistol: {
     key: 'pistol',
@@ -19,6 +32,9 @@ export const SHARED_WEAPON_DATA = {
     canScope: true,
     hipfireSpread: 0.012,
     movementSpeedMultiplier: 1.04,
+    magazineSize: 12,
+    reserveAmmo: 36,
+    reloadTime: 1.9,
   },
   sniper: {
     key: 'sniper',
@@ -28,6 +44,9 @@ export const SHARED_WEAPON_DATA = {
     canScope: true,
     hipfireSpread: 0.05,
     movementSpeedMultiplier: 0.96,
+    magazineSize: 5,
+    reserveAmmo: 20,
+    reloadTime: 3.1,
   },
   knife: {
     key: 'knife',
@@ -38,6 +57,9 @@ export const SHARED_WEAPON_DATA = {
     canScope: false,
     hipfireSpread: 0,
     movementSpeedMultiplier: 1.25,
+    magazineSize: 0,
+    reserveAmmo: 0,
+    reloadTime: 0,
   },
 };
 

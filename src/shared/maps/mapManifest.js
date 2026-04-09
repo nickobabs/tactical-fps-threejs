@@ -92,7 +92,34 @@ export const MAP_MANIFEST = [
       source: 'defaults',
       movementMode: 'grounded',
       allowGroundedMode: true,
-      spawnMarkers: ['spawn_01', 'spawn_02'],
+      spawnMarkers: [
+        'spawn_01',
+        'spawn_02',
+        'spawn_03',
+        'spawn_04',
+        'spawn_05',
+        'spawn_06',
+        'spawn_07',
+        'spawn_08',
+        'spawn_09',
+        'spawn_10',
+      ],
+      teamSpawnMarkers: {
+        attackers: [
+          'spawn_01',
+          'spawn_02',
+          'spawn_03',
+          'spawn_04',
+          'spawn_05',
+        ],
+        defenders: [
+          'spawn_06',
+          'spawn_07',
+          'spawn_08',
+          'spawn_09',
+          'spawn_10',
+        ],
+      },
     },
     assets: {
       navigation: {
@@ -106,7 +133,7 @@ export const MAP_MANIFEST = [
       },
       render: {
         source: 'gltf-scene',
-        path: '/maps/d2maptest.glb',
+        path: '/maps/d2maptestv2.glb',
       },
     },
   },

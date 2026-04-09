@@ -318,6 +318,8 @@ export class NetworkClient {
         && previousSnapshot.pitch === normalizedState.pitch
         && previousSnapshot.currentHeight === normalizedState.currentHeight
         && previousSnapshot.isCrouched === normalizedState.isCrouched
+        && previousSnapshot.displayName === normalizedState.displayName
+        && previousSnapshot.team === normalizedState.team
         && previousSnapshot.activeWeaponKey === normalizedState.activeWeaponKey
         && previousSnapshot.isScoped === normalizedState.isScoped
         && previousSnapshot.presentationState === normalizedState.presentationState
@@ -604,6 +606,7 @@ export class NetworkClient {
           currentHeight: snapshot.currentHeight,
           isCrouched: snapshot.isCrouched,
           displayName: snapshot.displayName,
+          team: snapshot.team,
           activeWeaponKey: snapshot.activeWeaponKey,
           isScoped: snapshot.isScoped,
           presentationState: snapshot.presentationState,
@@ -635,6 +638,7 @@ export class NetworkClient {
           currentHeight: nextSnapshot.currentHeight,
           isCrouched: nextSnapshot.isCrouched,
           displayName: nextSnapshot.displayName,
+          team: nextSnapshot.team,
           activeWeaponKey: nextSnapshot.activeWeaponKey,
           isScoped: nextSnapshot.isScoped,
           presentationState: nextSnapshot.presentationState,
@@ -658,6 +662,7 @@ export class NetworkClient {
         currentHeight: lerp(previousSnapshot.currentHeight, nextSnapshot.currentHeight, alpha),
         isCrouched: nextSnapshot.isCrouched,
         displayName: nextSnapshot.displayName,
+        team: nextSnapshot.team,
         activeWeaponKey: nextSnapshot.activeWeaponKey,
         isScoped: nextSnapshot.isScoped,
         presentationState: nextSnapshot.presentationState,

@@ -1,4 +1,5 @@
 import { createPauseMenu } from './createPauseMenu.js';
+import { createTeamSelectOverlay } from './createTeamSelectOverlay.js';
 
 export function createHud({
   container,
@@ -15,12 +16,17 @@ export function createHud({
   getMouseSensitivity,
   getHorizontalFov,
   onResume,
+  onSelectTeam,
+  onToggleHudMode,
   onSelectMap,
   onSensitivityChange,
   onFovChange,
   onVolumeChange,
   maps = [],
   getSelectedMapId,
+  getSelectedTeam,
+  getSelectedPlayerName,
+  getHudMode,
   getIsLoading,
   getLoadingStatus,
   getIgnoreLocalCorrections,
@@ -94,6 +100,30 @@ export function createHud({
         </div>
       </div>
     </div>
+    <div class="hud__classic">
+      <div class="hud__classic-left">
+        <div class="hud__classic-stat">
+          <span class="hud__classic-icon">+</span>
+          <span class="hud__classic-value hud__classic-health"></span>
+        </div>
+        <div class="hud__classic-stat">
+          <span class="hud__classic-icon">O</span>
+          <span class="hud__classic-value hud__classic-armor"></span>
+        </div>
+      </div>
+      <div class="hud__classic-center">
+        <div class="hud__classic-time"></div>
+        <div class="hud__classic-phase"></div>
+      </div>
+      <div class="hud__classic-right">
+        <div class="hud__classic-ammo">
+          <span class="hud__classic-ammo-mag"></span>
+          <span class="hud__classic-ammo-sep">|</span>
+          <span class="hud__classic-ammo-reserve"></span>
+        </div>
+        <div class="hud__classic-weapon"></div>
+      </div>
+    </div>
     <div class="hud__bottom">
       <div class="hud__health"></div>
       <div class="hud__weapon"></div>
@@ -123,6 +153,10 @@ export function createHud({
     getMouseSensitivity,
     getHorizontalFov,
   });
+  const teamSelectOverlay = createTeamSelectOverlay({
+    parent: hud,
+    onSelectTeam,
+  });
 
   const roundEl = hud.querySelector('.hud__round');
   const fpsEl = hud.querySelector('.hud__fps');
@@ -142,12 +176,23 @@ export function createHud({
   const scopeEl = hud.querySelector('.hud__scope');
   const loadingEl = hud.querySelector('.hud__loading');
   const loadingStatusEl = hud.querySelector('.hud__loading-status');
+  const topClusterEl = hud.querySelector('.hud__top');
+  const bottomClusterEl = hud.querySelector('.hud__bottom');
   const scoreboardEl = hud.querySelector('.hud__scoreboard');
+  const classicEl = hud.querySelector('.hud__classic');
+  const classicHealthEl = hud.querySelector('.hud__classic-health');
+  const classicArmorEl = hud.querySelector('.hud__classic-armor');
+  const classicTimeEl = hud.querySelector('.hud__classic-time');
+  const classicPhaseEl = hud.querySelector('.hud__classic-phase');
+  const classicAmmoMagEl = hud.querySelector('.hud__classic-ammo-mag');
+  const classicAmmoReserveEl = hud.querySelector('.hud__classic-ammo-reserve');
+  const classicWeaponEl = hud.querySelector('.hud__classic-weapon');
   const scoreboardSubtitleEl = hud.querySelector('.hud__scoreboard-subtitle');
   const scoreboardTeamEls = [...hud.querySelectorAll('.hud__scoreboard-team')];
   const netDebugCopyEl = hud.querySelector('.hud__netdebug-copy');
   const netDebugEl = hud.querySelector('.hud__netdebug');
   let paused = false;
+  let pauseMode = null;
   let showNetDebug = false;
   let showScoreboard = false;
   let displaySpeed = 0;
@@ -169,6 +214,14 @@ export function createHud({
   let lastScoreboardSubtitle = '';
   const lastScoreboardTeamMarkup = new Map();
   let lastNetDebugText = '';
+  let lastClassicVisible = null;
+  let lastClassicHealthText = '';
+  let lastClassicArmorText = '';
+  let lastClassicTimeText = '';
+  let lastClassicPhaseText = '';
+  let lastClassicAmmoMagText = '';
+  let lastClassicAmmoReserveText = '';
+  let lastClassicWeaponText = '';
   let lastNetDebugCopyHidden = true;
   let currentNetDebugText = '';
   let copyFeedbackTimeoutId = 0;
@@ -295,6 +348,12 @@ export function createHud({
       return;
     }
 
+    if (event.code === 'F2') {
+      onToggleHudMode?.();
+      event.preventDefault();
+      return;
+    }
+
     if (event.code === 'Tab') {
       showScoreboard = true;
       event.preventDefault();
@@ -388,11 +447,15 @@ export function createHud({
         window.clearTimeout(copyFeedbackTimeoutId);
       }
       pauseMenu.destroy();
+      teamSelectOverlay.destroy();
       hud.remove();
     },
-    setPaused(nextPaused) {
+    setPauseState({ paused: nextPaused, mode = null }) {
       paused = nextPaused;
-      pauseMenu.setPaused(paused);
+      pauseMode = mode;
+      pauseMenu.setVisible(paused && pauseMode === 'menu');
+      teamSelectOverlay.setActive(paused && pauseMode === 'team-select');
+      teamSelectOverlay.setPlayerName(getSelectedPlayerName?.() ?? '');
     },
     update() {
       const markDebugSnapshotRequested = Boolean(consumeMarkDebugSnapshotRequested?.());
@@ -472,18 +535,32 @@ export function createHud({
         teams: [],
       };
       const healthText = `Health: ${localPlayerState?.health ?? '--'}/${localPlayerState?.maxHealth ?? '--'}${localPlayerState?.isAlive === false ? ' - DOWN' : ''}`;
-      const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}`;
+      const weaponHudState = weaponManager?.getHudState?.() ?? null;
+      const ammoLabel = weaponHudState && weaponHudState.magazineSize > 0
+        ? ` - ${weaponHudState.ammoInMagazine}/${weaponHudState.reserveAmmo}${weaponHudState.isReloading ? ' RELOAD' : ''}`
+        : '';
+      const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}${ammoLabel}`;
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
       const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
       const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${movement.traceRecording ? ' - TRACE(F10)' : ''}`;
       const positionText = `Pos: ${movement.positionText ?? '0.00, 0.00, 0.00'} - ${movement.movementMode ?? 'grounded'}`;
       const pointerText = paused
-        ? 'Paused'
+        ? pauseMode === 'team-select'
+          ? 'Choose a team'
+          : 'Paused'
         : input.pointerLocked
           ? 'Pointer locked'
           : 'Click to capture mouse';
       const scoreboardVisible = showScoreboard && !paused;
+      const hudMode = getHudMode?.() ?? 'debug';
+      const classicVisible = hudMode === 'classic' && !paused;
+      if (classicVisible !== lastClassicVisible) {
+        classicEl.classList.toggle('hud__classic--active', classicVisible);
+        topClusterEl?.classList.toggle('hud__cluster--hidden', classicVisible);
+        bottomClusterEl?.classList.toggle('hud__cluster--hidden', classicVisible);
+        lastClassicVisible = classicVisible;
+      }
       if (scoreboardVisible !== lastScoreboardHidden) {
         scoreboardEl.classList.toggle('hud__scoreboard--active', scoreboardVisible);
         lastScoreboardHidden = scoreboardVisible;
@@ -520,6 +597,32 @@ export function createHud({
       lastMovementText = setTextIfChanged(movementEl, movementText, lastMovementText);
       lastPositionText = setTextIfChanged(positionEl, positionText, lastPositionText);
       lastPointerText = setTextIfChanged(pointerEl, pointerText, lastPointerText);
+      const phaseDuration = roundManager
+        ? (roundManager.phase === 'freeze' ? roundManager.freezeDuration : roundManager.liveDuration)
+        : 0;
+      const timeLeft = Math.max(0, phaseDuration - Number(roundManager?.phaseTime ?? 0));
+      const minutes = Math.floor(timeLeft / 60);
+      const seconds = Math.floor(timeLeft % 60);
+      const classicTimeText = `${minutes}:${String(seconds).padStart(2, '0')}`;
+      const classicPhaseText = roundManager
+        ? `Round ${roundManager.roundNumber} - ${String(roundManager.phase ?? '').toUpperCase()}`
+        : 'Round --';
+      const classicHealthText = String(localPlayerState?.health ?? '--');
+      const classicArmorText = '0';
+      const classicAmmoMagText = weaponHudState && weaponHudState.magazineSize > 0
+        ? String(weaponHudState.ammoInMagazine)
+        : '--';
+      const classicAmmoReserveText = weaponHudState && weaponHudState.magazineSize > 0
+        ? String(weaponHudState.reserveAmmo)
+        : '--';
+      const classicWeaponText = weaponHudState?.activeWeaponLabel ?? '--';
+      lastClassicHealthText = setTextIfChanged(classicHealthEl, classicHealthText, lastClassicHealthText);
+      lastClassicArmorText = setTextIfChanged(classicArmorEl, classicArmorText, lastClassicArmorText);
+      lastClassicTimeText = setTextIfChanged(classicTimeEl, classicTimeText, lastClassicTimeText);
+      lastClassicPhaseText = setTextIfChanged(classicPhaseEl, classicPhaseText, lastClassicPhaseText);
+      lastClassicAmmoMagText = setTextIfChanged(classicAmmoMagEl, classicAmmoMagText, lastClassicAmmoMagText);
+      lastClassicAmmoReserveText = setTextIfChanged(classicAmmoReserveEl, classicAmmoReserveText, lastClassicAmmoReserveText);
+      lastClassicWeaponText = setTextIfChanged(classicWeaponEl, classicWeaponText, lastClassicWeaponText);
 
       const damageVignette = Math.max(0, Math.min(1, Number(getDamageVignette?.() ?? 0)));
       if (Math.abs(damageVignette - lastDamageVignette) > 0.01) {
@@ -613,6 +716,7 @@ export function createHud({
         selectedMapId: getSelectedMapId?.(),
         selectedSkyboxId: getSelectedSkyboxId?.(),
       });
+      teamSelectOverlay.updateSelection(getSelectedTeam?.() ?? null);
     },
   };
 }

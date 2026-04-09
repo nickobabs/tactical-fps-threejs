@@ -39,6 +39,9 @@ export class WeaponManager {
     this.onWeaponChanged = null;
     this.debugForceAdsPreview = false;
     this.debugShowMuzzlePreview = false;
+    this.playerController = null;
+    this.weaponAmmoStates = new Map();
+    this.reloadTimeRemaining = 0;
 
     this.raycaster = new THREE.Raycaster();
     this.temporaryObjects = [];
@@ -67,7 +70,18 @@ export class WeaponManager {
     this.camera.fov = this.baseFov;
     this.camera.updateProjectionMatrix();
 
+    this.initializeAmmoState();
     this.equipWeapon('rifle');
+  }
+
+  initializeAmmoState() {
+    this.weaponAmmoStates.clear();
+    for (const [weaponKey, weaponConfig] of Object.entries(WEAPON_CONFIGS)) {
+      this.weaponAmmoStates.set(weaponKey, {
+        ammoInMagazine: Math.max(0, Number(weaponConfig.magazineSize ?? 0)),
+        reserveAmmo: Math.max(0, Number(weaponConfig.reserveAmmo ?? 0)),
+      });
+    }
   }
 
   getMovementSpeedMultiplier() {
@@ -89,12 +103,77 @@ export class WeaponManager {
     this.onWeaponChanged = onWeaponChanged;
   }
 
+  setPlayerController(playerController) {
+    this.playerController = playerController ?? null;
+  }
+
+  getCurrentAmmoState() {
+    return this.weaponAmmoStates.get(this.activeWeaponKey) ?? {
+      ammoInMagazine: 0,
+      reserveAmmo: 0,
+    };
+  }
+
+  getHudState() {
+    const ammoState = this.getCurrentAmmoState();
+    return {
+      activeWeaponKey: this.activeWeaponKey,
+      activeWeaponLabel: this.activeWeapon,
+      ammoInMagazine: ammoState.ammoInMagazine,
+      reserveAmmo: ammoState.reserveAmmo,
+      magazineSize: Math.max(0, Number(this.currentWeapon?.magazineSize ?? 0)),
+      isReloading: this.reloadTimeRemaining > 0,
+      reloadTimeRemaining: this.reloadTimeRemaining,
+    };
+  }
+
+  canCurrentWeaponReload() {
+    const ammoState = this.getCurrentAmmoState();
+    const magazineSize = Math.max(0, Number(this.currentWeapon?.magazineSize ?? 0));
+    return magazineSize > 0
+      && ammoState.ammoInMagazine < magazineSize
+      && ammoState.reserveAmmo > 0;
+  }
+
+  startReload() {
+    if (!this.currentWeapon || this.reloadTimeRemaining > 0 || !this.canCurrentWeaponReload()) {
+      return false;
+    }
+
+    this.reloadTimeRemaining = Math.max(0.01, Number(this.currentWeapon.reloadTime ?? 0.01));
+    this.isScoped = false;
+    this.showScopeOverlay = false;
+    this.showAdsReticle = false;
+    this.wasScoped = false;
+    this.viewModelController?.playReload?.();
+    return true;
+  }
+
+  completeReload() {
+    const ammoState = this.getCurrentAmmoState();
+    const magazineSize = Math.max(0, Number(this.currentWeapon?.magazineSize ?? 0));
+    if (magazineSize <= 0) {
+      return;
+    }
+
+    const missingAmmo = Math.max(0, magazineSize - ammoState.ammoInMagazine);
+    const transferredAmmo = Math.min(missingAmmo, ammoState.reserveAmmo);
+    ammoState.ammoInMagazine += transferredAmmo;
+    ammoState.reserveAmmo -= transferredAmmo;
+  }
+
+  refillAllAmmo() {
+    this.initializeAmmoState();
+    this.reloadTimeRemaining = 0;
+  }
+
   equipWeapon(weaponKey) {
     const nextSelectionState = getWeaponSelectionState(this.activeWeaponKey, weaponKey);
     if (!nextSelectionState) {
       return;
     }
 
+    this.reloadTimeRemaining = 0;
     Object.assign(this, nextSelectionState);
     Object.assign(this, applyActiveViewModelSelection({
       currentViewModel: this.viewModel,
@@ -114,6 +193,11 @@ export class WeaponManager {
     this.handleScope(frameInput.mouseButtons);
 
     this.cooldown = Math.max(0, this.cooldown - delta);
+    const previousReloadTimeRemaining = this.reloadTimeRemaining;
+    this.reloadTimeRemaining = Math.max(0, this.reloadTimeRemaining - delta);
+    if (previousReloadTimeRemaining > 0 && this.reloadTimeRemaining === 0) {
+      this.completeReload();
+    }
     this.flashTime = Math.max(0, this.flashTime - delta);
     this.recoil = THREE.MathUtils.damp(this.recoil, 0, 16, delta);
     this.knifeAttackTime = Math.max(0, this.knifeAttackTime - delta);
@@ -128,12 +212,27 @@ export class WeaponManager {
 
     const leftHeld = frameInput.mouseButtons.has(0);
     const canViewModelFire = this.viewModelController?.canFire?.() ?? true;
+    if (frameInput.justPressed.has('KeyR')) {
+      this.startReload();
+    }
+    const ammoState = this.getCurrentAmmoState();
+    const hasMagazine = Number(this.currentWeapon?.magazineSize ?? 0) > 0;
+    if (
+      leftHeld
+      && hasMagazine
+      && ammoState.ammoInMagazine <= 0
+      && this.reloadTimeRemaining <= 0
+    ) {
+      this.startReload();
+    }
     const shouldFire = canWeaponFire({
       currentWeapon: this.currentWeapon,
       canViewModelFire,
       leftHeld,
       triggerHeld: this.triggerHeld,
       cooldown: this.cooldown,
+      isReloading: this.reloadTimeRemaining > 0,
+      ammoInMagazine: ammoState.ammoInMagazine,
     });
 
     if (shouldFire) {
@@ -192,6 +291,11 @@ export class WeaponManager {
     this.cooldown = this.currentWeapon.fireInterval;
     this.flashTime = 0.04;
     this.recoil = Math.min(this.recoil + (this.activeWeaponKey === 'sniper' ? 1.25 : 1), 1.5);
+    this.playerController?.applyVisualRecoil?.(this.currentWeapon.visualRecoil ?? null);
+    const ammoState = this.getCurrentAmmoState();
+    if (Number(this.currentWeapon.magazineSize ?? 0) > 0) {
+      ammoState.ammoInMagazine = Math.max(0, ammoState.ammoInMagazine - 1);
+    }
     this.shotCount += 1;
     executeWeaponShot({
       activeWeaponKey: this.activeWeaponKey,

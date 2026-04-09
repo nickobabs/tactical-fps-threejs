@@ -148,9 +148,9 @@ export function createPauseMenu({
       skyboxButtons.forEach((button) => button.removeEventListener('click', handleSkyboxSelect));
       pause.remove();
     },
-    setPaused(paused) {
-      pause.classList.toggle('hud__pause--active', paused);
-      if (!paused) {
+    setVisible(visible) {
+      pause.classList.toggle('hud__pause--active', visible);
+      if (!visible) {
         bindingsEl.classList.remove('hud__bindings--visible');
         mapsEl.classList.remove('hud__maps--visible');
         skyboxesEl.classList.remove('hud__skyboxes--visible');

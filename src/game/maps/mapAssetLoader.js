@@ -6,6 +6,7 @@ import {
   createCollisionGeometryFromScene,
 } from '../../shared/maps/mapCollision.js';
 import { findNamedSpawnPoint } from '../../shared/maps/mapSpawnMarkers.js';
+import { TEAMS } from '../../shared/constants.js';
 
 const MAP_RUNTIME_LOADERS = {
   'training-ground': () => import('./TrainingGround.js'),
@@ -155,6 +156,81 @@ function scoreSpawnSupport(collisionWorld, pointY, sampleX, sampleZ) {
   return supportedSamples * 10 - accumulatedHeightDelta;
 }
 
+function createSpawnCollisionWorld(collisionGeometry, fallbackGroundHeight) {
+  if (!collisionGeometry) {
+    return null;
+  }
+
+  return new CollisionWorld({
+    groundHeight: fallbackGroundHeight,
+    collisionGeometry,
+  });
+}
+
+function groundSpawnState(spawnState, collisionWorld, fallbackGroundHeight) {
+  const fallbackY = Number(fallbackGroundHeight ?? spawnState?.position?.y ?? 0);
+  const groundedY = collisionWorld?.getGroundHeightAt(
+    Number(spawnState?.position?.x ?? 0),
+    Number(spawnState?.position?.z ?? 0),
+    Number(spawnState?.position?.y ?? fallbackY) + 0.5,
+    2,
+    8,
+  ) ?? fallbackY;
+
+  return {
+    ...spawnState,
+    position: {
+      x: Number(spawnState?.position?.x ?? 0),
+      y: Number(groundedY),
+      z: Number(spawnState?.position?.z ?? 0),
+    },
+    yaw: Number(spawnState?.yaw ?? 0),
+  };
+}
+
+function getSpawnSearchRoots(renderMap) {
+  return [renderMap.collisionScene, renderMap.scene].filter((root, index, roots) => (
+    Boolean(root) && roots.indexOf(root) === index
+  ));
+}
+
+function resolveTeamSpawnPoints(entry, renderMap, collisionGeometry, fallbackGroundHeight) {
+  const teamSpawnMarkers = entry.gameplay?.teamSpawnMarkers;
+  if (!teamSpawnMarkers || typeof teamSpawnMarkers !== 'object') {
+    return null;
+  }
+
+  const roots = getSpawnSearchRoots(renderMap);
+  const collisionWorld = createSpawnCollisionWorld(collisionGeometry, fallbackGroundHeight);
+  const resolvedTeamSpawns = {};
+
+  for (const teamKey of [TEAMS.ATTACKERS, TEAMS.DEFENDERS]) {
+    const markerNames = teamSpawnMarkers[teamKey];
+    if (!Array.isArray(markerNames) || markerNames.length === 0) {
+      continue;
+    }
+
+    const teamSpawnPoints = [];
+    for (const markerName of markerNames) {
+      for (const root of roots) {
+        const marker = findNamedSpawnPoint(root, [markerName]);
+        if (!marker) {
+          continue;
+        }
+
+        teamSpawnPoints.push(groundSpawnState(marker, collisionWorld, fallbackGroundHeight));
+        break;
+      }
+    }
+
+    if (teamSpawnPoints.length > 0) {
+      resolvedTeamSpawns[teamKey] = teamSpawnPoints;
+    }
+  }
+
+  return Object.keys(resolvedTeamSpawns).length > 0 ? resolvedTeamSpawns : null;
+}
+
 function resolveDefaultGameplayState(entry, renderMap, collisionGeometry) {
   const explicitSpawn = entry.gameplay?.spawnPoint;
   if (explicitSpawn) {
@@ -175,26 +251,12 @@ function resolveDefaultGameplayState(entry, renderMap, collisionGeometry) {
   );
   if (namedSpawn) {
     const fallbackGroundHeight = entry.gameplay?.groundHeight ?? namedSpawn.position.y;
-    const collisionWorld = collisionGeometry
-      ? new CollisionWorld({
-        groundHeight: fallbackGroundHeight,
-        collisionGeometry,
-      })
-      : null;
-    const groundedY = collisionWorld?.getGroundHeightAt(
-      namedSpawn.position.x,
-      namedSpawn.position.z,
-      namedSpawn.position.y + 0.5,
-      2,
-      8,
-    ) ?? fallbackGroundHeight;
+    const collisionWorld = createSpawnCollisionWorld(collisionGeometry, fallbackGroundHeight);
+    const groundedSpawn = groundSpawnState(namedSpawn, collisionWorld, fallbackGroundHeight);
     return {
-      spawnPoint: {
-        x: namedSpawn.position.x,
-        y: groundedY,
-        z: namedSpawn.position.z,
-      },
-      groundHeight: groundedY,
+      spawnPoint: groundedSpawn.position,
+      spawnYaw: groundedSpawn.yaw,
+      groundHeight: groundedSpawn.position.y,
       movementMode: entry.gameplay?.movementMode ?? 'grounded',
       allowGroundedMode: entry.gameplay?.allowGroundedMode ?? true,
     };
@@ -277,14 +339,15 @@ function resolveDefaultGameplayState(entry, renderMap, collisionGeometry) {
   const groundHeight = entry.gameplay?.groundHeight ?? bestHit?.point.y ?? sceneBounds.min.y;
 
   return {
-    spawnPoint: {
-      x: bestHit?.point.x ?? center.x,
-      y: groundHeight,
-      z: bestHit?.point.z ?? center.z,
-    },
-    groundHeight,
-    movementMode: entry.gameplay?.movementMode ?? 'grounded',
-    allowGroundedMode: entry.gameplay?.allowGroundedMode ?? true,
+      spawnPoint: {
+        x: bestHit?.point.x ?? center.x,
+        y: groundHeight,
+        z: bestHit?.point.z ?? center.z,
+      },
+      spawnYaw: 0,
+      groundHeight,
+      movementMode: entry.gameplay?.movementMode ?? 'grounded',
+      allowGroundedMode: entry.gameplay?.allowGroundedMode ?? true,
   };
 }
 
@@ -418,6 +481,7 @@ function resolveGameplayState(entry, renderMap, sharedLayoutMap, collisionGeomet
     case 'layout-json':
       return {
         spawnPoint: sharedLayoutMap?.spawnPoint ?? null,
+        spawnYaw: 0,
         groundHeight: sharedLayoutMap?.groundHeight ?? 0,
         movementMode: entry.gameplay?.movementMode ?? 'grounded',
         allowGroundedMode: entry.gameplay?.allowGroundedMode ?? true,
@@ -427,6 +491,7 @@ function resolveGameplayState(entry, renderMap, sharedLayoutMap, collisionGeomet
     case 'runtime-map':
       return {
         spawnPoint: renderMap.spawnPoint ?? null,
+        spawnYaw: Number(renderMap.spawnYaw ?? 0),
         groundHeight: renderMap.groundHeight ?? 0,
         movementMode: entry.gameplay?.movementMode ?? 'grounded',
         allowGroundedMode: entry.gameplay?.allowGroundedMode ?? true,
@@ -444,13 +509,21 @@ export async function createMapFromManifest(entry) {
   }
   const collisionGeometry = resolveCollisionGeometry(entry, renderMap, sharedLayoutMap);
   const gameplayState = resolveGameplayState(entry, renderMap, sharedLayoutMap, collisionGeometry);
+  const teamSpawnPoints = resolveTeamSpawnPoints(
+    entry,
+    renderMap,
+    collisionGeometry,
+    gameplayState.groundHeight,
+  );
 
   return {
     ...renderMap,
     spawnPoint: gameplayState.spawnPoint,
+    spawnYaw: Number(gameplayState.spawnYaw ?? 0),
     groundHeight: gameplayState.groundHeight,
     movementMode: gameplayState.movementMode ?? 'grounded',
     allowGroundedMode: gameplayState.allowGroundedMode ?? true,
+    teamSpawnPoints,
     collisionGeometry,
     shootables: renderMap.shootables ?? [],
     targets: renderMap.targets ?? [],

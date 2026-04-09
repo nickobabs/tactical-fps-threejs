@@ -24,6 +24,12 @@ const FLY_PRESENTATION_VELOCITY = new THREE.Vector3();
 const BUFFERED_CORRECTION_START = new THREE.Vector3();
 const BUFFERED_CORRECTION_TARGET = new THREE.Vector3();
 const BUFFERED_CORRECTION_APPLIED = new THREE.Vector3();
+
+function easeCircIn(value) {
+  const t = THREE.MathUtils.clamp(Number(value ?? 0), 0, 1);
+  return 1 - Math.sqrt(1 - (t * t));
+}
+
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
     return performance.now();
@@ -138,6 +144,11 @@ export class FirstPersonController {
     this.lastCurrentPositionText = '0.00, 0.00, 0.00';
     this.lastAuthoritativePositionText = '0.00, 0.00, 0.00';
     this.lastReplayPositionText = '0.00, 0.00, 0.00';
+    this.visualRecoilPitch = 0;
+    this.visualRecoilTargetPitch = 0;
+    this.visualRecoilShotCount = 0;
+    this.visualRecoilTimeSinceShot = Infinity;
+    this.visualRecoilConfig = null;
   }
 
   getObject() {
@@ -264,6 +275,45 @@ export class FirstPersonController {
     return this.movementMode;
   }
 
+  spawnAt(spawnState = {}) {
+    const nextPosition = spawnState.position ?? spawnState;
+    this.position.set(
+      Number(nextPosition?.x ?? 0),
+      Number(nextPosition?.y ?? this.groundHeight),
+      Number(nextPosition?.z ?? 0),
+    );
+    this.presentationPosition.copy(this.position);
+    this.presentationTargetPosition.copy(this.position);
+    this.velocity.set(0, 0, 0);
+    this.yawAngle = Number(spawnState.yaw ?? 0);
+    this.pitchAngle = Number(spawnState.pitch ?? 0);
+    this.yaw.rotation.y = this.yawAngle;
+    this.pitch.rotation.x = this.pitchAngle;
+    this.isGrounded = this.movementMode !== 'fly';
+    this.isCrouched = false;
+    this.currentHeight = this.standHeight;
+    this.pitch.position.y = this.currentHeight;
+    this.correctionOffsetWorld.set(0, 0, 0);
+    this.responsivePresentationOffset.set(0, 0, 0);
+    this.bufferedCanonicalCorrection.set(0, 0, 0);
+    this.isCorrectionActive = false;
+    this.visualRecoilPitch = 0;
+    this.visualRecoilTargetPitch = 0;
+    this.visualRecoilShotCount = 0;
+    this.visualRecoilTimeSinceShot = Infinity;
+    this.visualRecoilConfig = null;
+    this.motionState = createPlayerMovementState({
+      position: this.position,
+      velocity: this.velocity,
+      yaw: this.yawAngle,
+      isGrounded: this.isGrounded,
+      isCrouched: false,
+      currentHeight: this.currentHeight,
+    });
+    this.yaw.position.copy(this.presentationPosition);
+    this.viewAnchor.rotation.set(0, 0, 0);
+  }
+
   setMovementMode(mode) {
     this.movementMode = mode === 'fly' ? 'fly' : 'grounded';
     this.velocity.set(0, 0, 0);
@@ -344,6 +394,57 @@ export class FirstPersonController {
     this.pitch.rotation.x = this.pitchAngle;
   }
 
+  applyVisualRecoil(config = null) {
+    if (!config) {
+      return;
+    }
+
+    this.visualRecoilConfig = config;
+    const shotResetDelay = Math.max(0.01, Number(config.shotResetDelay ?? 0.2));
+    if (this.visualRecoilTimeSinceShot > shotResetDelay) {
+      this.visualRecoilShotCount = 0;
+    }
+    this.visualRecoilShotCount += 1;
+    this.visualRecoilTimeSinceShot = 0;
+
+    const warmupShots = Math.max(1, Number(config.warmupShots ?? 4));
+    const initialPitch = Math.max(0, Number(config.initialPitch ?? 0));
+    const warmupPitch = Math.max(0, Number(config.warmupPitch ?? 0));
+    const curveShots = Math.max(1, Number(config.curveShots ?? 8));
+    const maxPitch = Math.max(initialPitch, warmupPitch, Number(config.maxPitch ?? warmupPitch));
+    const warmupAlpha = THREE.MathUtils.clamp((this.visualRecoilShotCount - 1) / Math.max(warmupShots - 1, 1), 0, 1);
+    const curveAlpha = THREE.MathUtils.clamp((this.visualRecoilShotCount - warmupShots) / curveShots, 0, 1);
+    const warmupTargetPitch = THREE.MathUtils.lerp(initialPitch, warmupPitch, warmupAlpha);
+    const nextTargetPitch = warmupTargetPitch + (maxPitch - warmupTargetPitch) * easeCircIn(curveAlpha);
+
+    this.visualRecoilTargetPitch = Math.max(this.visualRecoilTargetPitch, nextTargetPitch);
+  }
+
+  updateVisualRecoil(delta) {
+    this.visualRecoilTimeSinceShot += delta;
+    const recoilConfig = this.visualRecoilConfig ?? {};
+    const maxPitch = Math.max(0.0001, Number(recoilConfig.maxPitch ?? 0.14));
+    const recoveryFast = Math.max(0.01, Number(recoilConfig.recoveryFast ?? 16));
+    const recoverySlow = Math.max(0.01, Number(recoilConfig.recoverySlow ?? 6.5));
+    const recoveryRate = THREE.MathUtils.lerp(recoveryFast, recoverySlow, THREE.MathUtils.clamp(
+      Math.max(this.visualRecoilPitch, this.visualRecoilTargetPitch) / maxPitch,
+      0,
+      1,
+    ));
+
+    this.visualRecoilPitch = THREE.MathUtils.damp(this.visualRecoilPitch, this.visualRecoilTargetPitch, 26, delta);
+    this.visualRecoilTargetPitch = THREE.MathUtils.damp(this.visualRecoilTargetPitch, 0, recoveryRate, delta);
+    if (this.visualRecoilPitch <= 0.0001 && this.visualRecoilTargetPitch <= 0.0001) {
+      this.visualRecoilPitch = 0;
+      this.visualRecoilTargetPitch = 0;
+      if (this.visualRecoilTimeSinceShot > 0.3) {
+        this.visualRecoilShotCount = 0;
+        this.visualRecoilConfig = null;
+      }
+    }
+    this.viewAnchor.rotation.x = this.visualRecoilPitch;
+  }
+
   getMovementInputSnapshot(options = {}) {
     return getMovementInputSnapshot({
       input: this.input,
@@ -374,6 +475,7 @@ export class FirstPersonController {
   }
 
   updatePresentation(delta, alpha = 1) {
+    this.updateVisualRecoil(delta);
     updatePresentationState({
       delta,
       alpha,

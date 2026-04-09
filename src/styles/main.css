@@ -46,6 +46,10 @@ canvas {
   gap: 16px;
 }
 
+.hud__cluster--hidden {
+  display: none;
+}
+
 .hud__top {
   top: 20px;
   align-items: flex-start;
@@ -324,6 +328,111 @@ canvas {
   padding: 84px 32px 32px;
 }
 
+.hud__classic {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 22px;
+  display: none;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  color: rgba(220, 188, 96, 0.86);
+  font-family: Verdana, Geneva, sans-serif;
+  text-shadow:
+    1px 1px 0 rgba(24, 18, 8, 0.9),
+    0 0 1px rgba(24, 18, 8, 0.75);
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: auto;
+}
+
+.hud__classic--active {
+  display: flex;
+}
+
+.hud__classic-left,
+.hud__classic-center,
+.hud__classic-right {
+  display: flex;
+  align-items: end;
+  gap: 20px;
+}
+
+.hud__classic-center {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.hud__classic-right {
+  flex-direction: column;
+  align-items: end;
+  gap: 4px;
+}
+
+.hud__classic-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 104px;
+}
+
+.hud__classic-icon {
+  font-size: 34px;
+  line-height: 1;
+  opacity: 0.92;
+}
+
+.hud__classic-value {
+  font-size: 54px;
+  line-height: 0.9;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.hud__classic-time {
+  font-size: 50px;
+  line-height: 0.9;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.hud__classic-phase {
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+
+.hud__classic-ammo {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.hud__classic-ammo-mag {
+  font-size: 58px;
+  line-height: 0.9;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.hud__classic-ammo-sep,
+.hud__classic-ammo-reserve {
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 700;
+  opacity: 0.84;
+}
+
+.hud__classic-weapon {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
 .hud__scoreboard--active {
   display: flex;
 }
@@ -371,14 +480,14 @@ canvas {
 }
 
 .hud__scoreboard-team--attackers {
-  border-right: 1px solid rgba(128, 170, 223, 0.2);
-  background: linear-gradient(180deg, rgba(74, 115, 177, 0.14), rgba(74, 115, 177, 0.03) 20%, rgba(0, 0, 0, 0) 45%);
-  color: #b6d2ff;
+  border-right: 1px solid rgba(205, 112, 112, 0.2);
+  background: linear-gradient(180deg, rgba(182, 92, 92, 0.14), rgba(182, 92, 92, 0.03) 20%, rgba(0, 0, 0, 0) 45%);
+  color: #ef8c8c;
 }
 
 .hud__scoreboard-team--defenders {
-  background: linear-gradient(180deg, rgba(182, 92, 92, 0.14), rgba(182, 92, 92, 0.03) 20%, rgba(0, 0, 0, 0) 45%);
-  color: #ef8c8c;
+  background: linear-gradient(180deg, rgba(74, 115, 177, 0.14), rgba(74, 115, 177, 0.03) 20%, rgba(0, 0, 0, 0) 45%);
+  color: #b6d2ff;
 }
 
 .hud__scoreboard-teambar {
@@ -391,15 +500,15 @@ canvas {
 }
 
 .hud__scoreboard-team--attackers .hud__scoreboard-teambar {
-  color: #d7e7ff;
-  background: linear-gradient(180deg, rgba(108, 146, 204, 0.34), rgba(45, 68, 107, 0.08));
-  border-bottom-color: rgba(128, 170, 223, 0.28);
-}
-
-.hud__scoreboard-team--defenders .hud__scoreboard-teambar {
   color: #ffd5d5;
   background: linear-gradient(180deg, rgba(156, 88, 88, 0.34), rgba(84, 36, 36, 0.08));
   border-bottom-color: rgba(205, 112, 112, 0.28);
+}
+
+.hud__scoreboard-team--defenders .hud__scoreboard-teambar {
+  color: #d7e7ff;
+  background: linear-gradient(180deg, rgba(108, 146, 204, 0.34), rgba(45, 68, 107, 0.08));
+  border-bottom-color: rgba(128, 170, 223, 0.28);
 }
 
 .hud__scoreboard-teamname {
@@ -433,11 +542,11 @@ canvas {
 }
 
 .hud__scoreboard-team--attackers .hud__scoreboard-columns {
-  color: rgba(160, 197, 255, 0.82);
+  color: rgba(244, 137, 137, 0.82);
 }
 
 .hud__scoreboard-team--defenders .hud__scoreboard-columns {
-  color: rgba(244, 137, 137, 0.82);
+  color: rgba(160, 197, 255, 0.82);
 }
 
 .hud__scoreboard-rows {
@@ -455,11 +564,11 @@ canvas {
 }
 
 .hud__scoreboard-team--attackers .hud__scoreboard-row {
-  color: #aecdff;
+  color: #ef8f8f;
 }
 
 .hud__scoreboard-team--defenders .hud__scoreboard-row {
-  color: #ef8f8f;
+  color: #aecdff;
 }
 
 .hud__scoreboard-row--local {
@@ -520,6 +629,156 @@ canvas {
 
 .hud__pause--active {
   display: flex;
+}
+
+.hud__team-select {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(219, 180, 101, 0.08), transparent 40%),
+    rgba(4, 7, 10, 0.52);
+  backdrop-filter: blur(12px);
+}
+
+.hud__team-select--active {
+  display: flex;
+}
+
+.hud__team-select-panel {
+  width: min(760px, calc(100vw - 48px));
+  padding: 28px;
+  border: 1px solid rgba(210, 179, 118, 0.26);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(36, 29, 21, 0.88), rgba(10, 14, 18, 0.92));
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px rgba(255, 228, 179, 0.06);
+}
+
+.hud__team-select-kicker {
+  color: rgba(239, 198, 118, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hud__team-select-title {
+  margin-top: 8px;
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 0.95;
+  letter-spacing: 0.03em;
+}
+
+.hud__team-select-copy {
+  margin-top: 10px;
+  max-width: 34ch;
+  color: rgba(230, 237, 245, 0.74);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.hud__team-select-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.hud__team-select-label {
+  color: rgba(239, 243, 249, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hud__team-select-input {
+  width: min(360px, 100%);
+  padding: 14px 16px;
+  border: 1px solid rgba(239, 198, 118, 0.22);
+  border-radius: 14px;
+  background: rgba(9, 12, 16, 0.82);
+  color: #f5f7fb;
+  font: inherit;
+  font-size: 16px;
+}
+
+.hud__team-select-input:focus-visible {
+  outline: none;
+  border-color: rgba(255, 225, 167, 0.56);
+  box-shadow: 0 0 0 1px rgba(255, 225, 167, 0.32);
+}
+
+.hud__team-select-input::placeholder {
+  color: rgba(230, 237, 245, 0.38);
+}
+
+.hud__team-select-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.hud__team-option {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 180px;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  color: #f5f7fb;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.hud__team-option:hover {
+  transform: translateY(-2px);
+}
+
+.hud__team-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  transform: none;
+}
+
+.hud__team-option--attackers {
+  background:
+    linear-gradient(180deg, rgba(171, 87, 87, 0.3), rgba(48, 18, 18, 0.75));
+  border-color: rgba(224, 132, 132, 0.24);
+}
+
+.hud__team-option--defenders {
+  background:
+    linear-gradient(180deg, rgba(78, 116, 171, 0.3), rgba(16, 29, 45, 0.75));
+  border-color: rgba(130, 170, 230, 0.24);
+}
+
+.hud__team-option--active,
+.hud__team-option:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 233, 184, 0.4);
+}
+
+.hud__team-option-title {
+  font-size: 24px;
+  letter-spacing: 0.03em;
+}
+
+.hud__team-option-subtitle {
+  color: rgba(239, 243, 249, 0.76);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .hud__pause-panel {
@@ -655,5 +914,9 @@ canvas {
   .hud__scoreboard-team--attackers {
     border-right: 0;
     border-bottom: 1px solid rgba(215, 185, 118, 0.14);
+  }
+
+  .hud__team-select-options {
+    grid-template-columns: 1fr;
   }
 }
