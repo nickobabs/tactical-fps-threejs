@@ -133,12 +133,17 @@ export class MapRuntime {
         utilityManager: new UtilityManager(),
         targetManager: new TargetManager(map.targets),
       });
+      runtime.utilityManager.configureMap({
+        plantZones: map.plantZones ?? [],
+        scene: map.scene,
+      });
 
       runtime.weaponManager = new WeaponManager({
         camera,
         scene,
         shootables: map.shootables,
         audioManager,
+        canEquipWeapon: (weaponKey) => runtime.utilityManager?.canEquipWeapon?.(weaponKey) ?? true,
       });
 
       runtime.playerController = new FirstPersonController(camera, input, {
@@ -148,8 +153,10 @@ export class MapRuntime {
         allowGroundedMode: map.allowGroundedMode,
         collisionWorld,
         landingSurfaces: map.shootables,
+        audioManager,
         mouseSensitivity,
         getSpeedMultiplier: () => runtime.weaponManager?.getMovementSpeedMultiplier() ?? 1,
+        getWalkSpeedFactor: () => runtime.weaponManager?.getWalkSpeedFactor?.() ?? 0.5,
       });
       runtime.weaponManager.setPlayerController(runtime.playerController);
 
@@ -174,6 +181,7 @@ export class MapRuntime {
 
   destroy(scene) {
     this.weaponManager?.destroy();
+    this.utilityManager?.destroy?.();
     this.targetManager?.destroy?.();
     this.detachFromScene(scene);
     this.navigationManager?.destroy();

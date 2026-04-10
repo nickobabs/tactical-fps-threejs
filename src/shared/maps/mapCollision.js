@@ -140,7 +140,7 @@ export function createCollisionMapForMapId(mapId) {
   return createCollisionMapFromLayoutData(layout, { mapId: layout.mapId });
 }
 
-function getNodePublicAssetUrl(assetPath) {
+export function getNodePublicAssetUrl(assetPath) {
   if (!isNodeServerRuntime()) {
     return null;
   }
@@ -152,7 +152,7 @@ function getNodePublicAssetUrl(assetPath) {
   return new URL(`../../../public${assetPath}`, import.meta.url);
 }
 
-async function loadNodeGltfScene(assetPath) {
+export async function loadNodeGltfScene(assetPath) {
   const assetUrl = getNodePublicAssetUrl(assetPath);
   globalThis.self ??= globalThis;
   globalThis.createImageBitmap ??= async () => ({ close() {} });
@@ -172,6 +172,17 @@ async function loadNodeGltfScene(assetPath) {
     new URL('.', assetUrl).href,
   );
   return gltf.scene;
+}
+
+export function disposeSceneResources(scene) {
+  scene?.traverse((child) => {
+    child.geometry?.dispose?.();
+    if (Array.isArray(child.material)) {
+      child.material.forEach((material) => material?.dispose?.());
+    } else {
+      child.material?.dispose?.();
+    }
+  });
 }
 
 async function resolveNamedSpawnFromManifestEntry(entry) {
@@ -201,14 +212,7 @@ async function resolveNamedSpawnFromManifestEntry(entry) {
     }
   } finally {
     for (const scene of loadedScenes) {
-      scene.traverse((child) => {
-        child.geometry?.dispose?.();
-        if (Array.isArray(child.material)) {
-          child.material.forEach((material) => material?.dispose?.());
-        } else {
-          child.material?.dispose?.();
-        }
-      });
+      disposeSceneResources(scene);
     }
   }
 
@@ -263,14 +267,7 @@ export async function createCollisionMapFromManifestEntry(entry) {
         collisionGeometry,
       };
     } finally {
-      scene.traverse((child) => {
-        child.geometry?.dispose?.();
-        if (Array.isArray(child.material)) {
-          child.material.forEach((material) => material?.dispose?.());
-        } else {
-          child.material?.dispose?.();
-        }
-      });
+      disposeSceneResources(scene);
     }
   }
 

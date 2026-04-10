@@ -11,6 +11,7 @@ export function updateWeaponPresentation({
   flashTime,
   knifeAttackTime,
   knifeAttackDuration,
+  viewModelBob = null,
   delta,
   lookDelta,
 }) {
@@ -38,6 +39,13 @@ export function updateWeaponPresentation({
   const knifeAttackBlend = knifeAttackTime > 0
     ? Math.sin((1 - knifeAttackTime / knifeAttackDuration) * Math.PI)
     : 0;
+  const bobOffsetX = isScoped ? 0 : Number(viewModelBob?.offsetX ?? 0);
+  const bobOffsetY = isScoped ? 0 : Number(viewModelBob?.offsetY ?? 0);
+  const bobRotationX = isScoped ? 0 : Number(viewModelBob?.rotationX ?? 0);
+  const bobRotationY = isScoped ? 0 : Number(viewModelBob?.rotationY ?? 0);
+  const bobRotationZ = isScoped ? 0 : Number(viewModelBob?.rotationZ ?? 0);
+  const bobMoveAlpha = isScoped ? 0 : Number(viewModelBob?.moveAlpha ?? 0);
+  const movePullBack = isScoped ? 0 : Number(viewModelBob?.movePullBack ?? 0);
   const targetX = THREE.MathUtils.lerp(position.x, aimViewModel.position.x, scopeBlend);
   const targetY = THREE.MathUtils.lerp(position.y, aimViewModel.position.y, scopeBlend);
   const targetZ = THREE.MathUtils.lerp(position.z, aimViewModel.position.z, scopeBlend);
@@ -47,38 +55,38 @@ export function updateWeaponPresentation({
 
   viewModel.position.x = THREE.MathUtils.damp(
     viewModel.position.x,
-    targetX + SWAY_OFFSET.x * swayBlend - knifeAttackBlend * 0.04,
+    targetX + SWAY_OFFSET.x * swayBlend + bobOffsetX - knifeAttackBlend * 0.04,
     18,
     delta,
   );
   viewModel.position.y = THREE.MathUtils.damp(
     viewModel.position.y,
-    targetY + SWAY_OFFSET.y * swayBlend + recoil * recoilY * recoilFactor - knifeAttackBlend * 0.05,
+    targetY + SWAY_OFFSET.y * swayBlend + bobOffsetY + recoil * recoilY * recoilFactor - knifeAttackBlend * 0.05,
     18,
     delta,
   );
   viewModel.position.z = THREE.MathUtils.damp(
     viewModel.position.z,
-    targetZ + recoil * recoilZ * recoilFactor - knifeAttackBlend * 0.42,
+    targetZ + movePullBack * bobMoveAlpha + recoil * recoilZ * recoilFactor - knifeAttackBlend * 0.42,
     22,
     delta,
   );
 
   viewModel.rotation.x = THREE.MathUtils.damp(
     viewModel.rotation.x,
-    targetRotX - recoil * 0.08 * recoilFactor - knifeAttackBlend * 0.32,
+    targetRotX + bobRotationX - recoil * 0.08 * recoilFactor - knifeAttackBlend * 0.32,
     16,
     delta,
   );
   viewModel.rotation.y = THREE.MathUtils.damp(
     viewModel.rotation.y,
-    targetRotY - SWAY_OFFSET.x * 0.6 * swayBlend + knifeAttackBlend * 0.16,
+    targetRotY + bobRotationY - SWAY_OFFSET.x * 0.6 * swayBlend + knifeAttackBlend * 0.16,
     16,
     delta,
   );
   viewModel.rotation.z = THREE.MathUtils.damp(
     viewModel.rotation.z,
-    targetRotZ - SWAY_OFFSET.x * 0.8 * swayBlend - knifeAttackBlend * 0.08,
+    targetRotZ + bobRotationZ - SWAY_OFFSET.x * 0.8 * swayBlend - knifeAttackBlend * 0.08,
     16,
     delta,
   );

@@ -1,42 +1,90 @@
 # Refactor Progress
 
-## Current State
+## Current Read
 
-The refactor has been proceeding in small verified slices with a production build after each step. The goal has been to improve ownership boundaries and reduce coordination pressure inside the largest runtime classes without changing behavior wholesale.
+The refactor pass has already moved a lot of the old runtime pressure out of the biggest top-level classes. The codebase is no longer in the earlier “everything important lives in one giant file” state.
 
-## Completed
+At this point, the highest-value work is no longer broad refactoring for its own sake. The remaining useful refactor targets are the dense hotspots that still combine simulation, authority, presentation, or animation responsibilities in ways that make changes risky.
+
+## What Is Already In Better Shape
 
 - App layer
-  - `GameApp` is now the composition root plus frame-phase orchestrator
-  - pause, debug, gameplay-network, and session lifecycle responsibilities are split into dedicated app-layer modules
+  - [GameApp.js](/C:/Users/nicko/tactical-fps-threejs/src/app/GameApp.js) is now mostly the composition root and frame-phase orchestrator
+  - pause, debug, gameplay-network, and session lifecycle concerns are split into dedicated app-layer modules
 - Weapons
-  - `WeaponManager` has been decomposed into separate modules for tuning UI, action execution, policy/state, and selection/application
+  - [WeaponManager.js](/C:/Users/nicko/tactical-fps-threejs/src/game/weapons/WeaponManager.js) is now a runtime shell rather than the full weapon system
+  - weapon actions, policy/state, selection, firing, presentation, recoil tuning, and viewmodel tuning now live in separate modules
 - Player controller
   - input snapshotting
-  - fly-mode and landing helpers
-  - presentation smoothing math
+  - fly-mode helpers
+  - presentation math
   - collision-safe movement helpers
-- Remote presenter
-  - remote tuning persistence/state is split into `remoteTuningStore.js`
-  - `F6` / `F7` browser tuning panels are split into `remoteTuningPanels.js`
-  - hit-volume debug extraction was attempted and then reverted after it regressed remote presentation, so that block still lives in `RemotePlayerPresenter.js`
+  - buffered correction helpers
+  - reconciliation helpers
+  - movement tuning now also lives outside the controller core
+- HUD / objective flow
+  - planted-bomb visual and objective state are extracted
+  - HUD pieces are split across classic/debug/scoreboard/objective/helper modules
+- Shared gameplay helpers
+  - bomb helpers/constants are shared
+  - plant-zone helpers are shared
+  - movement simulation is shared between client and server in [playerMovement.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js)
+- Audio / tuning surfaces
+  - shared audio registration lives in [createGameAudioManager.js](/C:/Users/nicko/tactical-fps-threejs/src/app/createGameAudioManager.js)
+  - movement tuning and recoil tuning are now separate runtime tools instead of being hidden inside larger gameplay classes
+- Server room broadcast flow
+  - authoritative room broadcast behavior now uses the dirtied/end-of-tick flush model rather than scattered immediate broadcasts
 
-## Remaining High-Risk Areas
+## Main Remaining Hotspots
 
-- `FirstPersonController`
-  - `simulateMovementStep`
-  - `applyBufferedCanonicalCorrection`
-  - `reconcileAuthoritativeState`
-- `RemotePlayerPresenter`
+- [FirstPersonController.js](/C:/Users/nicko/tactical-fps-threejs/src/game/player/controllers/FirstPersonController.js)
+  - still the most sensitive gameplay hotspot on the client
+  - the remaining dense areas are:
+    - `simulateMovementStep`
+    - `applyBufferedCanonicalCorrection`
+    - `reconcileAuthoritativeState`
+    - footstep/bob/recoil interaction points around the simulation/presentation boundary
+  - this file is much better than before, but it is still where movement, reconciliation, and first-person feel can collide
+- [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
   - still the largest concentrated runtime hotspot in the repo
-  - stable after audit, but the next slice should be smaller than the reverted hit-volume-debug extraction
-- Server-side authoritative room / remote hitbox runtime
-  - still relatively large and not yet refactored in this pass
-  - latest parity audit resolved the major locomotion and airborne presentation mismatch by aligning client/server `Bip01` root-motion stripping
+  - stable enough for current multiplayer use
+  - still owns a lot of animation, pose, socket, and debug behavior in one place
+  - next extraction should be smaller and narrower than the earlier reverted hit-volume-debug attempt
+- Server-side authoritative room / hitbox runtime
+  - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
+  - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
+  - these are functionally important and still fairly dense
+  - they should only be refactored when there is a clear ownership win, not just because they are large
 
-## Working Rules For The Next Pass
+## Things That Are Important But Not Refactor Targets
 
-- Keep refactors sequential and behavior-preserving
-- Rebuild after every slice
-- Prefer extracting pure calculations and helper boundaries before moving state ownership
-- Be cautious around reconciliation, collision resolution, and multiplayer authority handoff
+- Dust2 grounding/support investigation
+  - still an active debug issue
+  - documented in [session-note-2026-04-09-dust2-grounding.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-09-dust2-grounding.md)
+  - this is primarily a movement/collision investigation, not a structural refactor task
+- Current movement-feel tuning
+  - grounded accel/decel/reversal work is already live
+  - the recent counter-strafe/wall oscillation fix came from correcting grounded presentation behavior, not from another big refactor
+  - future tuning should not be confused with a need to reorganize files again
+- Recoil / footsteps / movement tuning tools
+  - these are active gameplay iteration tools
+  - they may eventually deserve polish, but they are not current refactor debt
+
+## Working Rule For The Next Pass
+
+- Only refactor when the ownership boundary is clear and the outcome reduces risk
+- Prefer small, verified slices over broad rewrites
+- Keep behavior-preserving extraction separate from gameplay tuning whenever possible
+- Be especially careful around:
+  - reconciliation
+  - collision resolution
+  - server authority handoff
+  - remote presentation / hitbox parity
+- Rebuild after each code refactor slice
+
+## Practical Next Refactor Order
+
+1. Leave `FirstPersonController` alone unless there is a concrete need around one of the remaining dense methods.
+2. If remote presentation work resumes, take the next slice out of `RemotePlayerPresenter` in a very narrow module boundary.
+3. Only touch server room/hitbox structure when gameplay authority work forces it.
+4. Treat Dust2 grounding and movement-feel tuning as debugging/tuning tasks, not refactor tasks.

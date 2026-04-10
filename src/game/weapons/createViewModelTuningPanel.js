@@ -4,6 +4,7 @@ import {
   resetViewModelTuning,
   setViewModelTransformValue,
 } from './weaponConfigs.js';
+import { DEBUG_MENU_EVENT_TOGGLE_VIEWMODEL_TUNING } from '../../app/debugMenuEvents.js';
 
 export function createViewModelTuningPanel(getWeaponKey, options = {}) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -255,7 +256,15 @@ export function createViewModelTuningPanel(getWeaponKey, options = {}) {
     }
     event.preventDefault();
   };
+  const handleDebugMenuToggle = () => {
+    const nextVisible = overlay.style.display === 'none';
+    overlay.style.display = nextVisible ? 'block' : 'none';
+    if (nextVisible) {
+      sync();
+    }
+  };
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener(DEBUG_MENU_EVENT_TOGGLE_VIEWMODEL_TUNING, handleDebugMenuToggle);
 
   sync();
 
@@ -269,6 +278,7 @@ export function createViewModelTuningPanel(getWeaponKey, options = {}) {
     },
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_VIEWMODEL_TUNING, handleDebugMenuToggle);
       overlay.remove();
     },
   };

@@ -2,6 +2,7 @@ import { SHARED_WEAPON_DATA } from '../../shared/weaponData.js';
 
 export const BASE_FOV = 75;
 const VIEWMODEL_TUNING_STORAGE_KEY = 'fpsViewModelTuning.v1';
+const RECOIL_TUNING_STORAGE_KEY = 'fpsRecoilTuning.v1';
 
 export const WEAPON_CONFIGS = {
   rifle: {
@@ -101,6 +102,29 @@ export const WEAPON_CONFIGS = {
       muzzle: { x: 0.28, y: 0.04, z: -0.3 },
     },
   },
+  bomb: {
+    ...SHARED_WEAPON_DATA.bomb,
+    slot: 'Digit5',
+    label: 'C4 Explosive',
+    zoomFov: BASE_FOV,
+    swayScale: 0.7,
+    hasScopeOverlay: false,
+    hasAdsReticle: false,
+    hideViewModelWhenScoped: false,
+    aimRecoilFactor: 0,
+    viewModel: {
+      position: { x: -0.02, y: -0.34, z: -1.04 },
+      rotation: { x: 0.02, y: 0.04, z: 0.01 },
+      muzzle: { x: 0, y: 0, z: -0.4 },
+      recoilY: 0,
+      recoilZ: 0,
+    },
+    aimViewModel: {
+      position: { x: -0.02, y: -0.34, z: -1.04 },
+      rotation: { x: 0.02, y: 0.04, z: 0.01 },
+      muzzle: { x: 0, y: 0, z: -0.4 },
+    },
+  },
 };
 
 const WEAPONS_BY_SLOT = Object.values(WEAPON_CONFIGS).reduce((slots, weapon) => {
@@ -114,6 +138,16 @@ const DEFAULT_VIEWMODEL_POSES = Object.fromEntries(
     {
       viewModel: structuredClone(weapon.viewModel),
       aimViewModel: structuredClone(weapon.aimViewModel ?? weapon.viewModel),
+    },
+  ]),
+);
+const DEFAULT_RECOIL_TUNING = Object.fromEntries(
+  Object.entries(WEAPON_CONFIGS).map(([weaponKey, weapon]) => [
+    weaponKey,
+    {
+      hipfireSpread: Number(weapon.hipfireSpread ?? 0),
+      visualRecoil: structuredClone(weapon.visualRecoil ?? null),
+      sprayRecoil: structuredClone(weapon.sprayRecoil ?? null),
     },
   ]),
 );
@@ -144,6 +178,25 @@ function persistViewModelTuning() {
   );
 
   window.localStorage.setItem(VIEWMODEL_TUNING_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function persistRecoilTuning() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const payload = Object.fromEntries(
+    Object.entries(WEAPON_CONFIGS).map(([weaponKey, weapon]) => [
+      weaponKey,
+      {
+        hipfireSpread: Number(weapon.hipfireSpread ?? 0),
+        visualRecoil: structuredClone(weapon.visualRecoil ?? null),
+        sprayRecoil: structuredClone(weapon.sprayRecoil ?? null),
+      },
+    ]),
+  );
+
+  window.localStorage.setItem(RECOIL_TUNING_STORAGE_KEY, JSON.stringify(payload));
 }
 
 function applyStoredViewModelTuning() {
@@ -189,7 +242,49 @@ function applyStoredViewModelTuning() {
   }
 }
 
+function applyStoredRecoilTuning() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(RECOIL_TUNING_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    for (const [weaponKey, value] of Object.entries(parsed ?? {})) {
+      const weapon = WEAPON_CONFIGS[weaponKey];
+      if (!weapon) {
+        continue;
+      }
+
+      if (Number.isFinite(value?.hipfireSpread)) {
+        weapon.hipfireSpread = Number(value.hipfireSpread);
+      }
+
+      for (const groupKey of ['visualRecoil', 'sprayRecoil']) {
+        const sourceGroup = value?.[groupKey];
+        const targetGroup = weapon[groupKey];
+        if (!sourceGroup || !targetGroup) {
+          continue;
+        }
+
+        for (const [entryKey, entryValue] of Object.entries(sourceGroup)) {
+          if (Number.isFinite(entryValue)) {
+            targetGroup[entryKey] = entryValue;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[weaponConfigs] Failed to load recoil tuning.', error);
+  }
+}
+
 applyStoredViewModelTuning();
+applyStoredRecoilTuning();
 
 export function getWeaponConfigBySlot(slot) {
   return WEAPONS_BY_SLOT.get(slot) ?? null;
@@ -236,6 +331,50 @@ export function resetViewModelTuning(weaponKey = null) {
       persistViewModelTuning();
     } else {
       window.localStorage.removeItem(VIEWMODEL_TUNING_STORAGE_KEY);
+    }
+  }
+}
+
+export function setRecoilConfigValue(weaponKey, groupKey, entryKey, value) {
+  const weapon = WEAPON_CONFIGS[weaponKey];
+  if (!weapon || !Number.isFinite(value)) {
+    return;
+  }
+
+  if (groupKey === 'root') {
+    weapon[entryKey] = value;
+    persistRecoilTuning();
+    return;
+  }
+
+  const group = weapon?.[groupKey];
+  if (!group) {
+    return;
+  }
+
+  group[entryKey] = value;
+  persistRecoilTuning();
+}
+
+export function resetRecoilTuning(weaponKey = null) {
+  const keys = weaponKey ? [weaponKey] : Object.keys(WEAPON_CONFIGS);
+  for (const key of keys) {
+    const weapon = WEAPON_CONFIGS[key];
+    const defaults = DEFAULT_RECOIL_TUNING[key];
+    if (!weapon || !defaults) {
+      continue;
+    }
+
+    weapon.hipfireSpread = Number(defaults.hipfireSpread ?? weapon.hipfireSpread ?? 0);
+    weapon.visualRecoil = structuredClone(defaults.visualRecoil ?? null);
+    weapon.sprayRecoil = structuredClone(defaults.sprayRecoil ?? null);
+  }
+
+  if (typeof window !== 'undefined') {
+    if (weaponKey) {
+      persistRecoilTuning();
+    } else {
+      window.localStorage.removeItem(RECOIL_TUNING_STORAGE_KEY);
     }
   }
 }

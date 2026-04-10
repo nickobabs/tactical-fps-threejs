@@ -9,6 +9,7 @@ The project is aiming for a Counter-Strike-like feel:
 - authored maps instead of only graybox spaces
 - server-authoritative multiplayer
 - visible remote players backed by authoritative hit validation
+- round-based attacker/defender play with a first bomb-objective slice
 
 This repo should be read as a playable game-tech prototype, not just a rendering demo.
 
@@ -18,20 +19,25 @@ The current build is a real multiplayer-capable tactical FPS foundation with:
 
 - shared client/server movement simulation
 - local prediction plus server reconciliation
+- grounded accel/decel/reversal tuning in shared movement
 - imported maps with separate visual and collision assets
 - baked navmesh support
 - first-person weapons and damage feedback
 - remote third-person player presentation
 - server-authoritative PvP hit validation
 - server-authoritative segmented remote hit volumes
-- live in-browser debug tooling for movement, networking, hitboxes, and weapon/model tuning
+- server-authoritative round state and first bomb-objective flow
+- live in-browser debug tooling for movement, networking, recoil, footsteps/bob, hitboxes, and weapon/model tuning
 
 It already supports real play loops:
 
+- choose a team and player name
 - spawn into a map
-- move, crouch, jump, and fight
+- move, walk, crouch, jump, and fight
 - switch weapons
+- carry and plant the bomb
 - kill and respawn
+- play through freeze, live, planted, and round-end states
 - inspect network/movement state live
 - validate remote pose/hitbox parity with debug overlays
 
@@ -41,11 +47,16 @@ It already supports real play loops:
 
 - Tactical first-person movement with walk, crouch, jump, and fly/debug mode
 - Shared movement rules between client and server
-- Weapon-dependent movement speed
-- Hitscan rifle, pistol, sniper, and knife
+- Grounded movement now uses a softer ramp-in, explicit deceleration, and stronger reversal braking
+- Weapon-dependent movement speed and weapon-dependent walk speed factor
+- Hitscan rifle, pistol, sniper, knife, and bomb slot
 - ADS / scoped state
+- Rifle visual recoil plus actual gameplay spray recoil
+- Pistol semi-auto input buffering and tunable spread/recoil
 - World geometry shot blocking
 - Replicated damage, death, and respawn
+- Attacker/defender teams with first round-state flow
+- Bomb equip, carry, plant, countdown, and explosion baseline
 
 ### Multiplayer
 
@@ -56,7 +67,8 @@ It already supports real play loops:
 - Remote player interpolation
 - RTT-based scoreboard ping
 - Server-authoritative fire requests and hit validation
-- Replicated health, alive state, respawn timing, pitch, stance, weapon, and presentation state
+- Replicated health, alive state, respawn timing, pitch, stance, weapon, presentation state, team, and display name
+- Server-authoritative round/objective snapshots for HUD and gameplay flow
 
 ### Remote Character / Hitbox Tech
 
@@ -83,13 +95,17 @@ It already supports real play loops:
 
 - HUD with round state, FPS, weapon, utility, movement state, pointer state, and position
 - Hold-`Tab` scoreboard with team panels, player names, kills, deaths, and ping
+- Team-select overlay with player-name entry
 - Scope overlay and ADS reticle handling
-- Pause menu for map/skybox/sensitivity/volume/FOV
+- Bomb-planted state and planted-bomb timer feedback
+- Plant progress feedback
+- Pause menu for map, skybox, sensitivity, volume, and FOV
 - Damage vignette, hit damage numbers, dead overlay, and respawn countdown
 - Live `NETDEBUG` panel with clipboard copy support
 
 ### Tooling / Live Tuning
 
+- Backquote `` ` `` debug menu for grouped tuning/debug surfaces
 - `F3` authoritative remote hit-volume debug
 - `F4` first-person weapon/viewmodel tuning
 - `F6` remote body / aim / local hitbox tuning
@@ -97,6 +113,8 @@ It already supports real play loops:
 - `F8` network debug toggle with copy-to-clipboard
 - `F9` ignore-local-corrections toggle
 - `F10` movement trace capture to `debug/movement-traces/`
+- Recoil tuning panel with live sliders and weapon JSON export
+- Movement tuning panel for footsteps, bob, and movement pull-back
 - Collision wireframe and marker/position debug tools
 - Offline navmesh generation script
 
@@ -106,7 +124,7 @@ It already supports real play loops:
 
 - `Training Ground`
 - `Desert Compound`
-- `Dust2 Import Test`
+- `Dust2 Test`
 
 ### Weapons
 
@@ -114,14 +132,17 @@ It already supports real play loops:
 - `Pistol`
 - `Sniper`
 - `Knife`
+- `Bomb`
 
 ### Multiplayer Baseline
 
 - multiple local tabs can join the same room
+- players choose teams and names before the round starts
 - remote players render with weapon and posture state
 - server validates hits and replicates combat state
 - respawn loop is active
-- Railway deployment is working as a one-service frontend + multiplayer backend setup
+- freeze, live, planted, and round-end baseline is active
+- Railway deployment is working as a one-service frontend plus multiplayer backend setup
 
 ## Architecture Overview
 
@@ -151,8 +172,17 @@ Current movement stack:
 - authoritative server simulation for truth
 - replay-based reconciliation
 - deadzone/hysteresis correction so tiny disagreement is not constantly visible
+- grounded presentation now follows actual simulated velocity instead of desired input velocity, which removed a misleading local lead during reversals and wall contact
 
 Collision comes from [`CollisionWorld.js`](src/core/physics/CollisionWorld.js), which uses `three-mesh-bvh` against authored static collision geometry.
+
+The current live grounded baseline is:
+
+- walk on `Shift`
+- crouch on `C`
+- no footsteps while walking or crouched
+- no bob while ADS, walking, or crouched
+- current local footsteps use the concrete pool under `public/audio/players/footsteps/`
 
 ### Multiplayer
 
@@ -164,6 +194,7 @@ The active multiplayer baseline includes:
 - authoritative movement/state on the server
 - fire requests validated on the server
 - replicated damage, death, and respawn
+- replicated round, team, and objective state
 - RTT ping probes for scoreboard/network diagnostics
 
 ### Remote Presentation
@@ -194,7 +225,7 @@ The active foundation is no longer locked to one rig naming style. Shared skelet
 
 ## Current Character / Rig Baseline
 
-The active remote model/animation path is the former “experimental” branch, now effectively the default baseline:
+The active remote model/animation path is the former experimental branch, now effectively the default baseline:
 
 - active character: `public/models/players/newtest.glb`
 - active rifle asset: `public/models/weapons/newak.glb`
@@ -260,6 +291,13 @@ Start Command: npm --prefix server start
 
 Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested in a believable `15-20 ms` range from Copenhagen.
 
+## Current Notes / Limitations
+
+- Imported-map Dust2 grounding/support still has a remaining hover/invisible-support issue under some conditions and is documented separately in the session notes.
+- Footsteps are currently local-only and do not yet switch by detected surface type.
+- Audio does not yet have separate buses for weapons, footsteps, ambience, or UI.
+- The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.
+
 ## Repo Structure
 
 ```text
@@ -281,6 +319,7 @@ scripts/
 Start with:
 
 - [MASTER_CONTEXT.md](docs/MASTER_CONTEXT.md)
+- [session-notes/](docs/session-notes)
 - [networking.md](docs/systems/networking.md)
 - [player-controller.md](docs/systems/player-controller.md)
 - [ui-hud.md](docs/systems/ui-hud.md)

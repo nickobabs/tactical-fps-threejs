@@ -15,7 +15,6 @@ export function getWeaponSelectionState(activeWeaponKey, weaponKey) {
     showAdsReticle: false,
     cooldown: 0,
     recoil: 0,
-    triggerHeld: false,
     wasScoped: false,
   };
 }

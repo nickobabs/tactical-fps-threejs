@@ -35,9 +35,9 @@ export class CollisionWorld {
     return this.groundHeight;
   }
 
-  getGroundHeightAt(x, z, currentY = Infinity, maxStepUp = Infinity, maxDrop = 12) {
+  getGroundHeightAt(x, z, currentY = Infinity, maxStepUp = Infinity, maxDrop = 12, fallbackToGroundHeight = false) {
     if (!this.collisionGeometry?.boundsTree || !Number.isFinite(currentY)) {
-      return this.groundHeight;
+      return fallbackToGroundHeight ? this.groundHeight : null;
     }
 
     const rayOriginY = currentY + maxStepUp + 0.05;
@@ -52,7 +52,7 @@ export class CollisionWorld {
     );
 
     if (!hit || (hit.face?.normal?.y ?? 0) <= 0.15) {
-      return this.groundHeight;
+      return fallbackToGroundHeight ? this.groundHeight : null;
     }
 
     return hit.point.y;

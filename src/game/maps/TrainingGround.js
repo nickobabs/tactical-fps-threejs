@@ -21,6 +21,59 @@ const TRAINING_BOX_STYLES = [
   { color: 0x495a65, roughness: 0.84, metalness: 0.12 },
 ];
 
+function addPlantSiteMark(builder, { label, position, color }) {
+  const { group } = builder;
+  const mark = new THREE.Mesh(
+    new THREE.CircleGeometry(4.25, 32),
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: 1,
+      metalness: 0,
+      transparent: true,
+      opacity: 0.72,
+    }),
+  );
+  mark.rotation.x = -Math.PI / 2;
+  mark.position.copy(position).setY(0.05);
+  group.add(mark);
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(4.55, 5.1, 32),
+    new THREE.MeshStandardMaterial({
+      color: 0xe8dcc3,
+      roughness: 1,
+      metalness: 0,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(position).setY(0.06);
+  group.add(ring);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#f6ebd5';
+  ctx.font = 'bold 170px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, canvas.width / 2, canvas.height / 2 + 8);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  builder.addDisposable(texture);
+  const text = new THREE.Mesh(
+    new THREE.PlaneGeometry(5.5, 5.5),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+    }),
+  );
+  text.rotation.x = -Math.PI / 2;
+  text.position.copy(position).setY(0.07);
+  group.add(text);
+}
+
 export function createTrainingGround() {
   const builder = createMapBuilder();
   const { group } = builder;
@@ -54,6 +107,12 @@ export function createTrainingGround() {
   laneStripe.rotation.x = -Math.PI / 2;
   laneStripe.position.set(0, 0.03, -1);
   group.add(laneStripe);
+
+  addPlantSiteMark(builder, {
+    label: 'A',
+    color: 0xc27035,
+    position: new THREE.Vector3(0, 0, -1),
+  });
 
   builder.addLayoutBoxes(layout.collisionBoxes.slice(1), TRAINING_BOX_STYLES, { collision: false });
 

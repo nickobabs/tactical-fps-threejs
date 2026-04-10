@@ -525,11 +525,94 @@ function createPistolViewModel() {
   });
 }
 
+function createBombViewModel() {
+  const group = new THREE.Group();
+  const shellMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2f3438,
+    roughness: 0.84,
+    metalness: 0.08,
+  });
+  const panelMaterial = new THREE.MeshStandardMaterial({
+    color: 0x7f8557,
+    roughness: 0.9,
+    metalness: 0.02,
+  });
+  const accentMaterial = new THREE.MeshStandardMaterial({
+    color: 0xc46d38,
+    roughness: 0.86,
+    metalness: 0.04,
+  });
+
+  const body = createPart(
+    new THREE.BoxGeometry(0.24, 0.18, 0.08),
+    shellMaterial,
+    new THREE.Vector3(0, -0.01, -0.08),
+  );
+  const screen = createPart(
+    new THREE.BoxGeometry(0.12, 0.06, 0.01),
+    panelMaterial,
+    new THREE.Vector3(0, 0.015, -0.122),
+  );
+  const keypad = createPart(
+    new THREE.BoxGeometry(0.11, 0.055, 0.01),
+    accentMaterial,
+    new THREE.Vector3(0, -0.045, -0.122),
+  );
+  const wireLeft = createPart(
+    new THREE.BoxGeometry(0.01, 0.12, 0.01),
+    accentMaterial,
+    new THREE.Vector3(-0.075, 0.07, -0.05),
+    new THREE.Vector3(0.38, 0, -0.28),
+  );
+  const wireRight = createPart(
+    new THREE.BoxGeometry(0.01, 0.12, 0.01),
+    accentMaterial,
+    new THREE.Vector3(0.075, 0.07, -0.05),
+    new THREE.Vector3(0.34, 0, 0.22),
+  );
+
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0, -0.4);
+  const muzzleFlash = createHiddenFlash();
+  muzzle.add(muzzleFlash);
+
+  group.add(body, screen, keypad, wireLeft, wireRight, muzzle);
+  setLayerRecursive(group, VIEWMODEL_LAYER);
+
+  return {
+    group,
+    muzzle,
+    muzzleFlash,
+    update() {},
+    onSelected() {},
+    playFire() {},
+    playReload() {},
+    getMuzzleOffset() {
+      return {
+        x: muzzle.position.x,
+        y: muzzle.position.y,
+        z: muzzle.position.z,
+      };
+    },
+    setMuzzleOffset(nextOffset) {
+      muzzle.position.set(
+        nextOffset?.x ?? muzzle.position.x,
+        nextOffset?.y ?? muzzle.position.y,
+        nextOffset?.z ?? muzzle.position.z,
+      );
+    },
+    canFire() {
+      return true;
+    },
+  };
+}
+
 export function createWeaponViewModels() {
   return {
     rifle: createRifleViewModel(),
     pistol: createPistolViewModel(),
     sniper: createSniperViewModel(),
     knife: createKnifeViewModel(),
+    bomb: createBombViewModel(),
   };
 }

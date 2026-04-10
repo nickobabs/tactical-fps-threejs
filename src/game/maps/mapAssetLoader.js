@@ -5,6 +5,12 @@ import {
   createCollisionMapFromLayoutData,
   createCollisionGeometryFromScene,
 } from '../../shared/maps/mapCollision.js';
+import {
+  getExplicitPlantZonesFromEntry,
+  getPlantZonesFromSceneRoots,
+  getPlantableMarkerPrefix,
+  hidePlantZoneMarkerMeshes,
+} from '../../shared/maps/mapPlantZones.js';
 import { findNamedSpawnPoint } from '../../shared/maps/mapSpawnMarkers.js';
 import { TEAMS } from '../../shared/constants.js';
 
@@ -135,11 +141,12 @@ function scoreSpawnSupport(collisionWorld, pointY, sampleX, sampleZ) {
 
   for (const [offsetX, offsetZ] of SPAWN_SUPPORT_OFFSETS) {
     const supportHeight = collisionWorld.getGroundHeightAt(
-      sampleX + offsetX,
-      sampleZ + offsetZ,
-      pointY + 0.2,
-      1.6,
-      3,
+        sampleX + offsetX,
+        sampleZ + offsetZ,
+        pointY + 0.2,
+        1.6,
+        3,
+        true,
     );
     const heightDelta = Math.abs(supportHeight - pointY);
 
@@ -175,6 +182,7 @@ function groundSpawnState(spawnState, collisionWorld, fallbackGroundHeight) {
     Number(spawnState?.position?.y ?? fallbackY) + 0.5,
     2,
     8,
+    true,
   ) ?? fallbackY;
 
   return {
@@ -192,6 +200,20 @@ function getSpawnSearchRoots(renderMap) {
   return [renderMap.collisionScene, renderMap.scene].filter((root, index, roots) => (
     Boolean(root) && roots.indexOf(root) === index
   ));
+}
+
+function resolvePlantZones(entry, renderMap) {
+  const explicitPlantZones = getExplicitPlantZonesFromEntry(entry);
+  if (explicitPlantZones.length > 0) {
+    return explicitPlantZones;
+  }
+
+  const markerPrefix = getPlantableMarkerPrefix(entry);
+  if (!markerPrefix) {
+    return [];
+  }
+
+  return getPlantZonesFromSceneRoots(getSpawnSearchRoots(renderMap), markerPrefix);
 }
 
 function resolveTeamSpawnPoints(entry, renderMap, collisionGeometry, fallbackGroundHeight) {
@@ -353,10 +375,17 @@ function resolveDefaultGameplayState(entry, renderMap, collisionGeometry) {
 
 async function loadGltfRenderMap(renderAsset) {
   const scene = await loadGltfScene(renderAsset.path);
+  const markerPrefix = getPlantableMarkerPrefix({ gameplay: renderAsset.gameplay ?? null });
+  if (markerPrefix) {
+    hidePlantZoneMarkerMeshes([scene], markerPrefix);
+  }
+  const shootables = renderAsset.collectShootables === false
+    ? []
+    : collectSceneMeshes(scene).filter((mesh) => mesh.visible);
 
   return {
     scene,
-    shootables: renderAsset.collectShootables === false ? [] : collectSceneMeshes(scene),
+    shootables,
     targets: [],
     dispose() {},
   };
@@ -379,14 +408,20 @@ async function loadRuntimeFactoryRenderMap(renderAsset) {
 
 async function loadRenderMap(entry) {
   const renderAsset = entry.assets?.render;
+  const renderAssetWithGameplay = renderAsset
+    ? {
+      ...renderAsset,
+      gameplay: entry.gameplay,
+    }
+    : renderAsset;
 
-  switch (renderAsset?.source) {
+  switch (renderAssetWithGameplay?.source) {
     case 'runtime-factory':
-      return loadRuntimeFactoryRenderMap(renderAsset);
+      return loadRuntimeFactoryRenderMap(renderAssetWithGameplay);
     case 'gltf-scene':
-      return loadGltfRenderMap(renderAsset);
+      return loadGltfRenderMap(renderAssetWithGameplay);
     default:
-      throw new Error(`Unsupported render source "${renderAsset?.source ?? 'unknown'}" for map "${entry.id}".`);
+      throw new Error(`Unsupported render source "${renderAssetWithGameplay?.source ?? 'unknown'}" for map "${entry.id}".`);
   }
 }
 
@@ -515,6 +550,7 @@ export async function createMapFromManifest(entry) {
     collisionGeometry,
     gameplayState.groundHeight,
   );
+  const plantZones = resolvePlantZones(entry, renderMap);
 
   return {
     ...renderMap,
@@ -524,6 +560,7 @@ export async function createMapFromManifest(entry) {
     movementMode: gameplayState.movementMode ?? 'grounded',
     allowGroundedMode: gameplayState.allowGroundedMode ?? true,
     teamSpawnPoints,
+    plantZones,
     collisionGeometry,
     shootables: renderMap.shootables ?? [],
     targets: renderMap.targets ?? [],

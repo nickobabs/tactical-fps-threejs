@@ -178,7 +178,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - HUD feedback now covers local health, damage taken/dealt, and respawn countdown
 - Multiplayer correction now uses a deadzone/hysteresis policy and remains the current baseline.
 - HUD shows round state, FPS, weapon, utility, pointer-lock state, movement state, and current position/movement mode.
-- HUD now also includes a hold-`Tab` scoreboard with kills, deaths, ping, and placeholder team scores.
+- HUD now also includes:
+  - a hold-`Tab` scoreboard with kills, deaths, ping, and live team scores
+  - a team-select overlay with player-name entry
+  - a toggleable classic HUD mode inspired by Source
+  - plant-progress and bomb-planted timer/state feedback
 - Debug controls are now part of the active workflow:
   - `F8`: toggle `NETDEBUG`
     - includes a `Copy` button for exact clipboard export of the live panel
@@ -195,13 +199,26 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - separate collision `.glb`
   - baked navmesh binary
   - manifest-defined spawn/gameplay defaults
+- First team-based round flow is active:
+  - players pick attackers or defenders on initial load
+  - player names are chosen during team select
+  - team-based spawns are active
+  - friendly fire is disabled
+- First bomb-objective slice is active:
+  - attacker bomb carrier assigned after freeze
+  - bomb is equipable with `5`
+  - planting requires holding left click in a valid plant zone
+  - planted bomb counts down 40 seconds
+  - explosion awards the round to attackers
+  - imported maps can define sites with `plantable_*` markers
+  - server-authoritative imported-map bomb-site validation is now implemented
 
 ## Current Gameplay Snapshot
 
 - Maps:
   - `Training Ground`
   - `Desert Compound`
-  - `Dust2 Import Test`
+  - `Dust2 Test`
 - Weapons:
   - `Rifle`: full auto, ADS, low damage hitscan
   - `Pistol`: semi-auto sidearm, ADS, lighter recoil/spread profile than the sniper
@@ -213,6 +230,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - use simple line-of-sight driven behavior
 - Menus:
   - pause menu
+  - team select with name entry
   - key bindings
   - map selection
   - skybox selection
@@ -221,6 +239,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - horizontal FOV slider
 - Multiplayer:
   - Colyseus room
+  - attacker/defender team selection
+  - replicated display names
   - remote players use a remote third-person presentation path with placeholder fallback
   - `RemotePlayerPresenter` currently supports both a legacy remote character path (`public/models/players/tester3.glb`) and an experimental path (`public/models/players/newtest.glb`)
   - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
@@ -230,6 +250,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - remote vertical-aim readability currently comes from weapon/socket pitch plus a narrow neck/head procedural layer
   - client prediction with replay/reconciliation
   - first server-authoritative PvP combat slice for hits, health, death, and respawn
+  - server-authoritative round state and first bomb-objective slice
   - server-authoritative segmented remote hitboxes are active and now track the visible remote mesh closely enough for current PvP use
   - `F3` shows authoritative remote hit volumes and `F6` includes `Local Hitbox Debug` for safe visual tuning
   - debug workflow still active
@@ -243,6 +264,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - `NetworkClient` samples local inputs, receives authoritative state, and exposes corrections.
 - `RemotePlayerPresenter` renders remote placeholders / remote character models from authoritative state and combat events, and is now the active remote playermodel testbed.
 - `WeaponManager` consumes frame input for swap/scope/fire logic.
+- `UtilityManager` now coordinates bomb objective state, bomb equip policy, planting interaction, and planted-bomb visualization.
 - `TargetManager` updates bots using `CollisionWorld` and `NavigationManager`.
 
 ## High-Value Files
@@ -386,6 +408,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - graybox maps use shared movement/shared collision primitives
   - imported maps like Dust2 now load authoritative collision from manifest-defined glTF assets on the server, but the broader client/server map assembly path is still not one single source of truth
 - Imported-map support is good enough for iteration, but the export pipeline is still manual and Blender-driven.
+- Current highest-value gameplay/debug blocker is imported-map grounded movement on Dust2:
+  - the player can still hover on invisible support in some places after falling/jumping from height
+  - runtime `groundHeight` fallback support was already removed, so the remaining issue still needs focused trace/debug work
 - `GameApp` still owns some temporary debug/presentation responsibilities because that is the fastest path while broader runtime boundaries are still settling.
 - Remote character presentation is now out of `GameApp`, but the current weapon/model workflow is still a prototype content pipeline:
   - remote character presentation supports both the legacy `tester3.glb` path and the experimental `newtest.glb` path
@@ -434,7 +459,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - no ammo/reload authority
   - no killfeed, spectate flow, or round authority yet
 - Runtime nav generation still exists as a fallback and still runs on the main thread when used.
-- `RoundManager` and `UtilityManager` remain early stubs.
+- `RoundManager` and `UtilityManager` are no longer stubs, but they are still early gameplay systems with narrow rule coverage.
 - `PlayerState` still exists but remains unused.
 
 ## Latest Multiplayer Investigation
@@ -523,13 +548,50 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - current trace payload includes correction action, replay counts, current/authoritative/replay positions, horizontal-vs-vertical correction split, directional correction projection, and cadence-normalized drift fields
     - browser export helper remains:
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
+- Latest grounded movement takeaway:
+  - the remaining counter-strafe / wall-oscillation feel was not a large correction-path failure
+  - traces still showed `reconciliationAction: ignore` with no buffered correction active
+  - the bad feel came from grounded presentation extrapolating desired/input velocity instead of actual simulated velocity
+  - grounded presentation now follows actual simulated velocity
+  - that change also fixed the funny oscillation when pressing into walls
+
+## Current Gameplay Checkpoint
+
+- Recoil:
+  - rifle now uses both visual recoil and actual gameplay spray recoil
+  - pistol recoil/spread is also tunable through the same recoil panel
+  - the active rifle and pistol defaults in `src/shared/weaponData.js` now reflect live-tuned values exported from the debug recoil panel
+- Debug surfaces:
+  - backquote `` ` `` opens a general debug menu
+  - the menu can open:
+    - recoil tuning
+    - movement tuning
+    - viewmodel tuning
+    - remote body tuning
+    - remote weapon tuning
+- Movement tuning:
+  - a dedicated movement panel now controls footstep cadence, trim, pitch, bob attack/damp, bob axes, and movement pull-back
+  - local settings persist in browser storage until reset
+- Footsteps:
+  - current local step audio is registered from `/audio/players/footsteps/`
+  - weapon audio is registered from `/audio/guns/`
+  - current local step pool is the concrete set with random non-repeat selection
+  - footsteps are currently silent while walking, crouched, or moving below rifle-walk speed
+- Walking:
+  - `Shift` grounded walk is back
+  - most weapons use `50%` walk speed
+  - knife uses `60%`
+  - walk intent and `walkSpeedFactor` are now serialized through the real network input path, so client prediction, replay, and server authority all use the same rule
+- Shared movement feel:
+  - grounded movement now uses a softer ramp-in, explicit deceleration, and stronger reversal braking
+  - the local presentation layer no longer gets to lead grounded motion with desired velocity
 
 ## Near-Term Direction
 
 - Keep building on the imported-map pipeline instead of reverting to graybox-only assumptions.
 - Formalize gameplay metadata export for imported maps later, likely from Blender or a similar DCC path.
 - Keep baked navmesh as the preferred runtime model.
-- Leave wall-contact oscillation paused until it is worth doing a more principled controller/contact pass.
+- Treat the old wall-contact oscillation issue as resolved at the presentation layer for the current baseline. Any future wall/jitter issue should now be investigated as collision/contact behavior rather than immediately blamed on reconciliation feel.
 - Continue the new remote aiming/presentation direction:
   - keep pitch replicated through the authoritative multiplayer path
   - keep the current stable full-body locomotion path as the active remote baseline
@@ -538,8 +600,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - treat broad upper/lower-body locomotion layering as paused until a more formal animation-state-machine approach exists
   - treat remote left-hand IK as still experimental
 - Next movement-feel pass:
-  - replace the current planar velocity lerp with a more explicit acceleration / braking model in `src/shared/playerMovement.js`
-  - keep high responsiveness while preventing instant direction flips
+  - keep the new shared accel/decel/reversal baseline
+  - continue tuning starts/stops/direction changes now that grounded presentation is tied to actual simulated motion
   - preserve deterministic shared simulation for client prediction and server authority
   - keep counter-strafe meaningful, mainly for sniper timing rather than rifle-spread gimmicks
   - do not add stamina, leaning, or crouch-slide

@@ -78,6 +78,9 @@ export function findLandingHeightAtCurrentPosition({
       2,
       256,
     );
+    if (!Number.isFinite(groundHeight)) {
+      continue;
+    }
     const dropDistance = position.y - groundHeight;
 
     if (dropDistance < -0.5 || dropDistance > 256) {

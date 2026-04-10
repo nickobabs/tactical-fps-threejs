@@ -1,3 +1,8 @@
+import {
+  DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING,
+  DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING,
+} from '../../app/debugMenuEvents.js';
+
 function clonePose(pose) {
   return {
     position: [...pose.position],
@@ -256,14 +261,19 @@ export function createRemoteWeaponTuningPanelUi({
     togglePanel();
     event.preventDefault();
   }
+  function handleDebugMenuToggle() {
+    togglePanel();
+  }
 
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING, handleDebugMenuToggle);
   ensureRemoteWeaponTuning();
   syncInputsFromPose();
 
   return {
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING, handleDebugMenuToggle);
       panel.remove();
     },
   };
@@ -526,14 +536,19 @@ export function createRemoteCharacterTuningPanelUi({
     togglePanel();
     event.preventDefault();
   }
+  function handleDebugMenuToggle() {
+    togglePanel();
+  }
 
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING, handleDebugMenuToggle);
   ensureRemoteWeaponTuning();
   syncModelScale();
 
   return {
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING, handleDebugMenuToggle);
       panel.remove();
     },
   };

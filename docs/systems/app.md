@@ -23,6 +23,7 @@
 - A running browser-based game loop
 - Shared per-frame input flow between controller and weapons
 - Pause/resume state transitions
+- Team-select state transitions
 - Active map selection and map-runtime rebuilds
 - A staged map-loading state with visible loading feedback
 - Active HDR skybox selection
@@ -64,6 +65,7 @@
 - Local multiplayer prediction now runs through a fixed-step loop owned by `GameApp`, while look input and rendering remain frame-rate driven.
 - Pause is coordinated at the app layer by suspending gameplay updates while continuing HUD and render output.
 - In the current multiplayer pass, pause is local UI/input state only. It no longer freezes the broader world simulation or remote-player updates.
+- Initial map load now enters a forced `team-select` pause mode instead of dropping straight into the normal pause menu.
 - Skybox selection is delegated to `SkyboxManager`, keeping HDR loading and disposal out of the rest of the runtime.
 - Audio registration and browser audio-context lifecycle are coordinated through a small app helper, while playback remains encapsulated in `AudioManager`.
 - `GameApp` now owns composition and high-level state, while map-bound systems such as collision, targets, navigation, and player spawn live inside `MapRuntime`.
@@ -83,15 +85,27 @@
   - `J`, `K`, `L` support coordinate/marker dumping
   - `B` toggles collision wireframe overlay
 - Additional runtime tuning panels are also reachable from the active app flow:
-  - `F4` first-person viewmodel and muzzle tuning
-  - `F6` remote body/aim/hitbox tuning
-  - `F7` remote weapon/socket tuning
+  - backquote `` ` `` opens the general debug menu
+  - the debug menu can open:
+    - recoil tuning
+    - movement tuning
+    - viewmodel tuning
+    - remote body tuning
+    - remote weapon tuning
+  - direct hotkeys still remain for:
+    - `F4` first-person viewmodel and muzzle tuning
+    - `F6` remote body/aim/hitbox tuning
+    - `F7` remote weapon/socket tuning
 
 ## Current Status
 
 - Implemented and active
 - HDR skyboxes, pause menu flow, staged map swapping, baked-nav-first map initialization, weapon swapping, sensitivity/volume controls, shared audio registration, imported-map debugging, and additive multiplayer remote-player rendering are all integrated into the active runtime
 - Local multiplayer prediction, reconciliation handoff, and remote presentation are all wired through the active app loop
+- Team selection, player-name entry, and authoritative round/objective HUD flow are also wired through the active app loop
+- The app now also owns two temporary local tuning surfaces as part of the active runtime:
+  - recoil tuning
+  - movement tuning
 - The current app-layer split is:
   - `GameApp` owns composition and frame-phase ordering
   - `GamePauseController` owns pause/resume state transitions

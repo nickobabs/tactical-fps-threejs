@@ -10,8 +10,12 @@ The current networking slice supports:
 - Server-assigned player identity through Colyseus session IDs
 - Client-to-server per-step input snapshots
 - Client-to-server fire requests for PvP combat
+- Client-to-server player-ready/team/name initialization
+- Client-to-server bomb plant requests
 - Server-authoritative player positions derived from those inputs
 - Server-authoritative player health / alive state for PvP
+- Server-authoritative round state
+- Server-authoritative bomb/objective state
 - Server-broadcast combat events for hit / death / respawn feedback
 - A fixed-rate authoritative room simulation on the server
 - Client-side local movement prediction with replay-based reconciliation and a separate local presentation layer
@@ -37,6 +41,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Replicated local-player health / respawn timing
 - Combat event stream for local hit / damage feedback
 - Replicated scoreboard ping values based on client-observed RTT
+- Replicated team/display-name state for scoreboard and remote presentation
+- Replicated round/objective snapshots for HUD and gameplay flow
 
 ## Dependencies
 
@@ -71,6 +77,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - local weapon presentation stays immediate
   - the server owns PvP hit validation, damage, death, and respawn timing
   - the client consumes replicated combat state and feedback events
+- Round timing and the first bomb-objective slice are now server-authoritative:
+  - room starts in `waiting`
+  - freeze only begins once all connected players have chosen a team and sent `player-ready`
+  - clients apply server round snapshots instead of simulating rounds locally
+  - planted-bomb timing is part of the objective snapshot
 - Scoreboard ping now uses a lightweight RTT path instead of `Date.now() - clientTimestamp`:
   - client sends periodic `ping`
   - server immediately responds with `pong`
@@ -83,6 +94,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 
 - Implemented and active
 - Two local browser tabs can join the same `TacticalRoom`
+- Team selection and display-name flow are now part of multiplayer initialization
 - Remote players appear as readable placeholders with:
   - blue box body
   - visible equipped weapon proxy
@@ -130,8 +142,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - that broader upper/lower-body locomotion layering path is currently paused and is not the active runtime baseline
 - Connection state and remote-player count are visible in the HUD
 - Server authority and reconciliation are wired end-to-end for player movement
+- Friendly fire is disabled in authoritative hit validation
 - Server authority now uses shared map collision for `Training Ground` and `Desert Compound`
 - Server authority also loads imported collision glTF data for `Dust2 Import Test`
+- Server-authoritative round state and bomb/objective state are active
+- Server-authoritative imported-map bomb-site validation now supports `plantable_*` markers
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests
   - the server validates hits against authoritative player state
@@ -186,6 +201,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - `F3` remains an important visual diagnostic tool, and `F6` local hitbox debug should be used for future visual tuning before baking new shared defaults
   - the temporary file-backed deep audit used to resolve the locomotion/jump mismatch was removed after the fix, so `F3` no longer writes log files during normal use
 - the earlier airborne remote-hitbox offset was resolved by that same `Bip01` root-motion parity fix
+- The current Dust2 movement blocker under active investigation is a local/support grounding issue on imported geometry, not a room/netcode protocol bug
 
 ## Investigation Notes
 
@@ -213,8 +229,16 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - the remaining ordinary offset was typically about `0.082` meters on the horizontal plane
   - that offset projected almost entirely along movement direction, not perpendicular to it
   - `0.082` meters matches roughly one `60 Hz` movement tick at the grounded cap of `4.92 m/s`
-  - current interpretation is that this is a stable authority-cadence gap inside the accepted deadzone, not a visible correction bug
+  - current interpretation is that this is a stable authority-cadence gap inside the accepted deadzone, not a large visible correction bug
+- Follow-up diagnosis after the later movement-feel pass:
+  - the remaining bad counter-strafe / wall-oscillation feel came from local grounded presentation extrapolating desired/input velocity instead of actual simulated velocity
+  - grounded presentation now follows actual simulated velocity
+  - that removed the fake local lead that made small accepted authority gaps feel like pullback/correction
 - The most useful A/B check was toggling local correction off entirely. With correction disabled, local movement felt effectively correct, which confirmed that the remaining issue was correction policy rather than render cadence.
+- A later Dust2 investigation narrowed one imported-map problem further:
+  - runtime ground queries used to fall back to global `groundHeight` on ray miss, which created an artificial invisible support plane
+  - that fallback has been removed for runtime movement/support queries
+  - current remaining Dust2 hover behavior still needs deeper capture/debugging
 - The current working baseline is to trust local prediction for tiny drift and only begin convergence once the correction clears a meaningful threshold.
 - For hitboxes, the important lesson is:
   - building useful authoritative volumes from the remote skeleton is possible

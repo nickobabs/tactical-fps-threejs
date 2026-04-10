@@ -139,6 +139,8 @@ export class TargetDummy {
       this.group.position.z,
       this.group.position.y,
       0.45,
+      12,
+      true,
     ) ?? 0;
     this.group.position.y = floor;
 
@@ -238,6 +240,8 @@ export class TargetDummy {
       nextPosition.z,
       this.group.position.y,
       0.45,
+      12,
+      true,
     ) ?? this.group.position.y;
   }
 
@@ -286,6 +290,8 @@ export class TargetDummy {
       nextPosition.z,
       this.group.position.y,
       0.45,
+      12,
+      true,
     ) ?? floor;
   }
 

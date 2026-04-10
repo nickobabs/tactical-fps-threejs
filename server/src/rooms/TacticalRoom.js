@@ -21,11 +21,22 @@ import {
 } from '../../../src/shared/netcodeProtocol.js';
 import { TEAMS } from '../../../src/shared/constants.js';
 import { createCollisionMapForMapIdAsync } from '../../../src/shared/maps/mapCollision.js';
+import { getMapManifestEntry } from '../../../src/shared/maps/mapManifest.js';
+import {
+  getImportedPlantZoneNamesFromEntryAsync,
+  getPlantZoneNamesFromEntry,
+} from '../../../src/shared/maps/mapPlantZones.js';
+import {
+  createBombObjectiveSnapshot,
+  DEFAULT_BOMB_DURATION,
+  selectBombCarrierPlayerId,
+} from '../../../src/shared/bombObjective.js';
 import {
   getSharedWeaponData,
   PLAYER_MAX_HEALTH,
   PLAYER_RESPAWN_DELAY_MS,
 } from '../../../src/shared/weaponData.js';
+import { RoundManager } from '../../../src/game/rounds/RoundManager.js';
 import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../../src/shared/playerHitboxes.js';
 import {
   buildRemoteHitboxSnapshotFromPoints,
@@ -64,6 +75,7 @@ const __dirname = path.dirname(__filename);
 const REMOTE_HITBOX_AUDIT_LOG_PATH = path.resolve(__dirname, '../../../debug/remote-hitbox-audit.log');
 const MAX_SCOREBOARD_PING_MS = 999;
 const MAX_DISPLAY_NAME_LENGTH = 24;
+const SERVER_OBJECTIVE_STEP = 1 / NETCODE_SIMULATION_RATE;
 
 async function appendRemoteHitboxAudit(entry) {
   await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
@@ -282,22 +294,227 @@ export class TacticalRoom extends Room {
     return normalized || fallback;
   }
 
+  createObjectiveState() {
+    return createBombObjectiveSnapshot();
+  }
+
+  getPlantZonesForMap(mapId) {
+    return this.plantZoneNamesByMap.get(mapId) ?? [];
+  }
+
+  async ensurePlantZonesForMap(mapId) {
+    const resolvedMapId = mapId ?? 'training-ground';
+    if (this.plantZoneNamesByMap.has(resolvedMapId)) {
+      return this.plantZoneNamesByMap.get(resolvedMapId);
+    }
+
+    if (this.plantZonePromises.has(resolvedMapId)) {
+      return this.plantZonePromises.get(resolvedMapId);
+    }
+
+    const entry = getMapManifestEntry(resolvedMapId);
+    const loadPromise = (async () => {
+      if (!entry) {
+        const emptyZones = [];
+        this.plantZoneNamesByMap.set(resolvedMapId, emptyZones);
+        return emptyZones;
+      }
+
+      const explicitZones = getPlantZoneNamesFromEntry(entry);
+      if (explicitZones.length > 0) {
+        this.plantZoneNamesByMap.set(resolvedMapId, explicitZones);
+        return explicitZones;
+      }
+
+      const importedZones = await getImportedPlantZoneNamesFromEntryAsync(entry);
+      this.plantZoneNamesByMap.set(resolvedMapId, importedZones);
+      return importedZones;
+    })();
+
+    this.plantZonePromises.set(resolvedMapId, loadPromise);
+
+    try {
+      return await loadPromise;
+    } finally {
+      this.plantZonePromises.delete(resolvedMapId);
+    }
+  }
+
+  getReadyPlayers() {
+    return Object.values(this.players).filter((player) => player.isReady);
+  }
+
+  areAllConnectedPlayersReady() {
+    const players = Object.values(this.players);
+    return players.length > 0 && players.every((player) => player.isReady);
+  }
+
+  collectAttackerPlayerIds() {
+    return this.getReadyPlayers()
+      .filter((player) => player.team === TEAMS.ATTACKERS)
+      .map((player) => player.playerId)
+      .sort();
+  }
+
+  hashSelectionSeed(value) {
+    let hash = 0;
+    const text = String(value ?? '');
+    for (let index = 0; index < text.length; index += 1) {
+      hash = ((hash << 5) - hash) + text.charCodeAt(index);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }
+
+  assignBombCarrier() {
+    this.objectiveState.bombCarrierPlayerId = selectBombCarrierPlayerId({
+      roundNumber: this.roundManager.roundNumber,
+      attackerPlayerIds: this.collectAttackerPlayerIds(),
+    });
+  }
+
+  resetObjectiveState() {
+    this.objectiveState = this.createObjectiveState();
+  }
+
+  beginFreezeIfReady() {
+    if (!this.areAllConnectedPlayersReady()) {
+      return false;
+    }
+
+    this.roundManager.beginFreeze();
+    this.resetObjectiveState();
+    return true;
+  }
+
+  updateRoundState(delta) {
+    if (this.roundManager.phase === 'waiting') {
+      if (this.beginFreezeIfReady()) {
+        this.requestStateBroadcast();
+      }
+      return;
+    }
+
+    const previousPhase = this.roundManager.phase;
+    const previousRoundNumber = this.roundManager.roundNumber;
+    const previousRoundEnded = this.roundManager.roundEnded;
+    const event = this.roundManager.update(delta);
+
+    if (event?.type === 'phase-changed' && event.phase === 'live') {
+      this.assignBombCarrier();
+      this.requestStateBroadcast();
+      return;
+    }
+
+    if (event?.type === 'phase-changed' && event.phase === 'freeze') {
+      this.resetObjectiveState();
+      if (!this.areAllConnectedPlayersReady()) {
+        this.roundManager.startWaiting();
+      }
+      this.requestStateBroadcast();
+      return;
+    }
+
+    if (
+      previousPhase !== this.roundManager.phase
+      || previousRoundNumber !== this.roundManager.roundNumber
+      || previousRoundEnded !== this.roundManager.roundEnded
+    ) {
+      this.requestStateBroadcast();
+    }
+  }
+
+  updateObjectiveState(delta) {
+    if (this.roundManager.phase !== 'live' || this.roundManager.roundEnded) {
+      return;
+    }
+
+    if (this.objectiveState.bombState !== 'planted') {
+      return;
+    }
+
+    this.objectiveState.bombTimeRemaining = Math.max(0, this.objectiveState.bombTimeRemaining - delta);
+    if (this.objectiveState.bombTimeRemaining === 0) {
+      this.objectiveState.bombState = 'exploded';
+      this.roundManager.endRound(TEAMS.ATTACKERS, 'bomb-exploded');
+    }
+  }
+
+  handleBombPlant(player, message) {
+    if (
+      !player.isReady
+      || !player.isAlive
+      || player.team !== TEAMS.ATTACKERS
+      || this.roundManager.phase !== 'live'
+      || this.roundManager.roundEnded
+      || this.objectiveState.bombState !== 'idle'
+      || this.objectiveState.bombCarrierPlayerId !== player.playerId
+    ) {
+      return;
+    }
+
+    const zoneName = String(message?.zoneName ?? '').trim();
+    const validZones = this.getPlantZonesForMap(player.mapId);
+    if (validZones.length > 0 && zoneName && !validZones.includes(zoneName)) {
+      return;
+    }
+
+    this.objectiveState.bombCarrierPlayerId = null;
+    this.objectiveState.bombState = 'planted';
+    this.objectiveState.bombTimeRemaining = DEFAULT_BOMB_DURATION;
+    this.objectiveState.plantedZoneName = zoneName || 'plant-site';
+    this.objectiveState.plantedPosition = {
+      x: Number(message?.position?.x ?? player.motionState?.position?.x ?? 0),
+      y: Number(message?.position?.y ?? player.motionState?.position?.y ?? 0),
+      z: Number(message?.position?.z ?? player.motionState?.position?.z ?? 0),
+    };
+    this.roundManager.phaseTime = Math.max(0, this.roundManager.liveDuration - DEFAULT_BOMB_DURATION);
+    this.requestStateBroadcast();
+  }
+
+  getObjectiveSnapshot() {
+    return {
+      bombCarrierPlayerId: this.objectiveState.bombCarrierPlayerId,
+      bombState: this.objectiveState.bombState,
+      bombTimeRemaining: Number(this.objectiveState.bombTimeRemaining ?? 0),
+      plantedZoneName: this.objectiveState.plantedZoneName,
+      plantedPosition: this.objectiveState.plantedPosition
+        ? {
+          x: Number(this.objectiveState.plantedPosition.x ?? 0),
+          y: Number(this.objectiveState.plantedPosition.y ?? 0),
+          z: Number(this.objectiveState.plantedPosition.z ?? 0),
+        }
+        : null,
+    };
+  }
+
   onCreate() {
     this.setPrivate(false);
     this.players = {};
     this.nextPlayerNumber = 1;
     this.collisionWorlds = new Map();
     this.collisionWorldPromises = new Map();
+    this.plantZoneNamesByMap = new Map();
+    this.plantZonePromises = new Map();
+    this.stateDirty = true;
+    this.roundManager = new RoundManager();
+    this.roundManager.startWaiting();
+    this.objectiveState = this.createObjectiveState();
     void createRemoteHitboxRig().catch((error) => {
       console.warn('[TacticalRoom] Failed to preload remote hitbox rig.', error);
     });
     this.setSimulationInterval(() => {
+      this.updateObjectiveState(SERVER_OBJECTIVE_STEP);
+      this.updateRoundState(SERVER_OBJECTIVE_STEP);
+      let movementStateChanged = false;
+
       for (const player of Object.values(this.players)) {
         const collisionWorld = this.getCollisionWorldForMap(player.mapId);
 
         if (!player.isAlive) {
           if (player.respawnAt > 0 && Date.now() >= player.respawnAt) {
             this.respawnPlayer(player);
+            movementStateChanged = true;
           }
           continue;
         }
@@ -320,6 +537,7 @@ export class TacticalRoom extends Room {
 
         while (player.pendingInputs.length > 0) {
           const nextInput = player.pendingInputs.shift();
+          movementStateChanged = true;
           player.pitch = Number(nextInput.pitch ?? player.pitch ?? 0);
           player.motionState = simulatePlayerMovement(player.motionState, nextInput, NETCODE_SIMULATION_STEP, {
             groundHeight: collisionWorld?.getGroundHeight() ?? 0,
@@ -362,7 +580,11 @@ export class TacticalRoom extends Room {
         player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
       }
 
-      this.broadcastPlayerState();
+      if (movementStateChanged) {
+        this.requestStateBroadcast();
+      }
+
+      this.flushStateBroadcast();
     }, 1000 / NETCODE_SIMULATION_RATE);
 
     this.onMessage('player-input', (client, message) => {
@@ -446,8 +668,9 @@ export class TacticalRoom extends Room {
         });
         player.pitch = readyState.pitch;
         player.presentationState = this.getPresentationStateForPlayer(player);
-        this.broadcastPlayerState();
+        this.requestStateBroadcast();
         await this.ensureCollisionWorldForMap(readyState.mapId);
+        await this.ensurePlantZonesForMap(readyState.mapId);
         player.isReady = true;
         player.health = player.maxHealth;
         player.isAlive = true;
@@ -457,7 +680,10 @@ export class TacticalRoom extends Room {
           : player.activeWeaponKey;
         player.isScoped = false;
         player.presentationState = this.getPresentationStateForPlayer(player);
-        this.broadcastPlayerState();
+        if (this.roundManager.phase === 'waiting') {
+          this.beginFreezeIfReady();
+        }
+        this.requestStateBroadcast();
       } catch (error) {
         console.error(`[TacticalRoom] Failed to initialize player ${client.sessionId} on map.`, error);
       }
@@ -490,11 +716,24 @@ export class TacticalRoom extends Room {
 
       player.activeWeaponKey = nextWeaponKey;
       player.isScoped = nextScoped;
-      this.broadcastPlayerState();
+      this.requestStateBroadcast();
+    });
+
+    this.onMessage('bomb-plant', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player) {
+        return;
+      }
+
+      this.handleBombPlant(player, message);
     });
 
     this.onMessage('request-player-state', (client) => {
-      client.send('player-state', { players: this.getSerializablePlayers() });
+      client.send('player-state', {
+        players: this.getSerializablePlayers(),
+        round: this.roundManager.getSnapshot(),
+        objective: this.getObjectiveSnapshot(),
+      });
     });
 
     this.onMessage('remote-hitbox-audit', (client, message) => {
@@ -574,7 +813,7 @@ export class TacticalRoom extends Room {
       playerId: client.sessionId,
       sessionId: client.sessionId,
     });
-    this.broadcastPlayerState();
+    this.requestStateBroadcast();
 
     console.log(
       `[TacticalRoom] Client joined: session=${client.sessionId} playerId=${client.sessionId} players=${Object.keys(this.players).length}`,
@@ -584,11 +823,23 @@ export class TacticalRoom extends Room {
   onLeave(client) {
     delete this.players[client.sessionId];
 
+    if (this.objectiveState.bombCarrierPlayerId === client.sessionId) {
+      this.objectiveState.bombCarrierPlayerId = null;
+    }
+
+    if (Object.keys(this.players).length === 0) {
+      this.roundManager = new RoundManager();
+      this.roundManager.startWaiting();
+      this.resetObjectiveState();
+    } else if (this.roundManager.phase === 'waiting') {
+      this.beginFreezeIfReady();
+    }
+
     this.broadcast('player-left', {
       playerId: client.sessionId,
       sessionId: client.sessionId,
     });
-    this.broadcastPlayerState();
+    this.requestStateBroadcast();
 
     console.log(
       `[TacticalRoom] Client left: session=${client.sessionId} playerId=${client.sessionId} players=${Object.keys(this.players).length}`,
@@ -597,11 +848,13 @@ export class TacticalRoom extends Room {
 
   onDispose() {
     this.collisionWorldPromises.clear();
+    this.plantZonePromises.clear();
     for (const collisionWorld of this.collisionWorlds.values()) {
       collisionWorld.collisionGeometry?.dispose?.();
     }
 
     this.collisionWorlds.clear();
+    this.plantZoneNamesByMap.clear();
   }
 
   getSerializablePlayers() {
@@ -616,7 +869,22 @@ export class TacticalRoom extends Room {
   broadcastPlayerState() {
     this.broadcast('player-state', {
       players: this.getSerializablePlayers(),
+      round: this.roundManager.getSnapshot(),
+      objective: this.getObjectiveSnapshot(),
     });
+  }
+
+  requestStateBroadcast() {
+    this.stateDirty = true;
+  }
+
+  flushStateBroadcast() {
+    if (!this.stateDirty) {
+      return;
+    }
+
+    this.stateDirty = false;
+    this.broadcastPlayerState();
   }
 
   getCollisionWorldForMap(mapId) {
@@ -680,6 +948,7 @@ export class TacticalRoom extends Room {
       type: 'player-respawned',
       playerId: player.playerId,
     });
+    this.requestStateBroadcast();
   }
 
   processPlayerFire(player, fireRequest) {
@@ -801,7 +1070,7 @@ export class TacticalRoom extends Room {
       killed: bestTarget.health === 0,
       respawnAt: bestTarget.respawnAt,
     });
-    this.broadcastPlayerState();
+    this.requestStateBroadcast();
   }
 
   getPresentationStateForPlayer(player) {

@@ -1,6 +1,28 @@
 # Movement Acceleration Plan
 
-This note captures the planned next movement pass so work can resume cleanly without reconstructing design intent.
+This note started as the planned next movement pass. Parts of it are now live, so it should be read as a checkpoint plus remaining follow-up notes rather than a purely future plan.
+
+## Status Update 2026-04-10
+
+The first real movement-feel pass is now partially implemented in `src/shared/playerMovement.js`.
+
+Current live behavior now includes:
+
+- softer grounded ramp-in at low speed
+- explicit grounded deceleration
+- stronger braking when reversing direction
+- weapon-relative grounded walk speed through shared input/network simulation
+
+Important follow-up finding:
+
+- the remaining bad counter-strafe / wall-oscillation feel was not primarily caused by the new accel/decel math
+- traces still showed `reconciliationAction: ignore` with no buffered correction active
+- the misleading feel came from grounded presentation extrapolating desired/input velocity instead of actual simulated velocity
+- grounded presentation now follows actual simulated velocity, which resolved both:
+  - the fake counter-strafe pullback feel
+  - the funny oscillation when pressing into walls
+
+So the next movement pass should tune the current shared model from this cleaner baseline instead of reopening presentation-leading behavior.
 
 ## Status Update 2026-04-07
 
@@ -54,19 +76,22 @@ This is simple and deterministic, but it makes starts, stops, and direction flip
 
 ## Planned Implementation
 
+Parts of this section are now implemented conceptually, even though the exact final math differs from the original sketch.
+
 Implement the first pass in `src/shared/playerMovement.js` so both browser prediction and server authority stay aligned.
 
-### 1. Replace planar velocity lerp with capped accelerate-toward logic
+### 1. Replace planar velocity lerp with more explicit grounded accel/brake behavior
 
-Move from:
+Original intent:
 
 - `velocity = lerp(velocity, targetVelocity, blend)`
 
-To:
+Current live interpretation:
 
-- compute desired planar velocity from input
-- compute current planar velocity
-- move planar velocity toward desired velocity by a capped delta per step
+- keep deterministic target-velocity movement, but modulate it with:
+  - grounded acceleration ramp-in
+  - grounded deceleration
+  - stronger reversal braking
 
 This gives more control over:
 
@@ -104,6 +129,9 @@ Current live values:
 - walk: `4.92`
 - crouch: `2.64`
 - knife multiplier: `1.25`
+- walk factor:
+  - most weapons: `0.5`
+  - knife: `0.6`
 
 The new system should change how velocity approaches the cap, not the cap logic itself.
 
@@ -148,7 +176,9 @@ Likely tuning direction:
 3. Keep vertical movement, jump, gravity, and ground support behavior unchanged for the first pass.
 4. Validate local single-player feel first.
 5. Validate local multiplayer correction behavior after that.
-6. If the discrete stale-speed issue persists, adjust grounded reconciliation before broader acceleration redesign.
+6. Treat any new “server pullback” report carefully:
+   - check trace data first
+   - verify whether it is true correction activity or just presentation leading intent again
 7. Only then tune numbers for sniper-feel / counter-strafe behavior.
 
 ## Out Of Scope For This Pass

@@ -4,6 +4,7 @@ import { addImpactEffect, addMissTracer } from './weaponEffects.js';
 const SHOT_OFFSET = new THREE.Vector2();
 const FAR_POINT = new THREE.Vector3();
 const KNIFE_HIT_POINT = new THREE.Vector3();
+const SPRAY_CURVE_OFFSET = new THREE.Vector2();
 
 export function createFireContext() {
   return {
@@ -34,6 +35,66 @@ export function applyHipfireSpread(weapon, isScoped, target = SHOT_OFFSET) {
   return target;
 }
 
+export function applySprayRecoil(weapon, sprayShotCount = 1, target = SPRAY_CURVE_OFFSET) {
+  target.set(0, 0);
+
+  const sprayRecoil = weapon?.sprayRecoil;
+  if (!sprayRecoil) {
+    return target;
+  }
+
+  const warmupShots = Math.max(1, Number(sprayRecoil.warmupShots ?? 1));
+  const maxShots = Math.max(warmupShots, Number(sprayRecoil.maxShots ?? warmupShots));
+  const initialOffsetY = Math.max(0, Number(sprayRecoil.initialOffsetY ?? 0));
+  const maxOffsetY = Math.max(initialOffsetY, Number(sprayRecoil.maxOffsetY ?? initialOffsetY));
+  const shoulderShots = Math.max(warmupShots + 1, Number(sprayRecoil.shoulderShots ?? (warmupShots + 2)));
+  const shoulderOffsetY = THREE.MathUtils.clamp(
+    Number(sprayRecoil.shoulderOffsetY ?? initialOffsetY),
+    initialOffsetY,
+    maxOffsetY,
+  );
+  const riseSharpness = Math.max(0.25, Number(sprayRecoil.riseSharpness ?? 3));
+  const horizontalStartShots = Math.max(
+    warmupShots + 1,
+    Number(sprayRecoil.horizontalStartShots ?? shoulderShots),
+  );
+  const maxOffsetX = Math.max(0, Number(sprayRecoil.maxOffsetX ?? 0));
+  const horizontalExponent = Math.max(0.25, Number(sprayRecoil.horizontalExponent ?? 1));
+  if (sprayShotCount <= warmupShots) {
+    return target;
+  }
+
+  if (sprayShotCount <= shoulderShots) {
+    const earlyAlpha = THREE.MathUtils.clamp(
+      (sprayShotCount - (warmupShots + 1)) / Math.max(shoulderShots - (warmupShots + 1), 1),
+      0,
+      1,
+    );
+    target.y = THREE.MathUtils.lerp(initialOffsetY, shoulderOffsetY, earlyAlpha);
+    return target;
+  }
+
+  const lateAlpha = THREE.MathUtils.clamp(
+    (sprayShotCount - shoulderShots) / Math.max(maxShots - shoulderShots, 1),
+    0,
+    1,
+  );
+  const exponentialAlpha = (1 - Math.exp(-riseSharpness * lateAlpha))
+    / (1 - Math.exp(-riseSharpness));
+  target.y = THREE.MathUtils.lerp(shoulderOffsetY, maxOffsetY, exponentialAlpha);
+
+  if (maxOffsetX > 0 && sprayShotCount >= horizontalStartShots) {
+    const horizontalAlpha = THREE.MathUtils.clamp(
+      (sprayShotCount - horizontalStartShots) / Math.max(maxShots - horizontalStartShots, 1),
+      0,
+      1,
+    );
+    const horizontalMagnitude = maxOffsetX * Math.pow(horizontalAlpha, horizontalExponent);
+    target.x = (Math.random() * 2 - 1) * horizontalMagnitude;
+  }
+  return target;
+}
+
 export function fireHitscan({
   camera,
   scene,
@@ -44,8 +105,10 @@ export function fireHitscan({
   weapon,
   isScoped,
   applyDamage = true,
+  sprayShotCount = 1,
 }) {
   const shotOffset = applyHipfireSpread(weapon, isScoped);
+  shotOffset.add(applySprayRecoil(weapon, sprayShotCount));
   raycaster.layers.set(0);
   raycaster.setFromCamera(shotOffset, camera);
   const hit = raycaster.intersectObjects(shootables, false)[0];

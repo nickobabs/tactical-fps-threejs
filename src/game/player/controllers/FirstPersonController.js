@@ -8,6 +8,7 @@ import { applyMotionStateCollisionSafe, movePositionCollisionSafe } from './play
 import { getBufferedCorrectionStep, shouldDropBufferedCorrection } from './playerBufferedCorrection.js';
 import { recordRecentCorrectionEvent } from './playerCorrectionMetrics.js';
 import { getReconciliationOutcome, replayAuthoritativeState } from './playerReconciliation.js';
+import { MOVEMENT_TUNING } from '../movementTuning.js';
 
 const RESOLVED_POSITION = new THREE.Vector3();
 const HORIZONTAL_DELTA = new THREE.Vector3();
@@ -24,11 +25,9 @@ const FLY_PRESENTATION_VELOCITY = new THREE.Vector3();
 const BUFFERED_CORRECTION_START = new THREE.Vector3();
 const BUFFERED_CORRECTION_TARGET = new THREE.Vector3();
 const BUFFERED_CORRECTION_APPLIED = new THREE.Vector3();
-
-function easeCircIn(value) {
-  const t = THREE.MathUtils.clamp(Number(value ?? 0), 0, 1);
-  return 1 - Math.sqrt(1 - (t * t));
-}
+const FOOTSTEP_SAMPLE_COUNT = 16;
+const FOOTSTEP_POSITION_BEFORE_STEP = new THREE.Vector3();
+const FOOTSTEP_AUDIBLE_SPEED_FLOOR = 2.46;
 
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -68,7 +67,9 @@ export class FirstPersonController {
     this.input = input;
     this.collisionWorld = options.collisionWorld ?? null;
     this.landingSurfaces = options.landingSurfaces ?? [];
+    this.audioManager = options.audioManager ?? null;
     this.getSpeedMultiplier = options.getSpeedMultiplier ?? (() => 1);
+    this.getWalkSpeedFactor = options.getWalkSpeedFactor ?? (() => 0.5);
     this.movementMode = options.movementMode ?? 'grounded';
     this.allowGroundedMode = options.allowGroundedMode ?? true;
 
@@ -102,7 +103,8 @@ export class FirstPersonController {
     this.flySprintSpeed = 16;
     this.jumpForce = 6.1;
     this.gravity = 18;
-    this.acceleration = 32;
+    this.acceleration = 18;
+    this.deceleration = 14;
     this.airControl = 0.35;
     this.mouseSensitivity = options.mouseSensitivity ?? 0.0011;
     this.baseFov = camera.fov;
@@ -149,6 +151,12 @@ export class FirstPersonController {
     this.visualRecoilShotCount = 0;
     this.visualRecoilTimeSinceShot = Infinity;
     this.visualRecoilConfig = null;
+    this.footstepDistance = 0;
+    this.wasFootstepAudible = false;
+    this.lastFootstepSampleIndex = -1;
+    this.viewModelStepBob = 0;
+    this.viewModelStepBobTarget = 0;
+    this.viewModelStepBobSide = 1;
   }
 
   getObject() {
@@ -165,6 +173,7 @@ export class FirstPersonController {
     const moveLeft = this.input?.isPressed?.('KeyA') ?? false;
     const moveRight = this.input?.isPressed?.('KeyD') ?? false;
     const wantsCrouch = this.input?.isPressed?.('KeyC') ?? false;
+    const wantsWalk = this.input?.isPressed?.('ShiftLeft') ?? false;
     const forwardX = -Math.sin(this.yawAngle);
     const forwardZ = -Math.cos(this.yawAngle);
     const rightX = Math.cos(this.yawAngle);
@@ -197,30 +206,45 @@ export class FirstPersonController {
 
     const targetBaseSpeed = this.movementMode === 'fly'
       ? ((this.input?.isPressed?.('ShiftLeft') ?? false) ? this.flySprintSpeed : this.flySpeed)
-      : (wantsCrouch ? this.crouchSpeed : this.walkSpeed);
+      : (wantsCrouch ? this.crouchSpeed : (wantsWalk ? this.walkSpeed * 0.5 : this.walkSpeed));
     const targetSpeed = targetMoveLength > 0 ? targetBaseSpeed * this.getSpeedMultiplier() : 0;
     const targetVelocityX = targetMoveLength > 0 ? targetMoveX * targetSpeed : 0;
     const targetVelocityZ = targetMoveLength > 0 ? targetMoveZ * targetSpeed : 0;
     const speedRatio = targetSpeed > 1e-6 ? horizontalSpeed / targetSpeed : 0;
+    const hasVelocityDirection = horizontalSpeed > 1e-6;
+    const hasTargetDirection = targetSpeed > 1e-6;
+    const movementDirectionDot = hasVelocityDirection && hasTargetDirection
+      ? (
+        ((this.velocity.x / horizontalSpeed) * (targetVelocityX / targetSpeed))
+        + ((this.velocity.z / horizontalSpeed) * (targetVelocityZ / targetSpeed))
+      )
+      : 1;
     const inputFlags = [
       moveForward ? 'W' : '',
       moveBackward ? 'S' : '',
       moveLeft ? 'A' : '',
       moveRight ? 'D' : '',
+      wantsWalk ? 'Shift' : '',
       wantsCrouch ? 'C' : '',
     ].filter(Boolean).join('');
 
     const debugState = {
       grounded: this.isGrounded,
       crouched: this.isCrouched,
+      walking: wantsWalk,
       speed: horizontalSpeed,
       targetSpeed,
       speedRatio,
+      movementDirectionDot,
+      reversingInput: hasVelocityDirection && hasTargetDirection && movementDirectionDot < -0.35,
       inputFlags: inputFlags || '-',
       targetVectorText: `${formatSigned(targetVelocityX)}, ${formatSigned(targetVelocityZ)}`,
       velocityVectorText: `${formatSigned(this.velocity.x)}, ${formatSigned(this.velocity.z)}`,
       movementMode: this.movementMode,
       positionText: `${this.position.x.toFixed(2)}, ${this.position.y.toFixed(2)}, ${this.position.z.toFixed(2)}`,
+      groundDistance: Number(this.motionState?.distanceToGround ?? 0),
+      supportHeight: Number.isFinite(this.motionState?.supportHeight) ? Number(this.motionState.supportHeight) : null,
+      supportRatio: Number(this.motionState?.supportRatio ?? 0),
       responsiveOffsetMagnitude: this.responsivePresentationOffset.length(),
       bufferedCanonicalCorrectionMagnitude: this.bufferedCanonicalCorrection.length(),
       correctionEnqueueRatePerSecond: this.correctionEnqueueEvents.length,
@@ -302,6 +326,10 @@ export class FirstPersonController {
     this.visualRecoilShotCount = 0;
     this.visualRecoilTimeSinceShot = Infinity;
     this.visualRecoilConfig = null;
+    this.footstepDistance = 0;
+    this.wasFootstepAudible = false;
+    this.viewModelStepBob = 0;
+    this.viewModelStepBobTarget = 0;
     this.motionState = createPlayerMovementState({
       position: this.position,
       velocity: this.velocity,
@@ -378,6 +406,7 @@ export class FirstPersonController {
 
   update(delta, frameInput) {
     this.updateLook(frameInput.lookDelta);
+    FOOTSTEP_POSITION_BEFORE_STEP.copy(this.position);
     this.stepSimulation(delta, this.getMovementInputSnapshot({
       jumpPressed: frameInput.justPressed?.has?.('Space'),
     }));
@@ -400,7 +429,17 @@ export class FirstPersonController {
     }
 
     this.visualRecoilConfig = config;
-    const shotResetDelay = Math.max(0.01, Number(config.shotResetDelay ?? 0.2));
+    const penaltyShotCount = Math.max(1, Number(config.recoveryShotPenaltyShots ?? 8));
+    const currentSprayAlpha = THREE.MathUtils.clamp(
+      Math.max(this.visualRecoilShotCount - 1, 0) / penaltyShotCount,
+      0,
+      1,
+    );
+    const shotResetDelay = Math.max(
+      0.01,
+      Number(config.shotResetDelay ?? 0.2)
+        + (Number(config.sprayResetDelay ?? 0) * currentSprayAlpha),
+    );
     if (this.visualRecoilTimeSinceShot > shotResetDelay) {
       this.visualRecoilShotCount = 0;
     }
@@ -409,15 +448,172 @@ export class FirstPersonController {
 
     const warmupShots = Math.max(1, Number(config.warmupShots ?? 4));
     const initialPitch = Math.max(0, Number(config.initialPitch ?? 0));
-    const warmupPitch = Math.max(0, Number(config.warmupPitch ?? 0));
-    const curveShots = Math.max(1, Number(config.curveShots ?? 8));
-    const maxPitch = Math.max(initialPitch, warmupPitch, Number(config.maxPitch ?? warmupPitch));
-    const warmupAlpha = THREE.MathUtils.clamp((this.visualRecoilShotCount - 1) / Math.max(warmupShots - 1, 1), 0, 1);
-    const curveAlpha = THREE.MathUtils.clamp((this.visualRecoilShotCount - warmupShots) / curveShots, 0, 1);
-    const warmupTargetPitch = THREE.MathUtils.lerp(initialPitch, warmupPitch, warmupAlpha);
-    const nextTargetPitch = warmupTargetPitch + (maxPitch - warmupTargetPitch) * easeCircIn(curveAlpha);
+    const maxPitch = Math.max(initialPitch, Number(config.maxPitch ?? initialPitch));
+    const shoulderShots = Math.max(warmupShots + 1, Number(config.shoulderShots ?? (warmupShots + 2)));
+    const shoulderPitch = THREE.MathUtils.clamp(
+      Number(config.shoulderPitch ?? initialPitch),
+      initialPitch,
+      maxPitch,
+    );
+    const riseSharpness = Math.max(0.25, Number(config.riseSharpness ?? 3));
+    const maxVisualShots = Math.max(
+      shoulderShots + 1,
+      Number(config.maxShots ?? config.recoveryShotPenaltyShots ?? 12),
+    );
+    let nextTargetPitch = initialPitch;
+
+    if (this.visualRecoilShotCount > warmupShots) {
+      if (this.visualRecoilShotCount <= shoulderShots) {
+        const earlyAlpha = THREE.MathUtils.clamp(
+          (this.visualRecoilShotCount - (warmupShots + 1)) / Math.max(shoulderShots - (warmupShots + 1), 1),
+          0,
+          1,
+        );
+        nextTargetPitch = THREE.MathUtils.lerp(initialPitch, shoulderPitch, earlyAlpha);
+      } else {
+        const lateAlpha = THREE.MathUtils.clamp(
+          (this.visualRecoilShotCount - shoulderShots) / Math.max(
+            maxVisualShots - shoulderShots,
+            1,
+          ),
+          0,
+          1,
+        );
+        const exponentialAlpha = (1 - Math.exp(-riseSharpness * lateAlpha))
+          / (1 - Math.exp(-riseSharpness));
+        nextTargetPitch = THREE.MathUtils.lerp(shoulderPitch, maxPitch, exponentialAlpha);
+      }
+    }
 
     this.visualRecoilTargetPitch = Math.max(this.visualRecoilTargetPitch, nextTargetPitch);
+    this.applyAimPullRecoil(config, {
+      warmupShots,
+      shoulderShots,
+    });
+  }
+
+  updateFootsteps(previousPosition) {
+    if (!this.audioManager || this.movementMode === 'fly') {
+      this.footstepDistance = 0;
+      return;
+    }
+
+    const horizontalDistance = Math.hypot(
+      this.position.x - previousPosition.x,
+      this.position.z - previousPosition.z,
+    );
+    const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    const isWalking = this.input?.isPressed?.('ShiftLeft') ?? false;
+    const minimumAudibleSpeed = Math.max(
+      MOVEMENT_TUNING.footstepMinHorizontalSpeed,
+      FOOTSTEP_AUDIBLE_SPEED_FLOOR,
+    );
+    const isAudible = this.isGrounded
+      && !isWalking
+      && horizontalSpeed >= minimumAudibleSpeed
+      && horizontalDistance > 1e-4;
+    if (!isAudible) {
+      this.footstepDistance = 0;
+      this.wasFootstepAudible = false;
+      return;
+    }
+    const strideDistance = this.isCrouched
+      ? MOVEMENT_TUNING.footstepStrideDistanceCrouch
+      : MOVEMENT_TUNING.footstepStrideDistanceWalk;
+    if (!this.wasFootstepAudible) {
+      this.footstepDistance = Math.max(this.footstepDistance, strideDistance * 0.55);
+    }
+    this.wasFootstepAudible = true;
+    this.footstepDistance += horizontalDistance;
+
+    while (this.footstepDistance >= strideDistance) {
+      this.footstepDistance -= strideDistance;
+      this.playFootstepFloor();
+    }
+  }
+
+  playFootstepFloor() {
+    if (!this.audioManager) {
+      return;
+    }
+
+    let sampleIndex = Math.floor(Math.random() * FOOTSTEP_SAMPLE_COUNT);
+    if (FOOTSTEP_SAMPLE_COUNT > 1 && sampleIndex === this.lastFootstepSampleIndex) {
+      sampleIndex = (sampleIndex + 1) % FOOTSTEP_SAMPLE_COUNT;
+    }
+    this.lastFootstepSampleIndex = sampleIndex;
+    this.viewModelStepBobTarget = 1;
+    this.viewModelStepBobSide *= -1;
+
+    const sampleNumber = String(sampleIndex + 1).padStart(3, '0');
+    const isCrouched = this.isCrouched;
+    this.audioManager.play(`footstep-floor-${sampleNumber}`, {
+      baseVolume: isCrouched ? MOVEMENT_TUNING.footstepVolumeCrouch : MOVEMENT_TUNING.footstepVolumeWalk,
+      pitchMin: isCrouched ? MOVEMENT_TUNING.footstepPitchMinCrouch : MOVEMENT_TUNING.footstepPitchMinWalk,
+      pitchMax: isCrouched ? MOVEMENT_TUNING.footstepPitchMaxCrouch : MOVEMENT_TUNING.footstepPitchMaxWalk,
+      duration: isCrouched ? MOVEMENT_TUNING.footstepDurationCrouch : MOVEMENT_TUNING.footstepDurationWalk,
+      playback: 'overlap',
+      minIntervalMs: isCrouched ? MOVEMENT_TUNING.footstepMinIntervalCrouchMs : MOVEMENT_TUNING.footstepMinIntervalWalkMs,
+    });
+  }
+
+  getViewModelBobState() {
+    if (this.isCrouched) {
+      return {
+        offsetX: 0,
+        offsetY: 0,
+        rotationX: 0,
+        rotationY: 0,
+        rotationZ: 0,
+        moveAlpha: 0,
+        movePullBack: 0,
+      };
+    }
+
+    const bob = THREE.MathUtils.clamp(this.viewModelStepBob, 0, 1);
+    const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
+    const targetSpeed = this.isCrouched
+      ? this.crouchSpeed * this.getSpeedMultiplier()
+      : this.walkSpeed * this.getSpeedMultiplier();
+    const moveAlpha = this.isGrounded && targetSpeed > 1e-4
+      ? THREE.MathUtils.clamp(horizontalSpeed / targetSpeed, 0, 1)
+      : 0;
+    return {
+      offsetX: MOVEMENT_TUNING.bobOffsetX * bob * this.viewModelStepBobSide,
+      offsetY: MOVEMENT_TUNING.bobOffsetY * bob,
+      rotationX: MOVEMENT_TUNING.bobRotationX * bob,
+      rotationY: MOVEMENT_TUNING.bobRotationY * bob * this.viewModelStepBobSide,
+      rotationZ: MOVEMENT_TUNING.bobRotationZ * bob * this.viewModelStepBobSide,
+      moveAlpha,
+      movePullBack: MOVEMENT_TUNING.movePullBack,
+    };
+  }
+
+  applyAimPullRecoil(config, {
+    warmupShots,
+    shoulderShots,
+  }) {
+    const aimPullStartShots = Math.max(
+      warmupShots + 1,
+      Number(config.aimPullStartShots ?? shoulderShots),
+    );
+    const aimPullYawMax = Math.max(0, Number(config.aimPullYawMax ?? 0));
+    if (aimPullYawMax <= 0 || this.visualRecoilShotCount < aimPullStartShots) {
+      return;
+    }
+
+    const maxPenaltyShots = Math.max(
+      aimPullStartShots + 1,
+      Number(config.recoveryShotPenaltyShots ?? 12),
+    );
+    const sprayAlpha = THREE.MathUtils.clamp(
+      (this.visualRecoilShotCount - aimPullStartShots) / Math.max(maxPenaltyShots - aimPullStartShots, 1),
+      0,
+      1,
+    );
+    const yawPull = (Math.random() * 2 - 1) * THREE.MathUtils.lerp(0, aimPullYawMax, sprayAlpha);
+    this.yawAngle += yawPull;
+    this.yaw.rotation.y = this.yawAngle;
   }
 
   updateVisualRecoil(delta) {
@@ -426,11 +622,24 @@ export class FirstPersonController {
     const maxPitch = Math.max(0.0001, Number(recoilConfig.maxPitch ?? 0.14));
     const recoveryFast = Math.max(0.01, Number(recoilConfig.recoveryFast ?? 16));
     const recoverySlow = Math.max(0.01, Number(recoilConfig.recoverySlow ?? 6.5));
-    const recoveryRate = THREE.MathUtils.lerp(recoveryFast, recoverySlow, THREE.MathUtils.clamp(
+    const shotPenaltyShots = Math.max(1, Number(recoilConfig.recoveryShotPenaltyShots ?? 8));
+    const shotPenaltyFactor = THREE.MathUtils.clamp(
+      Number(recoilConfig.recoveryShotPenaltyFactor ?? 0.6),
+      0.05,
+      1,
+    );
+    const sprayAlpha = THREE.MathUtils.clamp(
+      Math.max(this.visualRecoilShotCount - 1, 0) / shotPenaltyShots,
+      0,
+      1,
+    );
+    const depthAlpha = THREE.MathUtils.clamp(
       Math.max(this.visualRecoilPitch, this.visualRecoilTargetPitch) / maxPitch,
       0,
       1,
-    ));
+    );
+    const recoveryRate = THREE.MathUtils.lerp(recoveryFast, recoverySlow, depthAlpha)
+      * THREE.MathUtils.lerp(1, shotPenaltyFactor, sprayAlpha);
 
     this.visualRecoilPitch = THREE.MathUtils.damp(this.visualRecoilPitch, this.visualRecoilTargetPitch, 26, delta);
     this.visualRecoilTargetPitch = THREE.MathUtils.damp(this.visualRecoilTargetPitch, 0, recoveryRate, delta);
@@ -443,6 +652,8 @@ export class FirstPersonController {
       }
     }
     this.viewAnchor.rotation.x = this.visualRecoilPitch;
+    this.viewAnchor.rotation.y = 0;
+    this.viewAnchor.rotation.z = 0;
   }
 
   getMovementInputSnapshot(options = {}) {
@@ -452,6 +663,7 @@ export class FirstPersonController {
       yawAngle: this.yawAngle,
       pitchAngle: this.pitchAngle,
       jumpPressed: options.jumpPressed,
+      walkSpeedFactor: this.getWalkSpeedFactor(),
     });
   }
 
@@ -460,6 +672,14 @@ export class FirstPersonController {
   }
 
   getImmediatePresentationVelocity() {
+    if (this.movementMode !== 'fly') {
+      return {
+        x: this.velocity.x,
+        y: this.velocity.y,
+        z: this.velocity.z,
+      };
+    }
+
     return getImmediatePresentationVelocity({
       input: this.input,
       movementMode: this.movementMode,
@@ -471,10 +691,23 @@ export class FirstPersonController {
       crouchSpeed: this.crouchSpeed,
       runSpeed: this.runSpeed,
       walkSpeed: this.walkSpeed,
+      walkSpeedFactor: this.getWalkSpeedFactor(),
     });
   }
 
   updatePresentation(delta, alpha = 1) {
+    this.viewModelStepBob = THREE.MathUtils.damp(
+      this.viewModelStepBob,
+      this.viewModelStepBobTarget,
+      MOVEMENT_TUNING.bobAttack,
+      delta,
+    );
+    this.viewModelStepBobTarget = THREE.MathUtils.damp(
+      this.viewModelStepBobTarget,
+      0,
+      MOVEMENT_TUNING.bobDamp,
+      delta,
+    );
     this.updateVisualRecoil(delta);
     updatePresentationState({
       delta,
@@ -666,6 +899,7 @@ export class FirstPersonController {
   }
 
   stepSimulation(delta, movementInput, speedMultiplier = this.getSpeedMultiplier()) {
+    FOOTSTEP_POSITION_BEFORE_STEP.copy(this.position);
     this.applyBufferedCanonicalCorrection(delta);
     this.motionState.position.x = this.position.x;
     this.motionState.position.y = this.position.y;
@@ -681,6 +915,7 @@ export class FirstPersonController {
     this.applyMotionState(
       this.simulateMovementStep(this.motionState, movementInput, delta, speedMultiplier),
     );
+    this.updateFootsteps(FOOTSTEP_POSITION_BEFORE_STEP);
   }
 
   reconcileAuthoritativeState(correction) {

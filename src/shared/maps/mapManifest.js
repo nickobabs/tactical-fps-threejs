@@ -8,6 +8,13 @@ export const MAP_MANIFEST = [
     },
     gameplay: {
       source: 'shared-layout',
+      plantZones: [
+        {
+          name: 'training-default',
+          center: { x: 0, y: 0, z: -1 },
+          halfExtents: { x: 4.5, z: 4.5 },
+        },
+      ],
     },
     assets: {
       navigation: {
@@ -33,6 +40,18 @@ export const MAP_MANIFEST = [
     },
     gameplay: {
       source: 'shared-layout',
+      plantZones: [
+        {
+          name: 'site-a',
+          center: { x: -24, y: 0, z: -22 },
+          halfExtents: { x: 5.5, z: 5.5 },
+        },
+        {
+          name: 'site-b',
+          center: { x: 24, y: 0, z: -22 },
+          halfExtents: { x: 5.5, z: 5.5 },
+        },
+      ],
     },
     assets: {
       navigation: {
@@ -120,6 +139,7 @@ export const MAP_MANIFEST = [
           'spawn_10',
         ],
       },
+      plantableMarkerPrefix: 'plantable_',
     },
     assets: {
       navigation: {
@@ -133,7 +153,7 @@ export const MAP_MANIFEST = [
       },
       render: {
         source: 'gltf-scene',
-        path: '/maps/d2maptestv2.glb',
+        path: '/maps/d2maptestv3.glb',
       },
     },
   },

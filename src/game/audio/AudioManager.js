@@ -75,6 +75,7 @@ export class AudioManager {
       baseVolume = 1,
       pitchMin = 1,
       pitchMax = 1,
+      duration = null,
       playback = sound.playback,
       minIntervalMs = sound.minIntervalMs,
     } = options;
@@ -109,6 +110,14 @@ export class AudioManager {
     source.connect(gainNode);
     gainNode.connect(this.masterGain);
     source.start(contextNow);
+    if (Number.isFinite(duration) && duration > 0) {
+      const stopAt = contextNow + duration;
+      try {
+        gainNode.gain.setValueAtTime(gainNode.gain.value, Math.max(contextNow, stopAt - 0.01));
+        gainNode.gain.linearRampToValueAtTime(0, stopAt);
+        source.stop(stopAt);
+      } catch {}
+    }
 
     if (playback !== 'overlap') {
       sound.activeSource = source;

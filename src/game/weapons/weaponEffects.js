@@ -8,7 +8,7 @@ function createImpactMarker(point, normal = DEFAULT_NORMAL) {
     new THREE.MeshBasicMaterial({ color: 0xffb36b }),
   );
   marker.position.copy(point).addScaledVector(normal, 0.05);
-  marker.userData.life = 0.25;
+  marker.userData.life = 0.1;
   return marker;
 }
 

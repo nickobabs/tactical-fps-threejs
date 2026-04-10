@@ -10,6 +10,6 @@ export const PAUSE_MENU_BINDINGS = [
   { label: 'Collision Debug', value: 'B' },
   { label: 'Fire', value: 'Left click' },
   { label: 'Scope', value: 'Right click' },
-  { label: 'Weapons', value: '1 rifle, 2 pistol, 3 knife, 4 sniper' },
+  { label: 'Weapons', value: '1 rifle, 2 pistol, 3 knife, 4 sniper, 5 bomb, 6 utility' },
   { label: 'Pause', value: 'Escape' },
 ];

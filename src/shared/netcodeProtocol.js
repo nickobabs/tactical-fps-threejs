@@ -5,6 +5,8 @@ export function createPlayerInputMessage(inputSnapshot, sequence, timestamp) {
     left: Boolean(inputSnapshot?.left),
     right: Boolean(inputSnapshot?.right),
     sprint: Boolean(inputSnapshot?.sprint),
+    walk: Boolean(inputSnapshot?.walk),
+    walkSpeedFactor: Number(inputSnapshot?.walkSpeedFactor ?? 0.5),
     crouch: Boolean(inputSnapshot?.crouch),
     jump: Boolean(inputSnapshot?.jump),
     yaw: Number(inputSnapshot?.yaw ?? 0),
@@ -61,6 +63,17 @@ export function createPlayerStatusMessage(state) {
   return {
     activeWeaponKey: String(state?.activeWeaponKey ?? 'rifle'),
     isScoped: Boolean(state?.isScoped ?? false),
+  };
+}
+
+export function createBombPlantMessage(state) {
+  return {
+    zoneName: String(state?.zoneName ?? '').trim(),
+    position: {
+      x: Number(state?.position?.x ?? 0),
+      y: Number(state?.position?.y ?? 0),
+      z: Number(state?.position?.z ?? 0),
+    },
   };
 }
 

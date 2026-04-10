@@ -47,3 +47,14 @@
   - `2` pistol
   - `3` knife
   - `4` sniper
+- Current movement bindings of note are:
+  - `Shift` grounded walk
+  - `C` crouch
+- Current debug bindings of note are:
+  - backquote `` ` `` general debug menu
+  - `F4` viewmodel tuning
+  - `F6` remote body tuning
+  - `F7` remote weapon tuning
+  - `F8` net debug
+  - `F9` correction toggle
+  - `F10` movement trace capture

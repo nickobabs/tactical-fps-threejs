@@ -5,6 +5,7 @@ import {
   NETCODE_SIMULATION_STEP,
 } from '../../shared/netcode.js';
 import {
+  createBombPlantMessage,
   createPlayerFireMessage,
   createPlayerInputMessage,
   createPlayerReadyMessage,
@@ -161,6 +162,8 @@ export class NetworkClient {
     this.lastPingServerTurnaroundMs = 0;
     this.lastPingEstimatedNetworkMs = 0;
     this.lastPingReceivedAt = 0;
+    this.roundState = null;
+    this.objectiveState = null;
 
     void this.connect();
   }
@@ -200,7 +203,7 @@ export class NetworkClient {
       });
 
       room.onMessage('player-state', (message) => {
-        this.applyPlayerState(message?.players ?? {});
+        this.applyWorldState(message ?? {});
       });
 
       room.onMessage('combat-event', (message) => {
@@ -247,6 +250,12 @@ export class NetworkClient {
         error,
       );
     }
+  }
+
+  applyWorldState(message) {
+    this.roundState = message?.round ?? null;
+    this.objectiveState = message?.objective ?? null;
+    this.applyPlayerState(message?.players ?? {});
   }
 
   applyPlayerState(players) {
@@ -493,6 +502,15 @@ export class NetworkClient {
     return true;
   }
 
+  sendBombPlant(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('bomb-plant', createBombPlantMessage(state));
+    return true;
+  }
+
   sendRemoteHitboxAudit(audit) {
     if (!this.room || !audit) {
       return false;
@@ -548,6 +566,8 @@ export class NetworkClient {
     this.lastPingServerTurnaroundMs = 0;
     this.lastPingEstimatedNetworkMs = 0;
     this.lastPingReceivedAt = 0;
+    this.roundState = null;
+    this.objectiveState = null;
   }
 
   getScoreboardState() {
@@ -577,7 +597,7 @@ export class NetworkClient {
     const teams = SCOREBOARD_TEAMS.map((teamKey) => ({
       key: teamKey,
       label: TEAM_LABELS[teamKey] ?? teamKey,
-      roundsWon: 0,
+      roundsWon: Number(this.roundState?.teamScores?.[teamKey] ?? 0),
       players: players.filter((player) => String(player.team ?? 'attackers') === teamKey),
     }));
 
@@ -677,6 +697,14 @@ export class NetworkClient {
     return this.remotePlayerBuffers.size;
   }
 
+  getRoundState() {
+    return this.roundState;
+  }
+
+  getObjectiveState() {
+    return this.objectiveState;
+  }
+
   getDebugState() {
     const now = getNow();
     return {
@@ -727,6 +755,8 @@ export class NetworkClient {
     this.lastPingServerTurnaroundMs = 0;
     this.lastPingEstimatedNetworkMs = 0;
     this.lastPingReceivedAt = 0;
+    this.roundState = null;
+    this.objectiveState = null;
 
     if (this.room) {
       void this.room.leave().catch((error) => {

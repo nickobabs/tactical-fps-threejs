@@ -32,8 +32,7 @@ export function shouldPlayScopeSound({
 export function canWeaponFire({
   currentWeapon,
   canViewModelFire,
-  leftHeld,
-  triggerHeld,
+  triggerRequested,
   cooldown,
   isReloading = false,
   ammoInMagazine = Infinity,
@@ -46,5 +45,5 @@ export function canWeaponFire({
     return false;
   }
 
-  return currentWeapon.automatic ? leftHeld : leftHeld && !triggerHeld;
+  return triggerRequested;
 }

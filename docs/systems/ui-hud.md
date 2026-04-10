@@ -2,7 +2,7 @@
 
 ## Summary
 
-`createHud()` builds the main DOM overlay shell, while `createPauseMenu()` owns the pause menu subtree and interactions.
+`createHud()` builds the main DOM overlay shell. The HUD now coordinates the pause menu, team-select overlay, debug HUD, classic HUD, scoreboard, objective widgets, and multiplayer debug surfaces through smaller controllers.
 
 ## Inputs
 
@@ -24,15 +24,24 @@
 - HUD DOM elements appended to the app root
 - Per-frame text updates
 - Pause menu DOM and interaction handlers
+- Team-select overlay DOM and interaction handlers
 - Scoped overlay and rifle ADS reticle state
 - Map-loading overlay state
 - Optional live multiplayer debug overlay and console summaries
+- Classic HUD / debug HUD mode switching
+- Scoreboard rendering
+- Objective widgets such as plant progress
 
 ## Dependencies
 
 - Browser DOM APIs
 - CSS in `src/styles/main.css`
 - `createPauseMenu`
+- `createTeamSelectOverlay`
+- `hudClassic`
+- `hudScoreboard`
+- `hudObjectiveWidgets`
+- `hudDebugPanels`
 - `pauseMenuBindings`
 
 ## Key Design Decisions
@@ -41,18 +50,33 @@
 - HUD reads runtime state from systems directly during `update()`
 - Crosshair is pure CSS
 - The pause menu is part of the HUD tree so it can share styling and be toggled without mounting a separate UI root
+- Team selection is also HUD-driven and currently blocks normal pause-menu resume flow on initial map load
 - Pause-menu option lists for maps and skyboxes are data-driven so new entries do not require hardcoded UI branches
 - The sniper scope overlay and rifle ADS reticle are distinct UI states
 - Static pause-menu binding text is isolated from HUD runtime code so future menu changes do not require editing the whole HUD module
 - HUD text and toggle updates now only touch the DOM when displayed values actually change, rather than rewriting every element every frame
 - Multiplayer debug tooling is intentionally kept in the HUD path for now because it is the fastest way to compare local feel against network/correction state during active development
+- HUD responsibilities are now split by controller instead of keeping all rendering logic in one file
 
 ## Current Status
 
 - Implemented and active
-- Includes pause/resume flow, key bindings view, map selection view, skybox selection view, volume control, sensitivity control with numeric feedback, horizontal FOV control, FPS display, scoped reticles, and a centered map-loading overlay
-- Includes a hold-`Tab` scoreboard overlay with two team panels, player name/kills/deaths/ping columns, and placeholder round-score display
-- The file structure is now split so HUD shell logic and pause-menu construction are no longer in one file
+- Includes:
+  - pause/resume flow
+  - team-select flow with player-name input
+  - key bindings view
+  - map selection view
+  - skybox selection view
+  - volume control
+  - sensitivity control with numeric feedback
+  - horizontal FOV control
+  - FPS display
+  - scoped reticles
+  - centered map-loading overlay
+- Includes hold-`Tab` scoreboard overlay with two team panels, player name/kills/deaths/ping columns, and live team score display
+- Includes a toggleable classic HUD mode inspired by Source plus the older debug HUD mode
+- Includes planted-bomb timer/state and plant-progress feedback
+- HUD structure is now split across smaller files for scoreboard, classic HUD, objective widgets, and debug panels
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`
     - live panel now includes a `Copy` button so the exact text can be pasted without screenshots
@@ -79,6 +103,10 @@
     - `F8` copy exports the live panel text, while `F10` remains the trace/file workflow
     - `localStorage` export helper:
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
+- Current local movement line now also exposes support debugging fields:
+  - `support`
+  - `gd`
+  - `floor`
 
 ## Near-Term Direction
 

@@ -4,6 +4,7 @@ export function getMovementInputSnapshot({
   yawAngle,
   pitchAngle,
   jumpPressed = false,
+  walkSpeedFactor = 0.5,
 }) {
   if (movementMode === 'fly') {
     return {
@@ -24,7 +25,8 @@ export function getMovementInputSnapshot({
     backward: input.isPressed('KeyS'),
     left: input.isPressed('KeyA'),
     right: input.isPressed('KeyD'),
-    sprint: false,
+    walk: input.isPressed('ShiftLeft'),
+    walkSpeedFactor: Number(walkSpeedFactor ?? 0.5),
     crouch: input.isPressed('KeyC'),
     jump: Boolean(jumpPressed),
     yaw: yawAngle,
@@ -43,6 +45,7 @@ export function getImmediatePresentationVelocity({
   crouchSpeed,
   runSpeed,
   walkSpeed,
+  walkSpeedFactor = 0.5,
 }) {
   if (movementMode === 'fly') {
     const speedMultiplier = getSpeedMultiplier();
@@ -101,6 +104,8 @@ export function getImmediatePresentationVelocity({
 
   const speedMultiplier = getSpeedMultiplier();
   const wantsCrouch = input.isPressed('KeyC');
+  const wantsWalk = input.isPressed('ShiftLeft');
+  const resolvedWalkSpeedFactor = Math.max(0.1, Number(walkSpeedFactor ?? 0.5));
   const moveForward = input.isPressed('KeyW');
   const moveBackward = input.isPressed('KeyS');
   const moveLeft = input.isPressed('KeyA');
@@ -141,7 +146,7 @@ export function getImmediatePresentationVelocity({
 
   const maxSpeed = (wantsCrouch
     ? crouchSpeed
-    : walkSpeed) * speedMultiplier;
+    : (wantsWalk ? walkSpeed * resolvedWalkSpeedFactor : walkSpeed)) * speedMultiplier;
 
   return {
     x: moveX * maxSpeed,

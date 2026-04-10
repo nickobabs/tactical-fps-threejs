@@ -1,5 +1,9 @@
 import { createPauseMenu } from './createPauseMenu.js';
+import { createHudDebugPanelsController } from './hudDebugPanels.js';
 import { createTeamSelectOverlay } from './createTeamSelectOverlay.js';
+import { createHudClassicController } from './hudClassic.js';
+import { createHudObjectiveWidgetsController } from './hudObjectiveWidgets.js';
+import { createHudScoreboardController } from './hudScoreboard.js';
 
 export function createHud({
   container,
@@ -36,7 +40,6 @@ export function createHud({
   skyboxes = [],
   getSelectedSkyboxId,
 }) {
-  const DEBUG_HISTORY_WINDOW_MS = 3000;
   const hud = document.createElement('div');
   hud.className = 'hud';
   hud.innerHTML = `
@@ -98,6 +101,12 @@ export function createHud({
             <div class="hud__scoreboard-rows"></div>
           </section>
         </div>
+      </div>
+    </div>
+    <div class="hud__plant-progress">
+      <div class="hud__plant-progress-label"></div>
+      <div class="hud__plant-progress-track">
+        <div class="hud__plant-progress-fill"></div>
       </div>
     </div>
     <div class="hud__classic">
@@ -179,6 +188,9 @@ export function createHud({
   const topClusterEl = hud.querySelector('.hud__top');
   const bottomClusterEl = hud.querySelector('.hud__bottom');
   const scoreboardEl = hud.querySelector('.hud__scoreboard');
+  const plantProgressEl = hud.querySelector('.hud__plant-progress');
+  const plantProgressLabelEl = hud.querySelector('.hud__plant-progress-label');
+  const plantProgressFillEl = hud.querySelector('.hud__plant-progress-fill');
   const classicEl = hud.querySelector('.hud__classic');
   const classicHealthEl = hud.querySelector('.hud__classic-health');
   const classicArmorEl = hud.querySelector('.hud__classic-armor');
@@ -196,154 +208,22 @@ export function createHud({
   let showNetDebug = false;
   let showScoreboard = false;
   let displaySpeed = 0;
-  let lastRoundText = '';
-  let lastFpsText = '';
-  let lastWeaponText = '';
-  let lastHealthText = '';
-  let lastUtilityText = '';
-  let lastNetworkText = '';
-  let lastMovementText = '';
-  let lastPositionText = '';
-  let lastPointerText = '';
   let lastLoadingText = '';
   let lastCrosshairHidden = null;
   let lastAdsReticle = null;
   let lastScopeOverlay = null;
   let lastLoading = null;
-  let lastScoreboardHidden = null;
-  let lastScoreboardSubtitle = '';
-  const lastScoreboardTeamMarkup = new Map();
-  let lastNetDebugText = '';
-  let lastClassicVisible = null;
-  let lastClassicHealthText = '';
-  let lastClassicArmorText = '';
-  let lastClassicTimeText = '';
-  let lastClassicPhaseText = '';
-  let lastClassicAmmoMagText = '';
-  let lastClassicAmmoReserveText = '';
-  let lastClassicWeaponText = '';
-  let lastNetDebugCopyHidden = true;
-  let currentNetDebugText = '';
-  let copyFeedbackTimeoutId = 0;
-  let lastCopyButtonLabel = 'Copy';
   let lastDamageVignette = -1;
   let lastDeadOverlay = null;
   let lastHitDamageHtml = '';
   let lastRespawnText = '';
-  const debugHistory = [];
-
-  function summarizeMetric(samples, key) {
-    if (samples.length === 0) {
-      return 'n/a';
-    }
-
-    let min = samples[0][key];
-    let max = samples[0][key];
-    let total = 0;
-
-    for (const sample of samples) {
-      const value = sample[key];
-      min = Math.min(min, value);
-      max = Math.max(max, value);
-      total += value;
-    }
-
-    const avg = total / samples.length;
-    return `${min.toFixed(3)}/${avg.toFixed(3)}/${max.toFixed(3)}`;
-  }
-
-  function getSafeRate(value, divisor) {
-    if (!Number.isFinite(value) || !Number.isFinite(divisor) || divisor <= 0) {
-      return 0;
-    }
-
-    return value / divisor;
-  }
-
-  function buildDebugSummary() {
-    if (debugHistory.length === 0) {
-      return currentNetDebugText;
-    }
-
-    const latest = debugHistory[debugHistory.length - 1];
-    return [
-      currentNetDebugText,
-      '',
-      `window_ms=${DEBUG_HISTORY_WINDOW_MS} samples=${debugHistory.length}`,
-      `seq_gap(min/avg/max)=${summarizeMetric(debugHistory, 'sequenceGap')}`,
-      `snapshot_age_ms(min/avg/max)=${summarizeMetric(debugHistory, 'snapshotAgeMs')}`,
-      `predicted_drift(min/avg/max)=${summarizeMetric(debugHistory, 'predictedDrift')}`,
-      `corr_dist(min/avg/max)=${summarizeMetric(debugHistory, 'correctionDistance')}`,
-      `corr_dist_xz(min/avg/max)=${summarizeMetric(debugHistory, 'correctionDistanceXZ')}`,
-      `corr_delta_y(min/avg/max)=${summarizeMetric(debugHistory, 'correctionDeltaY')}`,
-      `corr_along_vel(min/avg/max)=${summarizeMetric(debugHistory, 'correctionAlongVelocity')}`,
-      `corr_perp_vel(min/avg/max)=${summarizeMetric(debugHistory, 'correctionPerpendicularVelocity')}`,
-      `corr_along_input(min/avg/max)=${summarizeMetric(debugHistory, 'correctionAlongInput')}`,
-      `corr_perp_input(min/avg/max)=${summarizeMetric(debugHistory, 'correctionPerpendicularInput')}`,
-      `corr_xz_per_snapshot_ms(min/avg/max)=${summarizeMetric(debugHistory, 'correctionXZPerSnapshotMs')}`,
-      `corr_along_vel_per_snapshot_ms(min/avg/max)=${summarizeMetric(debugHistory, 'correctionAlongVelocityPerSnapshotMs')}`,
-      `present_offset(min/avg/max)=${summarizeMetric(debugHistory, 'presentationOffset')}`,
-      `buffered_correction(min/avg/max)=${summarizeMetric(debugHistory, 'bufferedCorrection')}`,
-      `corr_enqueue_per_sec(min/avg/max)=${summarizeMetric(debugHistory, 'correctionEnqueueRatePerSecond')}`,
-      `corr_active(min/avg/max)=${summarizeMetric(debugHistory, 'correctionActive')}`,
-      `responsive_offset(min/avg/max)=${summarizeMetric(debugHistory, 'responsiveOffset')}`,
-      `frame_ms(min/avg/max)=${summarizeMetric(debugHistory, 'frameMs')}`,
-      `corr_per_sec(min/avg/max)=${summarizeMetric(debugHistory, 'correctionRatePerSecond')}`,
-      `speed(min/avg/max)=${summarizeMetric(debugHistory, 'speed')}`,
-      `latest_state=${latest.connectionState} latest_seq_local=${latest.latestSequence} latest_seq_ack=${latest.acknowledgedSequence}`,
-    ].join('\n');
-  }
-
-  function buildDebugText(networkDebug, movement) {
-    const correctionXZPerSnapshotMs = getSafeRate(
-      movement.correctionDistanceXZ ?? 0,
-      Math.max(0, networkDebug.snapshotAgeMs),
-    );
-    const correctionAlongVelocityPerSnapshotMs = getSafeRate(
-      Math.abs(movement.correctionAlongVelocity ?? 0),
-      Math.max(0, networkDebug.snapshotAgeMs),
-    );
-    return [
-      'NETDEBUG',
-      `ignore_local_corrections=${Boolean(getIgnoreLocalCorrections?.())}`,
-      `state=${networkDebug.connectionState}`,
-      `server_url=${networkDebug.serverUrl ?? 'unknown'}`,
-      `map_id=${networkDebug.localMapId ?? 'unknown'}`,
-      `player_state_count=${networkDebug.receivedPlayerStateCount ?? 0} same_map_remote=${networkDebug.sameMapRemoteStateCount ?? 0} filtered_remote=${networkDebug.filteredRemoteStateCount ?? 0}`,
-      `remote_maps=${(networkDebug.receivedRemoteMaps ?? []).join(',') || 'none'}`,
-      `seq_local=${networkDebug.latestSequence} seq_ack=${networkDebug.acknowledgedSequence} seq_gap=${networkDebug.sequenceGap}`,
-      `pending_inputs=${networkDebug.pendingInputCount} jump_latched=${networkDebug.pendingJumpSend}`,
-      `ping_rtt_ms=${networkDebug.pingRoundTripMs ?? 0} ping_avg_ms=${networkDebug.pingAverageMs ?? 0} ping_age_ms=${networkDebug.pingAgeMs ?? -1} ping_pending=${networkDebug.pingPending ? 'yes' : 'no'}`,
-      `ping_server_turn_ms=${networkDebug.pingServerTurnaroundMs ?? 0} ping_net_est_ms=${networkDebug.pingEstimatedNetworkMs ?? 0}`,
-      `snapshot_age_ms=${networkDebug.snapshotAgeMs} auth_per_sec=${networkDebug.authoritativeUpdatesPerSecond}`,
-      `predicted_drift=${networkDebug.lastPredictedDriftDistance.toFixed(3)} corr_per_sec=${movement.correctionRatePerSecond}`,
-      `corr_dist=${movement.lastCorrectionDistance.toFixed(3)} present_offset=${movement.correctionOffsetMagnitude.toFixed(3)}`,
-      `corr_dist_xz=${(movement.correctionDistanceXZ ?? 0).toFixed(3)} corr_delta_y=${(movement.correctionDeltaY ?? 0).toFixed(3)}`,
-      `corr_along_vel=${(movement.correctionAlongVelocity ?? 0).toFixed(3)} corr_perp_vel=${(movement.correctionPerpendicularVelocity ?? 0).toFixed(3)}`,
-      `corr_along_input=${(movement.correctionAlongInput ?? 0).toFixed(3)} corr_perp_input=${(movement.correctionPerpendicularInput ?? 0).toFixed(3)}`,
-      `corr_xz_per_snapshot_ms=${correctionXZPerSnapshotMs.toFixed(5)} corr_along_vel_per_snapshot_ms=${correctionAlongVelocityPerSnapshotMs.toFixed(5)}`,
-      `buffered_corr=${(movement.bufferedCanonicalCorrectionMagnitude ?? 0).toFixed(3)} responsive_offset=${(movement.responsiveOffsetMagnitude ?? 0).toFixed(3)}`,
-      `corr_enqueue_per_sec=${(movement.correctionEnqueueRatePerSecond ?? 0).toFixed(3)} corr_active=${movement.correctionActive ? 'yes' : 'no'}`,
-      `corr_action=${movement.reconciliationAction ?? 'none'} replay_inputs=${movement.replayInputCount ?? 0} corr_delta_xz=${movement.correctionDeltaText ?? '0.00, 0.00'}`,
-      `auth_vel_xz=${movement.authoritativeVelocityText ?? '0.00, 0.00'} replay_vel_xz=${movement.replayVelocityText ?? '0.00, 0.00'}`,
-      `cur_pos=${movement.currentPositionDetailText ?? '0.00, 0.00, 0.00'}`,
-      `auth_pos=${movement.authoritativePositionText ?? '0.00, 0.00, 0.00'}`,
-      `replay_pos=${movement.replayPositionText ?? '0.00, 0.00, 0.00'}`,
-      `input=${movement.inputFlags ?? '-'} target_speed=${(movement.targetSpeed ?? 0).toFixed(3)} speed_ratio=${(movement.speedRatio ?? 0).toFixed(3)}`,
-      `target_xz=${movement.targetVectorText ?? '0.00, 0.00'} vel_xz=${movement.velocityVectorText ?? '0.00, 0.00'}`,
-      `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,
-      `mode=${movement.movementMode ?? 'grounded'} pos=${movement.positionText ?? 'n/a'}`,
-    ].join('\n');
-  }
 
   function handleKeyDown(event) {
     if (event.code === 'F8') {
       showNetDebug = !showNetDebug;
       netDebugEl.hidden = !showNetDebug;
       netDebugCopyEl.hidden = !showNetDebug;
-      if (currentNetDebugText) {
-        console.log(buildDebugSummary());
-      }
+      debugPanelsController.logCurrentSummary();
       event.preventDefault();
       return;
     }
@@ -371,81 +251,47 @@ export function createHud({
 
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
-
-  async function copyNetDebugToClipboard() {
-    const debugText = netDebugEl.textContent?.trim() || currentNetDebugText?.trim() || '';
-    if (!debugText) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(debugText);
-      netDebugCopyEl.textContent = 'Copied';
-    } catch (error) {
-      console.warn('[Hud] Failed to copy net debug to clipboard.', error);
-      netDebugCopyEl.textContent = 'Copy failed';
-    }
-
-    if (copyFeedbackTimeoutId > 0) {
-      window.clearTimeout(copyFeedbackTimeoutId);
-    }
-
-    copyFeedbackTimeoutId = window.setTimeout(() => {
-      netDebugCopyEl.textContent = lastCopyButtonLabel;
-      copyFeedbackTimeoutId = 0;
-    }, 1500);
-  }
-
-  netDebugCopyEl.addEventListener('click', () => {
-    void copyNetDebugToClipboard();
+  const scoreboardController = createHudScoreboardController({
+    scoreboardEl,
+    scoreboardSubtitleEl,
+    scoreboardTeamEls,
   });
-
-  function setTextIfChanged(element, nextText, lastText) {
-    if (lastText !== nextText) {
-      element.textContent = nextText;
-      return nextText;
-    }
-
-    return lastText;
-  }
-
-  function escapeHtml(value) {
-    return String(value)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
-  }
-
-  function getScoreboardRowMarkup(players = [], localPlayerId) {
-    if (players.length === 0) {
-      return '<div class="hud__scoreboard-empty">No players</div>';
-    }
-
-    return players.map((player) => {
-      const playerName = escapeHtml(player.displayName ?? player.playerId ?? 'Player');
-      const kills = Number(player.kills ?? 0);
-      const deaths = Number(player.deaths ?? 0);
-      const ping = Math.max(0, Math.round(Number(player.pingMs ?? 0)));
-      const aliveClass = player.isAlive === false ? ' hud__scoreboard-row--dead' : '';
-      const localClass = player.playerId === localPlayerId ? ' hud__scoreboard-row--local' : '';
-      return `<div class="hud__scoreboard-row${aliveClass}${localClass}">
-        <span class="hud__scoreboard-name">${playerName}</span>
-        <span>${kills}</span>
-        <span>${deaths}</span>
-        <span>${ping}</span>
-      </div>`;
-    }).join('');
-  }
+  const debugPanelsController = createHudDebugPanelsController({
+    roundEl,
+    fpsEl,
+    weaponEl,
+    healthEl,
+    utilityEl,
+    networkEl,
+    movementEl,
+    positionEl,
+    pointerEl,
+    netDebugEl,
+    netDebugCopyEl,
+  });
+  const classicController = createHudClassicController({
+    classicEl,
+    topClusterEl,
+    bottomClusterEl,
+    classicHealthEl,
+    classicArmorEl,
+    classicTimeEl,
+    classicPhaseEl,
+    classicAmmoMagEl,
+    classicAmmoReserveEl,
+    classicWeaponEl,
+  });
+  const objectiveWidgetsController = createHudObjectiveWidgetsController({
+    plantProgressEl,
+    plantProgressLabelEl,
+    plantProgressFillEl,
+  });
 
   return {
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      if (copyFeedbackTimeoutId > 0) {
-        window.clearTimeout(copyFeedbackTimeoutId);
-      }
+      debugPanelsController.destroy();
       pauseMenu.destroy();
       teamSelectOverlay.destroy();
       hud.remove();
@@ -486,47 +332,13 @@ export function createHud({
         authoritativeUpdatesPerSecond: 0,
         pendingJumpSend: false,
       };
-      if (showNetDebug || markDebugSnapshotRequested) {
-        const now = performance.now();
-        debugHistory.push({
-          time: now,
-          connectionState: networkDebug.connectionState,
-          latestSequence: networkDebug.latestSequence,
-          acknowledgedSequence: networkDebug.acknowledgedSequence,
-          sequenceGap: networkDebug.sequenceGap,
-          snapshotAgeMs: Math.max(0, networkDebug.snapshotAgeMs),
-          predictedDrift: networkDebug.lastPredictedDriftDistance,
-          correctionDistance: movement.lastCorrectionDistance ?? 0,
-          correctionDistanceXZ: movement.correctionDistanceXZ ?? 0,
-          correctionDeltaY: movement.correctionDeltaY ?? 0,
-          correctionAlongVelocity: movement.correctionAlongVelocity ?? 0,
-          correctionPerpendicularVelocity: movement.correctionPerpendicularVelocity ?? 0,
-          correctionAlongInput: movement.correctionAlongInput ?? 0,
-          correctionPerpendicularInput: movement.correctionPerpendicularInput ?? 0,
-          correctionXZPerSnapshotMs: getSafeRate(
-            movement.correctionDistanceXZ ?? 0,
-            Math.max(0, networkDebug.snapshotAgeMs),
-          ),
-          correctionAlongVelocityPerSnapshotMs: getSafeRate(
-            Math.abs(movement.correctionAlongVelocity ?? 0),
-            Math.max(0, networkDebug.snapshotAgeMs),
-          ),
-          presentationOffset: movement.correctionOffsetMagnitude ?? 0,
-          bufferedCorrection: movement.bufferedCanonicalCorrectionMagnitude ?? 0,
-          correctionEnqueueRatePerSecond: movement.correctionEnqueueRatePerSecond ?? 0,
-          correctionActive: movement.correctionActive ? 1 : 0,
-          responsiveOffset: movement.responsiveOffsetMagnitude ?? 0,
-          frameMs: getFps?.() > 0 ? 1000 / getFps() : 0,
-          correctionRatePerSecond: movement.correctionRatePerSecond ?? 0,
-          speed: movement.speed ?? 0,
-        });
-        while (debugHistory.length > 0 && now - debugHistory[0].time > DEBUG_HISTORY_WINDOW_MS) {
-          debugHistory.shift();
-        }
-      }
       displaySpeed += (movement.speed - displaySpeed) * 0.18;
+      const utilityHudState = utilityManager?.getHudState?.() ?? null;
+      const objectiveState = networkClient?.getObjectiveState?.() ?? null;
       const roundText = roundManager
-        ? `Round ${roundManager.roundNumber} - ${roundManager.phase}`
+        ? roundManager.roundEnded && roundManager.winnerTeam
+          ? `Round ${roundManager.roundNumber} - ${roundManager.winnerTeam} win (${roundManager.winReason}) - reset ${Math.ceil(roundManager.roundEndCountdown)}s`
+          : `Round ${roundManager.roundNumber} - ${roundManager.phase}`
         : 'Round --';
       const fpsText = `FPS: ${getFps?.() ?? '--'}`;
       const localPlayerState = networkClient?.getLocalPlayerState?.() ?? null;
@@ -540,89 +352,55 @@ export function createHud({
         ? ` - ${weaponHudState.ammoInMagazine}/${weaponHudState.reserveAmmo}${weaponHudState.isReloading ? ' RELOAD' : ''}`
         : '';
       const weaponText = `Weapon: ${weaponManager?.activeWeapon ?? '--'}${ammoLabel}`;
-      const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}`;
+      const utilityStatusSuffix = utilityHudState?.statusText ? ` - ${utilityHudState.statusText}` : '';
+      const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}${utilityStatusSuffix}`;
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
       const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
-      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${movement.traceRecording ? ' - TRACE(F10)' : ''}`;
-      const positionText = `Pos: ${movement.positionText ?? '0.00, 0.00, 0.00'} - ${movement.movementMode ?? 'grounded'}`;
+      const supportText = ` - support ${Number(movement.supportRatio ?? 0).toFixed(2)} - gd ${Number(movement.groundDistance ?? 0).toFixed(2)}`;
+      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${supportText}${movement.traceRecording ? ' - TRACE(F10)' : ''}`;
+      const supportHeightText = Number.isFinite(movement.supportHeight) ? Number(movement.supportHeight).toFixed(2) : '--';
+      const positionText = `Pos: ${movement.positionText ?? '0.00, 0.00, 0.00'} - ${movement.movementMode ?? 'grounded'} - floor ${supportHeightText}`;
       const pointerText = paused
         ? pauseMode === 'team-select'
           ? 'Choose a team'
           : 'Paused'
+        : utilityHudState?.interactionText
+          ? utilityHudState.interactionText
         : input.pointerLocked
           ? 'Pointer locked'
           : 'Click to capture mouse';
       const scoreboardVisible = showScoreboard && !paused;
       const hudMode = getHudMode?.() ?? 'debug';
       const classicVisible = hudMode === 'classic' && !paused;
-      if (classicVisible !== lastClassicVisible) {
-        classicEl.classList.toggle('hud__classic--active', classicVisible);
-        topClusterEl?.classList.toggle('hud__cluster--hidden', classicVisible);
-        bottomClusterEl?.classList.toggle('hud__cluster--hidden', classicVisible);
-        lastClassicVisible = classicVisible;
-      }
-      if (scoreboardVisible !== lastScoreboardHidden) {
-        scoreboardEl.classList.toggle('hud__scoreboard--active', scoreboardVisible);
-        lastScoreboardHidden = scoreboardVisible;
-      }
-      const scoreboardSubtitle = `Players: ${scoreboardState.playerCount}`;
-      lastScoreboardSubtitle = setTextIfChanged(
-        scoreboardSubtitleEl,
-        scoreboardSubtitle,
-        lastScoreboardSubtitle,
-      );
-      scoreboardTeamEls.forEach((teamEl, index) => {
-        const teamState = scoreboardState.teams?.[index] ?? {
-          label: index === 0 ? 'Attackers' : 'Defenders',
-          roundsWon: 0,
-          players: [],
-        };
-        const teamNameEl = teamEl.querySelector('.hud__scoreboard-teamname');
-        const teamScoreEl = teamEl.querySelector('.hud__scoreboard-teamscore');
-        const teamRowsEl = teamEl.querySelector('.hud__scoreboard-rows');
-        teamNameEl.textContent = teamState.label;
-        teamScoreEl.textContent = String(teamState.roundsWon ?? 0);
-        const nextMarkup = getScoreboardRowMarkup(teamState.players, networkClient?.playerId ?? null);
-        if (lastScoreboardTeamMarkup.get(index) !== nextMarkup) {
-          teamRowsEl.innerHTML = nextMarkup;
-          lastScoreboardTeamMarkup.set(index, nextMarkup);
-        }
+      scoreboardController.update({
+        visible: scoreboardVisible,
+        subtitle: `Players: ${scoreboardState.playerCount}`,
+        scoreboardState,
+        roundManager,
+        localPlayerId: networkClient?.playerId ?? null,
       });
-      lastRoundText = setTextIfChanged(roundEl, roundText, lastRoundText);
-      lastFpsText = setTextIfChanged(fpsEl, fpsText, lastFpsText);
-      lastHealthText = setTextIfChanged(healthEl, healthText, lastHealthText);
-      lastWeaponText = setTextIfChanged(weaponEl, weaponText, lastWeaponText);
-      lastUtilityText = setTextIfChanged(utilityEl, utilityText, lastUtilityText);
-      lastNetworkText = setTextIfChanged(networkEl, networkText, lastNetworkText);
-      lastMovementText = setTextIfChanged(movementEl, movementText, lastMovementText);
-      lastPositionText = setTextIfChanged(positionEl, positionText, lastPositionText);
-      lastPointerText = setTextIfChanged(pointerEl, pointerText, lastPointerText);
-      const phaseDuration = roundManager
-        ? (roundManager.phase === 'freeze' ? roundManager.freezeDuration : roundManager.liveDuration)
-        : 0;
-      const timeLeft = Math.max(0, phaseDuration - Number(roundManager?.phaseTime ?? 0));
-      const minutes = Math.floor(timeLeft / 60);
-      const seconds = Math.floor(timeLeft % 60);
-      const classicTimeText = `${minutes}:${String(seconds).padStart(2, '0')}`;
-      const classicPhaseText = roundManager
-        ? `Round ${roundManager.roundNumber} - ${String(roundManager.phase ?? '').toUpperCase()}`
-        : 'Round --';
-      const classicHealthText = String(localPlayerState?.health ?? '--');
-      const classicArmorText = '0';
-      const classicAmmoMagText = weaponHudState && weaponHudState.magazineSize > 0
-        ? String(weaponHudState.ammoInMagazine)
-        : '--';
-      const classicAmmoReserveText = weaponHudState && weaponHudState.magazineSize > 0
-        ? String(weaponHudState.reserveAmmo)
-        : '--';
-      const classicWeaponText = weaponHudState?.activeWeaponLabel ?? '--';
-      lastClassicHealthText = setTextIfChanged(classicHealthEl, classicHealthText, lastClassicHealthText);
-      lastClassicArmorText = setTextIfChanged(classicArmorEl, classicArmorText, lastClassicArmorText);
-      lastClassicTimeText = setTextIfChanged(classicTimeEl, classicTimeText, lastClassicTimeText);
-      lastClassicPhaseText = setTextIfChanged(classicPhaseEl, classicPhaseText, lastClassicPhaseText);
-      lastClassicAmmoMagText = setTextIfChanged(classicAmmoMagEl, classicAmmoMagText, lastClassicAmmoMagText);
-      lastClassicAmmoReserveText = setTextIfChanged(classicAmmoReserveEl, classicAmmoReserveText, lastClassicAmmoReserveText);
-      lastClassicWeaponText = setTextIfChanged(classicWeaponEl, classicWeaponText, lastClassicWeaponText);
+      objectiveWidgetsController.update({
+        paused,
+        utilityHudState,
+      });
+      debugPanelsController.updateDebugText({
+        roundText,
+        fpsText,
+        healthText,
+        weaponText,
+        utilityText,
+        networkText,
+        movementText,
+        positionText,
+        pointerText,
+      });
+      classicController.update({
+        visible: classicVisible,
+        roundManager,
+        objectiveState,
+        localPlayerState,
+        weaponHudState,
+      });
 
       const damageVignette = Math.max(0, Math.min(1, Number(getDamageVignette?.() ?? 0)));
       if (Math.abs(damageVignette - lastDamageVignette) > 0.01) {
@@ -689,28 +467,14 @@ export function createHud({
         lastLoadingText = loadingText;
       }
 
-      if (showNetDebug) {
-        const debugText = buildDebugText(networkDebug, movement);
-
-        if (debugText !== lastNetDebugText) {
-          netDebugEl.textContent = debugText;
-          lastNetDebugText = debugText;
-        }
-        currentNetDebugText = debugText;
-      } else if (currentNetDebugText) {
-        currentNetDebugText = '';
-      }
-
-      if (markDebugSnapshotRequested) {
-        currentNetDebugText = buildDebugText(networkDebug, movement);
-        console.log(buildDebugSummary());
-      }
-
-      const netDebugCopyHidden = !showNetDebug;
-      if (netDebugCopyHidden !== lastNetDebugCopyHidden) {
-        netDebugCopyEl.hidden = netDebugCopyHidden;
-        lastNetDebugCopyHidden = netDebugCopyHidden;
-      }
+      debugPanelsController.updateNetDebug({
+        visible: showNetDebug,
+        networkDebug,
+        movement,
+        markDebugSnapshotRequested,
+        fps: getFps?.() ?? 0,
+        ignoreLocalCorrections: Boolean(getIgnoreLocalCorrections?.()),
+      });
 
       pauseMenu.updateSelections({
         selectedMapId: getSelectedMapId?.(),

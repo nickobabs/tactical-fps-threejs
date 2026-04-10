@@ -34,7 +34,10 @@
 
 - Yaw and pitch are split into separate scene nodes.
 - Camera height is adjusted through stance interpolation instead of instant snapping.
-- Horizontal motion currently uses a simple shared target-velocity lerp in `src/shared/playerMovement.js`.
+- Horizontal motion is still shared through `src/shared/playerMovement.js`, but the grounded feel is no longer just a flat target-velocity lerp:
+  - grounded acceleration now ramps in more softly at low speed
+  - grounded deceleration is explicit
+  - grounded reversal applies stronger braking than ordinary slowdown
 - Vertical motion uses simple gravity and jump impulse logic.
 - Ground snapping uses sampled floor height plus a small step threshold so authored ramps and raised surfaces can be traversed.
 - Mouse sensitivity scales with current camera FOV, so scoped views feel proportionally slower without a separate sensitivity path.
@@ -51,6 +54,9 @@
 - The controller now separates predicted gameplay state from the rendered local rig, so reconciliation can correct simulation without directly jolting the camera every time authoritative state arrives.
 - Local reconciliation now uses a deadzone/hysteresis policy for ordinary movement drift, so tiny disagreement is ignored and only meaningful divergence is allowed to influence the live local path.
 - Local look now stays under client control during ordinary reconciliation. Earlier authoritative yaw application made mouse look oscillate and feel slowed while correction was active.
+- Grounded presentation now follows actual simulated velocity rather than desired input velocity.
+  - that removed a misleading local presentation lead during reversal, braking, and wall contact
+  - the same fix also cleaned up the funny wall-adjacent oscillation that looked like a correction bug
 - A general fly mode exists for debugging and imported-map exploration, and grounded mode can be disallowed per map if a map is not ready for full gameplay collision yet.
 - Landing-from-height behavior now probes ground from a safer height window, which was required once imported maps stopped living near `y = 0`.
 
@@ -60,18 +66,26 @@
 - Supports look, walk, crouch, jump, collision blocking, and walking onto authored raised surfaces
 - Supports fly mode for debugging/imported-map exploration
 - Supports weapon-dependent movement speed modifiers through a callback passed from `GameApp`
+- Supports per-weapon grounded walk speed factors through the shared input/simulation/network path
 - Default base sensitivity is lower than the original prototype tuning and can be adjusted from the pause menu
 - Jump descent no longer snaps early back to the floor from the apex
 - Exposes compact movement input snapshots for server-authoritative multiplayer
 - Reconciles authoritative server state into the predicted simulation path, while presentation follows that simulation through correction-offset handling and bounded local responsiveness
+- Current local footsteps and viewmodel bob are also driven from the controller:
+  - footsteps are local-only for now
+  - ADS, crouch, and shift-walk currently suppress bob
 - The controller refactor is partially complete:
   - low-risk helper boundaries have been extracted
   - the remaining dense core is now concentrated around simulation stepping, buffered correction, and authoritative reconciliation
 - Crouch is `C` only. `Ctrl` crouch was removed to avoid accidental browser shortcut conflicts.
 - Latest stable checkpoint:
   - the controller now predicts movement through a full BVH capsule move path shared with server authority
+  - grounded walk on `Shift` is back and is serialized through the multiplayer input path
+  - walking is weapon-relative:
+    - most weapons use `50%` walk speed
+    - knife currently uses `60%`
   - ordinary walking now feels correct again and sustained wall pressure no longer phases through geometry
-  - the remaining issue is contact jitter when leaning into walls or traversing some sloped surfaces
+  - the earlier fake pullback / oscillation feel during grounded reversals was resolved by making grounded presentation follow actual simulated velocity instead of desired input velocity
   - auto-pausing on pointer-lock loss was removed during current multiplayer testing so inactive local tabs do not constantly interrupt PvP tests
 
 ## Investigation Notes
@@ -86,19 +100,20 @@
   - a temporary local-only `120 Hz` prediction-step experiment
   - preserving local yaw/pitch during reconciliation
 - Those experiments improved specific symptoms at different times, and the important outcome was that local deadzone/hysteresis correction produced the first movement baseline that passed the eye test in local multiplayer.
-- Current debugging suggests the biggest remaining risk is now wall-pressure correctness under authority/correction, not just flat-ground feel. The obvious post-sprint forward nudge was improved by fixing stale-input transport, and wall phasing is no longer the active blocker.
+- Current debugging suggests the biggest remaining risk is no longer the obvious local wall-oscillation / fake pullback symptom. That particular symptom turned out to be presentation-leading-intent rather than a large correction path.
 - Latest movement tracing on 2026-04-07 narrowed a separate feel issue:
   - direction-change slowdown was reproduced even when `targetSpeed` stayed at the full grounded cap
   - repeated observed speeds such as `4.10` and `4.5373` point to stale/replayed horizontal velocity rather than simple acceleration limits
   - the next likely fix is in reconciliation behavior for small grounded corrections, not another blind max-speed tweak
-- Follow-up trace work on 2026-04-08 clarified the newer baseline:
-  - the obvious stop-nudge / reversal-correction symptom no longer reproduced after the latest queueing/restart/debug pass
-  - current traces show reconciliation action staying at `ignore`
-  - residual disagreement is now typically a stable horizontal offset of about `0.082`
-  - that offset projects almost entirely along movement direction rather than sideways
-  - `0.082` is effectively one `60 Hz` movement step at `4.92 m/s`, which is consistent with an accepted authority-cadence gap rather than a visible correction bug
+- Follow-up trace work clarified the newer baseline:
+  - current traces showed reconciliation action staying at `ignore`
+  - buffered correction was inactive during the sampled counter-strafe cases
+  - residual disagreement was typically a stable horizontal offset of about `0.082`
+  - that offset projected almost entirely along movement direction rather than sideways
+  - `0.082` is effectively one `60 Hz` movement step at `4.92 m/s`
+  - the remaining bad feel came from grounded presentation extrapolating desired velocity rather than using actual simulated velocity
 - The next scheduled movement pass is acceleration / deceleration / momentum tuning in shared movement:
-  - fast acceleration to speed
+  - softer initial ramp-in
   - explicit deceleration and opposition braking
   - no stamina, leaning, or crouch-slide
   - keep the feel clean and tactical rather than slippery
@@ -121,8 +136,8 @@
 - No recoil transfer into camera yet
 - Server authority still does not share the full client map assembly path, so some client/server divergence can remain
 - Local first-person feel in multiplayer is now substantially closer to single-player on flat-ground movement, but it still needs broader validation before the model should be treated as final
-- Wall-contact oscillation when leaning into solid geometry is still unresolved and is not currently considered a controller-level solved problem
-- Wall/slope contact jitter remains the main collision-feel issue, even though wall phasing itself is no longer the active blocker
+- Wall-contact oscillation from grounded presentation leading desired velocity is no longer the active problem
+- Some wall/slope contact jitter can still remain because the server and browser do not yet share one identical map-assembly source of truth
 - The remaining controller core is the highest-risk refactor target currently left in the gameplay runtime:
   - `simulateMovementStep`
   - `applyBufferedCanonicalCorrection`
@@ -133,8 +148,7 @@
 - Validate the current correction policy against more than flat-ground strafing
 - Keep prediction deterministic and replay-friendly while expanding authoritative gameplay
 - Avoid stacking more ad hoc local smoothing unless instrumentation shows a specific need
-- Leave the wall-contact oscillation issue paused unless a more principled controller/contact pass is scheduled
-- Replace the current planar velocity lerp with a more explicit acceleration / braking model in shared movement
-- Preserve the current max-speed model while making starts, stops, and direction changes more intentional
+- Keep grounded presentation tied to resolved/simulated movement instead of desired intent
+- Preserve the current max-speed model while continuing to tune starts, stops, and direction changes
 - Keep counter-strafe behavior meaningful, especially for future sniper use, without making rifles or general movement feel gimmicky
 - See `docs/movement-acceleration-plan.md` for the next-pass implementation outline

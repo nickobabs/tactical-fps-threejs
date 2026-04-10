@@ -17,6 +17,8 @@ import { GameplayNetworkingCoordinator } from './GameplayNetworkingCoordinator.j
 import { GamePauseController } from './GamePauseController.js';
 import { GameDebugController } from './GameDebugController.js';
 import { GameSessionController } from './GameSessionController.js';
+import { createDebugMenu } from './createDebugMenu.js';
+import { createMovementTuningPanel } from '../game/player/createMovementTuningPanel.js';
 import { TEAMS } from '../shared/constants.js';
 
 const DEFAULT_HORIZONTAL_FOV = 103;
@@ -149,6 +151,11 @@ export class GameApp {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.92;
     this.root.appendChild(this.renderer.domElement);
+    this.debugMenu = createDebugMenu({
+      container: this.root,
+      onToggleHudMode: () => this.toggleHudMode(),
+    });
+    this.movementTuningPanel = createMovementTuningPanel();
     this.pauseController = new GamePauseController({
       renderer: this.renderer,
       audioManager: this.audioManager,
@@ -228,6 +235,8 @@ export class GameApp {
     this.networkClient.destroy();
     this.audioManager.destroy();
     this.debugController.destroy();
+    this.debugMenu?.destroy?.();
+    this.movementTuningPanel?.destroy?.();
     this.renderer.dispose();
   }
 
@@ -537,8 +546,23 @@ export class GameApp {
   }
 
   updateWorldSimulation(delta) {
-    this.runtime.roundManager.update(delta);
-    this.runtime.utilityManager.update(delta);
+    if (this.authoritativeNetworkingEnabled) {
+      const authoritativeRoundState = this.networkClient.getRoundState?.();
+      if (authoritativeRoundState) {
+        this.runtime.roundManager.applySnapshot(authoritativeRoundState);
+      }
+    } else {
+      this.runtime.roundManager.update(delta);
+    }
+
+    this.runtime.utilityManager.update(delta, {
+      input: this.input,
+      playerController: this.runtime.playerController,
+      roundManager: this.runtime.roundManager,
+      networkClient: this.networkClient,
+      selectedTeam: this.selectedTeam,
+      weaponManager: this.runtime.weaponManager,
+    });
   }
 
   updateNetworkState(delta) {
