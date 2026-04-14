@@ -314,6 +314,60 @@ export class GameApp {
     this.lastRoundWinReason = nextWinReason;
   }
 
+  playReplicatedAudioEvents() {
+    const listenerPosition = this.runtime?.playerController?.getEyePosition?.()
+      ?? this.runtime?.playerController?.position
+      ?? null;
+    const listenerYaw = Number(this.runtime?.playerController?.yawAngle ?? 0);
+    const localMapId = this.networkClient.getLocalPlayerState?.()?.mapId ?? this.selectedMapId ?? null;
+
+    for (const event of this.networkClient.consumeAudioEvents?.() ?? []) {
+      if (!event?.soundKey) {
+        continue;
+      }
+      if (event.sourcePlayerId && event.sourcePlayerId === this.networkClient.playerId) {
+        continue;
+      }
+      if (localMapId && event.mapId && event.mapId !== localMapId) {
+        continue;
+      }
+
+      const emitterPosition = event?.type === 'footstep' && listenerPosition
+        ? {
+          x: Number(event.position?.x ?? 0),
+          y: Number(listenerPosition.y ?? 0),
+          z: Number(event.position?.z ?? 0),
+        }
+        : event.position;
+
+      void this.audioManager.playAtPosition(event.soundKey, {
+        baseVolume: Number(event.baseVolume ?? 1),
+        listenerPosition,
+        listenerYaw,
+        emitterPosition,
+        minDistance: Number(event.minDistance ?? 1.5),
+        maxDistance: Number(event.maxDistance ?? 24),
+        rolloffExponent: Number(event.rolloffExponent ?? 1.6),
+        playback: event.playback ?? undefined,
+        minIntervalMs: Number(event.minIntervalMs ?? 0),
+        pitchMin: Number(event.pitchMin ?? 1),
+        pitchMax: Number(event.pitchMax ?? 1),
+        duration: event.duration,
+      });
+    }
+  }
+
+  updateAudioListener() {
+    const listenerPosition = this.runtime?.playerController?.getEyePosition?.()
+      ?? this.runtime?.playerController?.position
+      ?? null;
+    this.audioManager.setListenerTransform({
+      position: listenerPosition,
+      yaw: Number(this.runtime?.playerController?.yawAngle ?? 0),
+      pitch: Number(this.runtime?.playerController?.pitchAngle ?? 0),
+    });
+  }
+
   toggleHudMode() {
     this.hudMode = this.hudMode === 'classic' ? 'debug' : 'classic';
     persistHudMode(this.hudMode);
@@ -604,6 +658,7 @@ export class GameApp {
   updateNetworkState(delta) {
     if (this.getGameplaySyncEnabled()) {
       this.networkClient.update(delta);
+      this.playReplicatedAudioEvents();
       this.gameplayNetworking.handleCombatEvents({
         remotePlayerPresenter: this.remotePlayerPresenter,
         getPopupId: () => `${performance.now()}-${Math.random()}`,
@@ -669,6 +724,7 @@ export class GameApp {
     this.lastLocalPlayerAlive = localPlayerAlive;
 
     if (this.pauseController.isPaused) {
+      this.updateAudioListener();
       this.updateNetworkState(delta);
       this.updateEffects(delta);
       this.updatePlayerPresentation(delta);
@@ -679,6 +735,7 @@ export class GameApp {
     this.queueJumpIfRequested(frameInput);
     this.runLocalSimulation(delta, frameInput, localPlayerAlive);
     this.updateWorldSimulation(delta, frameInput);
+    this.updateAudioListener();
     this.updateNetworkState(delta);
     this.updateEffects(delta);
     this.updatePlayerPresentation(delta);

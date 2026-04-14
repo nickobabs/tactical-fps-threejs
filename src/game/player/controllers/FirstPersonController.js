@@ -519,6 +519,7 @@ export class FirstPersonController {
       FOOTSTEP_AUDIBLE_SPEED_FLOOR,
     );
     const isAudible = this.isGrounded
+      && !this.isCrouched
       && !isWalking
       && horizontalSpeed >= minimumAudibleSpeed
       && horizontalDistance > 1e-4;

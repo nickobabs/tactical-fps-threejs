@@ -36,6 +36,15 @@ import {
   PLAYER_MAX_HEALTH,
   PLAYER_RESPAWN_DELAY_MS,
 } from '../../../src/shared/weaponData.js';
+import {
+  REMOTE_FOOTSTEP_AUDIO,
+  REMOTE_FOOTSTEP_AUDIBLE_SPEED_FLOOR,
+  REMOTE_FOOTSTEP_MIN_HORIZONTAL_SPEED,
+  REMOTE_FOOTSTEP_SAMPLE_COUNT,
+  REMOTE_FOOTSTEP_STRIDE_DISTANCE_CROUCH,
+  REMOTE_FOOTSTEP_STRIDE_DISTANCE_WALK,
+  REMOTE_WEAPON_AUDIO,
+} from '../../../src/shared/audioEvents.js';
 import { RoundManager } from '../../../src/game/rounds/RoundManager.js';
 import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../../src/shared/playerHitboxes.js';
 import {
@@ -84,6 +93,7 @@ const MAX_DISPLAY_NAME_LENGTH = 24;
 const SERVER_OBJECTIVE_STEP = 1 / NETCODE_SIMULATION_RATE;
 const BOMB_DEFUSE_MAX_DISTANCE = 2.4;
 const BOMB_DEFUSE_AIM_DOT_THRESHOLD = 0.96;
+const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
 
 async function appendRemoteHitboxAudit(entry) {
   await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
@@ -685,6 +695,11 @@ export class TacticalRoom extends Room {
         while (player.pendingInputs.length > 0) {
           const nextInput = player.pendingInputs.shift();
           movementStateChanged = true;
+          const previousPosition = {
+            x: Number(player.motionState.position.x ?? 0),
+            y: Number(player.motionState.position.y ?? 0),
+            z: Number(player.motionState.position.z ?? 0),
+          };
           player.pitch = Number(nextInput.pitch ?? player.pitch ?? 0);
           player.motionState = simulatePlayerMovement(player.motionState, nextInput, NETCODE_SIMULATION_STEP, {
             groundHeight: collisionWorld?.getGroundHeight() ?? 0,
@@ -719,6 +734,7 @@ export class TacticalRoom extends Room {
           player.lastProcessedTimestamp = nextInput.timestamp;
           player.lastDequeuedSequence = nextInput.sequence;
           player.lastDequeuedTimestamp = nextInput.timestamp;
+          this.updatePlayerFootsteps(player, previousPosition, nextInput);
         }
 
         if (player.hitboxRig) {
@@ -797,6 +813,9 @@ export class TacticalRoom extends Room {
         player.displayName = this.sanitizeDisplayName(readyState.displayName, player.displayName);
         player.isReady = false;
         player.pendingInputs.length = 0;
+        player.footstepDistance = 0;
+        player.wasFootstepAudible = false;
+        player.lastFootstepSampleIndex = -1;
         player.inputTimestampGate = Date.now();
         player.lastProcessedTimestamp = Date.now();
         player.spawnState = {
@@ -921,6 +940,9 @@ export class TacticalRoom extends Room {
       pingMs: 0,
       motionState: createPlayerMovementState(),
       pendingInputs: [],
+      footstepDistance: 0,
+      wasFootstepAudible: false,
+      lastFootstepSampleIndex: -1,
       mapId: 'training-ground',
       isReady: false,
       spawnState: {
@@ -1093,6 +1115,9 @@ export class TacticalRoom extends Room {
     player.respawnAt = 0;
     player.deathClip = null;
     player.pendingInputs.length = 0;
+    player.footstepDistance = 0;
+    player.wasFootstepAudible = false;
+    player.lastFootstepSampleIndex = -1;
     player.motionState = createPlayerMovementState({
       position: player.spawnState.position,
       velocity: { x: 0, y: 0, z: 0 },
@@ -1108,6 +1133,112 @@ export class TacticalRoom extends Room {
       playerId: player.playerId,
     });
     this.requestStateBroadcast();
+  }
+
+  broadcastAudioEvent(event) {
+    this.broadcast('audio-event', event);
+  }
+
+  emitWeaponAudioEvent(player, weaponKey, origin) {
+    const config = REMOTE_WEAPON_AUDIO[weaponKey];
+    if (!config || !origin || !player?.mapId) {
+      return;
+    }
+
+    this.broadcastAudioEvent({
+      type: 'weapon-fire',
+      sourcePlayerId: player.playerId,
+      mapId: player.mapId,
+      soundKey: config.soundKey,
+      position: {
+        x: Number(origin.x ?? 0),
+        y: Number(origin.y ?? 0),
+        z: Number(origin.z ?? 0),
+      },
+      baseVolume: config.baseVolume,
+      minDistance: config.minDistance,
+      maxDistance: config.maxDistance,
+      rolloffExponent: config.rolloffExponent,
+      playback: 'overlap',
+    });
+  }
+
+  emitFootstepAudioEvent(player) {
+    if (!player?.motionState || !player?.mapId) {
+      return;
+    }
+
+    const profile = player.motionState.isCrouched
+      ? REMOTE_FOOTSTEP_AUDIO.crouch
+      : REMOTE_FOOTSTEP_AUDIO.walk;
+    let sampleIndex = Math.floor(Math.random() * REMOTE_FOOTSTEP_SAMPLE_COUNT);
+    if (REMOTE_FOOTSTEP_SAMPLE_COUNT > 1 && sampleIndex === player.lastFootstepSampleIndex) {
+      sampleIndex = (sampleIndex + 1) % REMOTE_FOOTSTEP_SAMPLE_COUNT;
+    }
+    player.lastFootstepSampleIndex = sampleIndex;
+
+    this.broadcastAudioEvent({
+      type: 'footstep',
+      sourcePlayerId: player.playerId,
+      mapId: player.mapId,
+      soundKey: `${profile.soundPrefix}${String(sampleIndex + 1).padStart(3, '0')}`,
+      position: {
+        x: Number(player.motionState.position.x ?? 0),
+        y: Number(player.motionState.position.y ?? 0) + FOOTSTEP_POSITION_Y_OFFSET,
+        z: Number(player.motionState.position.z ?? 0),
+      },
+      baseVolume: profile.baseVolume,
+      minDistance: profile.minDistance,
+      maxDistance: profile.maxDistance,
+      rolloffExponent: profile.rolloffExponent,
+      playback: 'overlap',
+      minIntervalMs: player.motionState.isCrouched ? 80 : 60,
+    });
+  }
+
+  updatePlayerFootsteps(player, previousPosition, inputSnapshot) {
+    if (!player?.motionState || !previousPosition) {
+      return;
+    }
+
+    const horizontalDistance = Math.hypot(
+      Number(player.motionState.position.x ?? 0) - Number(previousPosition.x ?? 0),
+      Number(player.motionState.position.z ?? 0) - Number(previousPosition.z ?? 0),
+    );
+    const horizontalSpeed = Math.hypot(
+      Number(player.motionState.velocity?.x ?? 0),
+      Number(player.motionState.velocity?.z ?? 0),
+    );
+    const minimumAudibleSpeed = Math.max(
+      REMOTE_FOOTSTEP_MIN_HORIZONTAL_SPEED,
+      REMOTE_FOOTSTEP_AUDIBLE_SPEED_FLOOR,
+    );
+    const isAudible = Boolean(player.isAlive)
+      && Boolean(player.motionState.isGrounded)
+      && !Boolean(player.motionState.isCrouched)
+      && !Boolean(inputSnapshot?.walk)
+      && horizontalSpeed >= minimumAudibleSpeed
+      && horizontalDistance > 1e-4;
+
+    if (!isAudible) {
+      player.footstepDistance = 0;
+      player.wasFootstepAudible = false;
+      return;
+    }
+
+    const strideDistance = player.motionState.isCrouched
+      ? REMOTE_FOOTSTEP_STRIDE_DISTANCE_CROUCH
+      : REMOTE_FOOTSTEP_STRIDE_DISTANCE_WALK;
+    if (!player.wasFootstepAudible) {
+      player.footstepDistance = Math.max(Number(player.footstepDistance ?? 0), strideDistance * 0.55);
+    }
+    player.wasFootstepAudible = true;
+    player.footstepDistance = Number(player.footstepDistance ?? 0) + horizontalDistance;
+
+    while (player.footstepDistance >= strideDistance) {
+      player.footstepDistance -= strideDistance;
+      this.emitFootstepAudioEvent(player);
+    }
   }
 
   processPlayerFire(player, fireRequest) {
@@ -1168,6 +1299,7 @@ export class TacticalRoom extends Room {
     SHOT_DIRECTION.normalize();
     SHOT_RAY.origin.copy(SHOT_ORIGIN);
     SHOT_RAY.direction.copy(SHOT_DIRECTION);
+    this.emitWeaponAudioEvent(player, player.activeWeaponKey, SHOT_ORIGIN);
 
     const maxDistance = weapon.meleeRange ?? 512;
     const collisionWorld = this.getCollisionWorldForMap(player.mapId);

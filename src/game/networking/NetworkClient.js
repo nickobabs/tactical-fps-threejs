@@ -13,6 +13,7 @@ import {
   createPlayerStatusMessage,
   normalizeAuthoritativePlayerState,
 } from '../../shared/netcodeProtocol.js';
+import { createRemoteAudioEvent } from '../../shared/audioEvents.js';
 
 const ROOM_NAME = 'TacticalRoom';
 const SCOREBOARD_TEAMS = ['attackers', 'defenders'];
@@ -149,6 +150,7 @@ export class NetworkClient {
     this.authoritativeEvents = [];
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
+    this.pendingAudioEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -209,6 +211,10 @@ export class NetworkClient {
 
       room.onMessage('combat-event', (message) => {
         this.pendingCombatEvents.push(message);
+      });
+
+      room.onMessage('audio-event', (message) => {
+        this.pendingAudioEvents.push(createRemoteAudioEvent(message));
       });
 
       room.onMessage('pong', (message) => {
@@ -384,6 +390,7 @@ export class NetworkClient {
     this.authoritativeEvents.length = 0;
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
+    this.pendingAudioEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -543,6 +550,12 @@ export class NetworkClient {
     return events;
   }
 
+  consumeAudioEvents() {
+    const events = this.pendingAudioEvents;
+    this.pendingAudioEvents = [];
+    return events;
+  }
+
   getLocalPlayerState() {
     return this.localPlayerState;
   }
@@ -564,6 +577,7 @@ export class NetworkClient {
     this.authoritativeEvents.length = 0;
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
+    this.pendingAudioEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -757,6 +771,7 @@ export class NetworkClient {
     this.authoritativeEvents.length = 0;
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
+    this.pendingAudioEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;

@@ -160,6 +160,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Rifle, pistol, sniper, and knife all have functioning presentation/effects/audio paths.
 - A simple smoke grenade utility is now playable on `6` with local projectile bounce, CS-style smoke bloom, and round-reset inventory refill.
 - A first-pass bomb explosion visual now plays at the planted bomb position when the bomb detonates.
+- Remote weapon-fire and footstep audio now replicate from authoritative state with spatial playback on other clients.
 - The sniper scope overlay works and is still HUD-driven.
 - HDR skyboxes can be swapped at runtime.
 - Additive multiplayer still works locally through Colyseus:
@@ -255,6 +256,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - client prediction with replay/reconciliation
   - first server-authoritative PvP combat slice for hits, health, death, and respawn
   - server-authoritative round state and first bomb-objective slice
+  - first server-authoritative remote audio slice for weapon fire and audible footsteps
   - server-authoritative segmented remote hitboxes are active and now track the visible remote mesh closely enough for current PvP use
   - `F3` shows authoritative remote hit volumes and `F6` includes `Local Hitbox Debug` for safe visual tuning
   - debug workflow still active
@@ -268,7 +270,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - `NetworkClient` samples local inputs, receives authoritative state, and exposes corrections.
 - `RemotePlayerPresenter` renders remote placeholders / remote character models from authoritative state and combat events, and is now the active remote playermodel testbed.
 - `WeaponManager` consumes frame input for swap/scope/fire logic.
-- `UtilityManager` now coordinates bomb objective state, bomb equip policy, planting interaction, and planted-bomb visualization.
+- `UtilityManager` now coordinates bomb objective state, smoke utility flow, bomb equip policy, planting interaction, and planted-bomb visualization.
 - `TargetManager` updates bots using `CollisionWorld` and `NavigationManager`.
 
 ## High-Value Files
@@ -413,6 +415,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Bundle size is still a major pressure point because `recast-navigation` and its WASM payload are still large.
 - AI is still intentionally simple.
 - Weapons are in better shape, but reload/ammo/equip behaviors will need another structure pass later.
+- Audio awareness is now materially better than before, but remote footstep range/loudness tuning is still active work.
 - Multiplayer authority is still the biggest correctness pressure point:
   - graybox maps use shared movement/shared collision primitives
   - imported maps like Dust2 now load authoritative collision from manifest-defined glTF assets on the server, but the broader client/server map assembly path is still not one single source of truth
@@ -583,7 +586,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - current local step audio is registered from `/audio/players/footsteps/`
   - weapon audio is registered from `/audio/guns/`
   - current local step pool is the concrete set with random non-repeat selection
-  - footsteps are currently silent while walking, crouched, or moving below rifle-walk speed
+  - footsteps are currently silent while shift-walking, crouched, or moving below the audible-speed threshold
+- Remote audio:
+  - weapon fire and audible footsteps now replicate from authoritative state as `audio-event` messages
+  - remote playback now uses Web Audio spatial panning with listener transforms updated from the live first-person view
+  - a manual attenuation/cutoff layer still sits on top of the spatial panner so sounds do not leak faintly cross-map
+  - current tuning work is focused on footstep hearing range, nearby loudness, and whether footsteps should keep `HRTF` or use a lighter spatial mode
 - Walking:
   - `Shift` grounded walk is back
   - most weapons use `50%` walk speed

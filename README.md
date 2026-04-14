@@ -23,10 +23,12 @@ The current build is a real multiplayer-capable tactical FPS foundation with:
 - imported maps with separate visual and collision assets
 - baked navmesh support
 - first-person weapons and damage feedback
+- shared transient effects for weapon impacts, smoke, and bomb explosion presentation
 - remote third-person player presentation
 - server-authoritative PvP hit validation
 - server-authoritative segmented remote hit volumes
 - server-authoritative round state and first bomb-objective flow
+- first authoritative remote-audio slice for weapon fire and audible footsteps
 - live in-browser debug tooling for movement, networking, recoil, footsteps/bob, hitboxes, and weapon/model tuning
 
 It already supports real play loops:
@@ -35,6 +37,7 @@ It already supports real play loops:
 - spawn into a map
 - move, walk, crouch, jump, and fight
 - switch weapons
+- equip and throw a smoke grenade
 - carry and plant the bomb
 - kill and respawn
 - play through freeze, live, planted, and round-end states
@@ -50,6 +53,7 @@ It already supports real play loops:
 - Grounded movement now uses a softer ramp-in, explicit deceleration, and stronger reversal braking
 - Weapon-dependent movement speed and weapon-dependent walk speed factor
 - Utility slot with a simple smoke grenade equip/throw baseline
+- Smoke grenade now uses local projectile physics with bounce, settle-based bloom timing, and a heavier CS-style smoke cloud
 - Hitscan rifle, pistol, sniper, knife, and bomb slot
 - ADS / scoped state
 - Rifle visual recoil plus actual gameplay spray recoil
@@ -58,6 +62,7 @@ It already supports real play loops:
 - Replicated damage, death, and respawn
 - Attacker/defender teams with first round-state flow
 - Bomb equip, carry, plant, countdown, and explosion baseline
+- First-pass bomb explosion visual at the planted position
 
 ### Multiplayer
 
@@ -70,6 +75,8 @@ It already supports real play loops:
 - Server-authoritative fire requests and hit validation
 - Replicated health, alive state, respawn timing, pitch, stance, weapon, presentation state, team, and display name
 - Server-authoritative round/objective snapshots for HUD and gameplay flow
+- Server-authoritative remote audio events for weapon fire and audible footsteps
+- Spatial remote audio playback with listener updates and gameplay attenuation/cutoff
 
 ### Remote Character / Hitbox Tech
 
@@ -105,6 +112,15 @@ It already supports real play loops:
 - Pause menu for map, skybox, sensitivity, volume, and FOV
 - Damage vignette, hit damage numbers, dead overlay, and respawn countdown
 - Live `NETDEBUG` panel with clipboard copy support
+
+### Audio / Effects
+
+- Shared `EffectsManager` path for weapon tracers/impacts, smoke clouds, and bomb explosion presentation
+- Bomb planted and bomb defused announcement stingers
+- Local footstep pool with movement-tuned duration trimming
+- Replicated remote weapon and footstep sounds driven from authoritative state
+- Web Audio spatial playback now prefers `PannerNode` with `HRTF` when available
+- Manual hearing-range attenuation/cutoff still applies on top of the spatial path for gameplay consistency
 
 ### Tooling / Live Tuning
 
@@ -184,7 +200,7 @@ The current live grounded baseline is:
 
 - walk on `Shift`
 - crouch on `C`
-- no footsteps while walking or crouched
+- no footsteps while shift-walking or crouched
 - no bob while ADS, walking, or crouched
 - current local footsteps use the concrete pool under `public/audio/players/footsteps/`
 
@@ -199,6 +215,7 @@ The active multiplayer baseline includes:
 - fire requests validated on the server
 - replicated damage, death, and respawn
 - replicated round, team, and objective state
+- replicated authoritative audio events for weapon fire and audible footsteps
 - RTT ping probes for scoreboard/network diagnostics
 
 ### Remote Presentation
@@ -299,8 +316,11 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 ## Current Notes / Limitations
 
 - Older imported-map Dust2 grounding/support investigation notes are kept under `docs/session-notes/` for reference, but should not be treated as the current top-level blocker without fresh repro.
-- Footsteps are currently local-only and do not yet switch by detected surface type.
+- Remote-audio directionality is now in place, but footstep hearing range and loudness still need more multiplayer tuning.
+- Footsteps do not yet switch by detected surface type.
 - Audio does not yet have separate buses for weapons, footsteps, ambience, or UI.
+- Smoke is currently a visual gameplay marker only and does not yet block line of sight or traces.
+- Smoke and bomb explosion effects are currently local presentation only and are not yet replicated as shared world FX.
 - The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.
 
 ## Repo Structure
