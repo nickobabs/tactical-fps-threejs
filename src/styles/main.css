@@ -36,6 +36,108 @@ canvas {
   pointer-events: none;
 }
 
+.hud__round-win {
+  position: absolute;
+  top: 120px;
+  left: 50%;
+  display: none;
+  min-width: min(460px, calc(100vw - 48px));
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 10px;
+}
+
+.hud__round-win--active {
+  display: grid;
+}
+
+.hud__round-win-banner {
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  min-width: min(460px, calc(100vw - 48px));
+  min-height: 66px;
+  border-right: 2px solid rgba(214, 145, 56, 0.82);
+  border-left: 2px solid rgba(214, 145, 56, 0.82);
+  background: rgba(8, 8, 8, 0.56);
+}
+
+.hud__round-win-chevron {
+  color: rgba(214, 145, 56, 0.95);
+  font: 700 24px/1 Georgia, "Times New Roman", serif;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+}
+
+.hud__round-win-text {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  min-height: 66px;
+  padding: 6px 10px 7px;
+}
+
+.hud__round-win-title {
+  color: #cc3434;
+  font: 700 24px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.82);
+}
+
+.hud__round-win-subtitle {
+  margin-top: 2px;
+  color: #d8b14b;
+  font: 700 15px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.hud__round-win-mvp {
+  justify-self: center;
+  position: relative;
+  display: grid;
+  align-items: center;
+  min-width: min(360px, calc(100vw - 72px));
+  padding: 6px 12px;
+  background: rgba(8, 8, 8, 0.46);
+}
+
+.hud__round-win-mvp-star {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #d79a32;
+  font: 700 24px/1 Georgia, "Times New Roman", serif;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.72);
+}
+
+.hud__round-win-mvp-copy {
+  justify-self: center;
+  text-align: center;
+  color: rgba(242, 242, 242, 0.96);
+  font: 600 15px/1.15 "Trebuchet MS", "Segoe UI", sans-serif;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.hud__round-win--defenders .hud__round-win-title {
+  color: #78a8e8;
+}
+
+.hud__round-win-footer {
+  display: none;
+  justify-self: center;
+  color: rgba(242, 242, 242, 0.96);
+  font: 700 14px/1.1 "Trebuchet MS", "Segoe UI", sans-serif;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85);
+}
+
+.hud__round-win-footer--active {
+  display: block;
+}
+
 .hud__top,
 .hud__bottom {
   position: absolute;
@@ -366,6 +468,10 @@ canvas {
   background: linear-gradient(90deg, rgba(198, 111, 52, 0.92), rgba(242, 216, 154, 0.96));
   transform: scaleX(0);
   transform-origin: left center;
+}
+
+.hud__plant-progress--defusing .hud__plant-progress-fill {
+  background: linear-gradient(90deg, rgba(84, 148, 232, 0.94), rgba(173, 212, 255, 0.98));
 }
 
 .hud__classic {

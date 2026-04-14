@@ -12,6 +12,7 @@ The current networking slice supports:
 - Client-to-server fire requests for PvP combat
 - Client-to-server player-ready/team/name initialization
 - Client-to-server bomb plant requests
+- Client-to-server bomb defuse requests
 - Server-authoritative player positions derived from those inputs
 - Server-authoritative player health / alive state for PvP
 - Server-authoritative round state
@@ -68,9 +69,12 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Replicated state already carries `displayName`, `activeWeaponKey`, and a small `presentationState` enum, and the active remote third-person playermodel path now consumes that data directly.
 - Remote player presentation is now split between network state in `NetworkClient` and runtime rendering in `RemotePlayerPresenter`.
 - The remote-presenter refactor has started conservatively:
+  - character definition/selection now lives in `src/game/networking/remoteCharacterDefinitions.js`
+  - character asset/cached clip loading now lives in `src/game/networking/remoteCharacterAssetLoader.js`
+  - remote animation-clip construction now lives in `src/game/networking/remoteCharacterAnimationBuilder.js`
   - tuning persistence / normalization now lives in `src/game/networking/remoteTuningStore.js`
   - `F6` / `F7` browser tuning panels now live in `src/game/networking/remoteTuningPanels.js`
-  - core remote visual update, animation playback, hit-bone discovery, and `F3` hit-volume debug still remain in `RemotePlayerPresenter.js`
+  - core remote visual update, live animation playback, hit-bone discovery, and `F3` hit-volume debug still remain in `RemotePlayerPresenter.js`
   - the current swap/integration contract is documented in `docs/remote-character-asset-contract.md`
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 - The current combat slice is intentionally narrow:
@@ -104,10 +108,12 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - air-state tilt/readability
   - scoped/sniper stance hint through weapon posture
   - remote hit flinch / flash readability
-  - clearer remote death lean / fall transition
+  - remote death-animation playback with corpse persistence until respawn
 - Remote presentation now has an active skinned-character path in `RemotePlayerPresenter`, with the older capsule/weapon proxy kept as a fallback if asset loading fails
-  - the latest stable refactor checkpoint keeps the remote tuning store and panel UI extracted, while the hit-volume debug block stays local after a failed extraction/regression was backed out
-  - the runtime supports both a legacy remote character asset (`public/models/players/tester3.glb`) and an experimental character asset (`public/models/players/newtest.glb`)
+  - the latest stable refactor checkpoint keeps character selection, character asset loading, animation-clip construction, remote tuning store, and panel UI extracted, while the hit-volume debug block stays local after a failed extraction/regression was backed out
+  - the default remote character baseline uses `public/models/players/newtest.glb`
+  - defender-team remote visuals use `public/models/players/defender.glb`
+  - the older `public/models/players/tester3.glb` asset remains the fallback path if a requested character model fails to load
   - the source strip clip is `Take 001`, which is still used for several temporary runtime subclips
   - imported root-motion translation is stripped in code so the replicated actor transform stays authoritative
   - current airborne behavior still freezes the jump clip in a tucked-leg pose until landing rather than replaying the tail
@@ -144,15 +150,17 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Server authority and reconciliation are wired end-to-end for player movement
 - Friendly fire is disabled in authoritative hit validation
 - Server authority now uses shared map collision for `Training Ground` and `Desert Compound`
-- Server authority also loads imported collision glTF data for `Dust2 Import Test`
+- Server authority also loads imported collision glTF data for the Dust2 imported-map path, including `Dust2 Legacy Import` and `Dust2 Test`
 - Server-authoritative round state and bomb/objective state are active
 - Server-authoritative imported-map bomb-site validation now supports `plantable_*` markers
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests
   - the server validates hits against authoritative player state
+  - rifle damage can now vary by hit zone
   - player health / death / respawn are replicated
   - remote placeholders now reflect alive vs dead state
   - HUD feedback exists for local damage taken, damage dealt, and respawn countdown
+- Authoritative remote state now also carries `deathClip`, so remote death presentation can choose forward vs backward authored death playback from server-side hit context
 - A server-authoritative bone-driven hitbox path is now active:
   - shared constants now exist in `src/shared/remoteCharacterConfig.js`
   - shared hitbox snapshot construction now exists in `src/shared/remoteHitboxes.js`
@@ -201,7 +209,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - `F3` remains an important visual diagnostic tool, and `F6` local hitbox debug should be used for future visual tuning before baking new shared defaults
   - the temporary file-backed deep audit used to resolve the locomotion/jump mismatch was removed after the fix, so `F3` no longer writes log files during normal use
 - the earlier airborne remote-hitbox offset was resolved by that same `Bip01` root-motion parity fix
-- The current Dust2 movement blocker under active investigation is a local/support grounding issue on imported geometry, not a room/netcode protocol bug
+- Older Dust2 grounding investigation notes point to a local/support issue on imported geometry rather than a room/netcode protocol bug
 
 ## Investigation Notes
 
@@ -238,7 +246,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - A later Dust2 investigation narrowed one imported-map problem further:
   - runtime ground queries used to fall back to global `groundHeight` on ray miss, which created an artificial invisible support plane
   - that fallback has been removed for runtime movement/support queries
-  - current remaining Dust2 hover behavior still needs deeper capture/debugging
+  - any remaining Dust2 hover report should be revalidated on the latest build before treating it as an active blocker
 - The current working baseline is to trust local prediction for tiny drift and only begin convergence once the correction clears a meaningful threshold.
 - For hitboxes, the important lesson is:
   - building useful authoritative volumes from the remote skeleton is possible
@@ -337,7 +345,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - round-state authority
   - staged remote-player presentation:
       - keep placeholder fallback
-      - continue iterating on the experimental `newtest.glb` remote character path while keeping the legacy fallback available
+      - continue iterating on the `newtest.glb` baseline while keeping the defender-team `defender.glb` path and the legacy fallback available
       - replace long-strip locomotion subclips with standalone exported clips from Max
       - keep the authored rifle helpers and the current stable full-body locomotion baseline
       - continue socket-relative rifle hold tuning and per-weapon pose offsets for rifle / sniper / knife and scoped state

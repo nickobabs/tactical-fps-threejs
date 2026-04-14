@@ -30,7 +30,8 @@
 - Optional live multiplayer debug overlay and console summaries
 - Classic HUD / debug HUD mode switching
 - Scoreboard rendering
-- Objective widgets such as plant progress
+- Objective widgets such as plant/defuse progress
+- Round-win banner and MVP copy
 
 ## Dependencies
 
@@ -76,6 +77,8 @@
 - Includes hold-`Tab` scoreboard overlay with two team panels, player name/kills/deaths/ping columns, and live team score display
 - Includes a toggleable classic HUD mode inspired by Source plus the older debug HUD mode
 - Includes planted-bomb timer/state and plant-progress feedback
+- Includes defender defuse progress feedback through the same objective widget path
+- Includes a centered round-win banner with win-reason subtitle and a simple winning-team MVP line
 - HUD structure is now split across smaller files for scoreboard, classic HUD, objective widgets, and debug panels
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`

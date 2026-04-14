@@ -40,6 +40,7 @@
 
 - Implemented and active
 - Rifle fire, pistol fire, sniper fire, sniper zoom, and knife slash are registered through the shared manager
+- Bomb planted and bomb defused announcement stingers are also registered through the shared manager
 - Local concrete footstep variants are also registered through the shared manager
 - Pause-menu master volume feeds directly into the master gain node
 

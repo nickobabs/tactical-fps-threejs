@@ -48,8 +48,14 @@ At this point, the highest-value work is no longer broad refactoring for its own
 - [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
   - still the largest concentrated runtime hotspot in the repo
   - stable enough for current multiplayer use
-  - still owns a lot of animation, pose, socket, and debug behavior in one place
-  - next extraction should be smaller and narrower than the earlier reverted hit-volume-debug attempt
+  - recent low-risk extractions moved character definition/selection, character asset loading, and animation-clip construction into dedicated networking modules
+  - it still owns the higher-risk runtime behavior:
+    - active visual updates
+    - live animation action switching/playback
+    - pose/aim application
+    - socket attachment at runtime
+    - hit-volume debug and tuning workflow
+  - any further extraction should stay smaller and narrower than the earlier reverted hit-volume-debug attempt
 - Server-side authoritative room / hitbox runtime
   - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
   - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
@@ -59,7 +65,7 @@ At this point, the highest-value work is no longer broad refactoring for its own
 ## Things That Are Important But Not Refactor Targets
 
 - Dust2 grounding/support investigation
-  - still an active debug issue
+  - older debug investigation notes still exist
   - documented in [session-note-2026-04-09-dust2-grounding.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-09-dust2-grounding.md)
   - this is primarily a movement/collision investigation, not a structural refactor task
 - Current movement-feel tuning
@@ -87,4 +93,4 @@ At this point, the highest-value work is no longer broad refactoring for its own
 1. Leave `FirstPersonController` alone unless there is a concrete need around one of the remaining dense methods.
 2. If remote presentation work resumes, take the next slice out of `RemotePlayerPresenter` in a very narrow module boundary.
 3. Only touch server room/hitbox structure when gameplay authority work forces it.
-4. Treat Dust2 grounding and movement-feel tuning as debugging/tuning tasks, not refactor tasks.
+4. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.

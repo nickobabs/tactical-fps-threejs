@@ -2,7 +2,7 @@
 
 ## Summary
 
-`WeaponManager` now acts as the runtime shell for weapon state and per-frame orchestration, while smaller weapon modules own tuning UI, action execution, policy/state helpers, selection/application helpers, shot resolution, presentation math, and temporary shot effects.
+`WeaponManager` now acts as the runtime shell for weapon state and per-frame orchestration, while smaller weapon modules own tuning UI, action execution, policy/state helpers, selection/application helpers, shot resolution, presentation math, and shared-effects integration.
 
 ## Inputs
 
@@ -34,7 +34,7 @@
   - rifle, pistol, and knife use a borrowed animated prototype asset pack
   - sniper still uses a procedural fallback viewmodel
 - Viewmodel is rendered on a separate camera layer to avoid self-hits during raycasts
-- Weapon behavior is split between a runtime manager, config data, viewmodel builder helpers, shot-resolution helpers, presentation helpers, and temporary shot-effect helpers
+- Weapon behavior is split between a runtime manager, config data, viewmodel builder helpers, shot-resolution helpers, presentation helpers, and shared transient effect helpers
 - `WeaponManager` has been explicitly decomposed so future weapon work does not accumulate back into one large class:
   - `createViewModelTuningPanel.js` owns the temporary `F4` tuning UI
   - `weaponActions.js` owns shot / knife execution wiring around the lower-level firing helpers
@@ -42,7 +42,7 @@
   - `weaponSelection.js` owns active-weapon state payload derivation and active viewmodel selection/application
   - `weaponFiring.js` still owns hit resolution and fire audio primitives
   - `weaponPresentation.js` still owns viewmodel presentation math
-  - `weaponEffects.js` still owns temporary shot effects
+  - `EffectsManager` now owns transient tracers and impact markers used by weapon fire
 - The rifle is automatic and supports ADS with a centered sight picture
 - The pistol is a semi-auto sidearm with a lighter ADS profile than the rifle
 - The sniper is semi-auto and supports scoped zoom with a full overlay
@@ -52,6 +52,7 @@
   - actual spray recoil that can change bullet direction
 - ADS recoil can still be damped per weapon to preserve sight alignment
 - Shot feedback is intentionally lightweight and readable: flash, tracer, and impact marker rather than full decal or particle systems
+- Weapon shot effects now render through the shared `EffectsManager`, which also provides the baseline path for smoke and bomb-objective effects
 - Weapon swapping is slot-driven through config data, so adding new number-key weapons does not require another hardcoded branch in `WeaponManager`
 - Slot lookup now comes from config data rather than a per-frame scan across all weapons, which keeps input handling simpler as the arsenal grows
 - `WeaponManager` now coordinates weapon runtime state while delegating hitscan/melee resolution, viewmodel presentation math, weapon policy, and active-viewmodel selection to smaller helpers, which lowers the cost of adding more weapons or expanding animation logic later
@@ -68,6 +69,10 @@
 
 - Implemented and active
 - Includes `Rifle`, `Pistol`, `Knife`, and `Sniper` slots, weapon swapping on number keys, scoped FOV transitions, sniper hipfire spread, per-weapon damage values, weapon-dependent movement speed, and a basic knife thrust attack with dedicated audio
+- Rifle damage is now hit-zone aware in the authoritative PvP path:
+  - head shots are lethal
+  - body shots use the main baseline damage
+  - arms and legs use reduced damage
 - Rifle and pistol now both expose recoil tuning through the debug recoil panel
 - Rifle currently uses both visual recoil and actual gameplay spray recoil
 - Pistol currently exposes `hipfireSpread`, `visualRecoil`, and `sprayRecoil` for live tuning
@@ -80,5 +85,6 @@
 ## Limitations
 
 - No authoritative ammo/reload rules yet
+- Only the rifle currently has explicit hit-zone damage overrides in shared weapon data
 - The current rifle/pistol/knife animation baseline is still explicitly a prototype content path using borrowed assets, not a final production asset pipeline
 - Knife melee is still intentionally lightweight on the gameplay side: there is no separate swing trace, combo chain, or deeper melee state machine

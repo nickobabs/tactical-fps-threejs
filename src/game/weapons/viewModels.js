@@ -101,7 +101,12 @@ async function loadBorrowedViewModelAsset() {
 }
 
 function configureBorrowedMaterials(root, meshName, weaponKey, armTexture, weaponTexture) {
-  const armMaterial = new THREE.MeshBasicMaterial({ map: armTexture });
+  const armMaterial = new THREE.MeshBasicMaterial({
+    map: armTexture,
+    transparent: true,
+    alphaTest: 0.2,
+    side: THREE.DoubleSide,
+  });
   const weaponMaterial = new THREE.MeshBasicMaterial({ map: weaponTexture, side: THREE.DoubleSide });
 
   root.traverse((object) => {

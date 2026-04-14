@@ -49,6 +49,7 @@ It already supports real play loops:
 - Shared movement rules between client and server
 - Grounded movement now uses a softer ramp-in, explicit deceleration, and stronger reversal braking
 - Weapon-dependent movement speed and weapon-dependent walk speed factor
+- Utility slot with a simple smoke grenade equip/throw baseline
 - Hitscan rifle, pistol, sniper, knife, and bomb slot
 - ADS / scoped state
 - Rifle visual recoil plus actual gameplay spray recoil
@@ -72,8 +73,9 @@ It already supports real play loops:
 
 ### Remote Character / Hitbox Tech
 
-- Active remote skinned-character path using `public/models/players/newtest.glb`
-- Legacy fallback path still available if the active model path fails
+- Active remote skinned-character baseline uses `public/models/players/newtest.glb`
+- Defender-team remote visuals now use `public/models/players/defender.glb`
+- Legacy fallback path still available if the requested model path fails
 - Full-body locomotion clips with imported FBX overrides
 - Remote weapon attachment through authored sockets/helpers
 - Remote pitch readability through weapon/socket pitch plus narrow neck/head aiming
@@ -99,6 +101,7 @@ It already supports real play loops:
 - Scope overlay and ADS reticle handling
 - Bomb-planted state and planted-bomb timer feedback
 - Plant progress feedback
+- Utility HUD feedback for smoke availability and throw prompt
 - Pause menu for map, skybox, sensitivity, volume, and FOV
 - Damage vignette, hit damage numbers, dead overlay, and respawn countdown
 - Live `NETDEBUG` panel with clipboard copy support
@@ -124,6 +127,7 @@ It already supports real play loops:
 
 - `Training Ground`
 - `Desert Compound`
+- `Dust2 Legacy Import`
 - `Dust2 Test`
 
 ### Weapons
@@ -225,9 +229,10 @@ The active foundation is no longer locked to one rig naming style. Shared skelet
 
 ## Current Character / Rig Baseline
 
-The active remote model/animation path is the former experimental branch, now effectively the default baseline:
+The active remote model/animation path is the former experimental branch, now effectively the default baseline for the main remote rig:
 
-- active character: `public/models/players/newtest.glb`
+- active attacker/default character: `public/models/players/newtest.glb`
+- active defender visual character: `public/models/players/defender.glb`
 - active rifle asset: `public/models/weapons/newak.glb`
 - active locomotion proof clip: `public/models/players/newtest_run.fbx`
 
@@ -293,7 +298,7 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 
 ## Current Notes / Limitations
 
-- Imported-map Dust2 grounding/support still has a remaining hover/invisible-support issue under some conditions and is documented separately in the session notes.
+- Older imported-map Dust2 grounding/support investigation notes are kept under `docs/session-notes/` for reference, but should not be treated as the current top-level blocker without fresh repro.
 - Footsteps are currently local-only and do not yet switch by detected surface type.
 - Audio does not yet have separate buses for weapons, footsteps, ambience, or UI.
 - The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.

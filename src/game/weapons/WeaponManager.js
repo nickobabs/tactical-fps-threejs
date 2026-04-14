@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { WEAPON_CONFIGS, setViewModelTransformValue } from './weaponConfigs.js';
 import { createWeaponViewModels, VIEWMODEL_LAYER } from './viewModels.js';
-import { updateTemporaryEffects } from './weaponEffects.js';
 import { updateWeaponPresentation } from './weaponPresentation.js';
 import { createViewModelTuningPanel } from './createViewModelTuningPanel.js';
 import { createWeaponRecoilTuningPanel } from './createWeaponRecoilTuningPanel.js';
@@ -13,11 +12,12 @@ const MUZZLE_WORLD = new THREE.Vector3();
 const FIRE_DIRECTION = new THREE.Vector3();
 
 export class WeaponManager {
-  constructor({ camera, scene, shootables = [], audioManager = null, canEquipWeapon = null }) {
+  constructor({ camera, scene, shootables = [], audioManager = null, effectsManager = null, canEquipWeapon = null }) {
     this.camera = camera;
     this.scene = scene;
     this.shootables = shootables;
     this.audioManager = audioManager;
+    this.effectsManager = effectsManager ?? null;
     this.canEquipWeapon = typeof canEquipWeapon === 'function' ? canEquipWeapon : null;
 
     this.cooldown = 0;
@@ -48,7 +48,6 @@ export class WeaponManager {
     this.queuedSemiAutoShotTime = 0;
 
     this.raycaster = new THREE.Raycaster();
-    this.temporaryObjects = [];
     this.viewModels = createWeaponViewModels();
     this.viewModelTuningPanel = createViewModelTuningPanel(() => this.activeWeaponKey, {
       onForceAdsChange: (value) => {
@@ -214,9 +213,30 @@ export class WeaponManager {
     this.onWeaponChanged?.(weaponKey);
   }
 
-  update(delta, frameInput) {
+  replayActiveWeaponEquip() {
+    if (!this.activeWeaponKey || !this.currentWeapon) {
+      return false;
+    }
+
+    this.shotCount = 0;
+    this.timeSinceLastShot = Infinity;
+    this.reloadTimeRemaining = 0;
+    this.queuedSemiAutoShotTime = 0;
+    this.cooldown = 0;
+    this.isScoped = false;
+    this.showScopeOverlay = false;
+    this.showAdsReticle = false;
+    this.wasScoped = false;
+    this.viewModelController?.onSelected?.();
+    return true;
+  }
+
+  update(delta, frameInput, options = {}) {
+    const blockPrimaryAction = Boolean(options.blockPrimaryAction);
+    const blockSecondaryAction = Boolean(options.blockSecondaryAction);
+    const hideViewModel = Boolean(options.hideViewModel);
     this.handleWeaponSwap(frameInput.justPressed);
-    this.handleScope(frameInput.mouseButtons);
+    this.handleScope(blockSecondaryAction ? new Set() : frameInput.mouseButtons);
 
     this.cooldown = Math.max(0, this.cooldown - delta);
     const previousReloadTimeRemaining = this.reloadTimeRemaining;
@@ -239,8 +259,8 @@ export class WeaponManager {
     this.camera.fov = this.zoomFov;
     this.camera.updateProjectionMatrix();
 
-    const leftHeld = frameInput.mouseButtons.has(0);
-    const leftJustPressed = frameInput.mouseButtonsJustPressed.has(0);
+    const leftHeld = !blockPrimaryAction && frameInput.mouseButtons.has(0);
+    const leftJustPressed = !blockPrimaryAction && frameInput.mouseButtonsJustPressed.has(0);
     if (!this.currentWeapon?.automatic && leftJustPressed) {
       this.queuedSemiAutoShotTime = this.getSemiAutoInputBuffer();
     }
@@ -279,7 +299,9 @@ export class WeaponManager {
     });
 
     this.updateViewModel(delta, frameInput.lookDelta);
-    this.updateTemporaryObjects(delta);
+    if (hideViewModel && this.viewModel) {
+      this.viewModel.visible = false;
+    }
   }
 
   handleWeaponSwap(justPressed) {
@@ -337,10 +359,9 @@ export class WeaponManager {
       currentWeapon: this.currentWeapon,
       audioManager: this.audioManager,
       camera: this.camera,
-      scene: this.scene,
       shootables: this.shootables,
       raycaster: this.raycaster,
-      temporaryObjects: this.temporaryObjects,
+      effectsManager: this.effectsManager,
       muzzleWorld: MUZZLE_WORLD,
       muzzle: this.muzzle,
       isScoped: this.isScoped,
@@ -449,12 +470,7 @@ export class WeaponManager {
     }
   }
 
-  updateTemporaryObjects(delta) {
-    updateTemporaryEffects(this.scene, this.temporaryObjects, delta);
-  }
-
   destroy() {
-    this.updateTemporaryObjects(Infinity);
     this.viewModelTuningPanel?.destroy?.();
     this.recoilTuningPanel?.destroy?.();
     Object.values(this.viewModels).forEach((viewModel) => {

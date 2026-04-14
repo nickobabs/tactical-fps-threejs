@@ -114,9 +114,12 @@
   - `GameSessionController` owns map/session lifecycle
 - The current remote presentation split is:
   - `GameApp` owns the `NetworkClient` and forwards authoritative snapshots / combat events
-  - `RemotePlayerPresenter` owns remote placeholder fallback, remote model loading, animation selection, external clip loading, and socket-based weapon attachment
+  - `RemotePlayerPresenter` owns remote placeholder fallback plus the higher-risk runtime presentation behavior
+  - character selection/config now lives in `src/game/networking/remoteCharacterDefinitions.js`
+  - character asset loading now lives in `src/game/networking/remoteCharacterAssetLoader.js`
+  - animation-clip construction now lives in `src/game/networking/remoteCharacterAnimationBuilder.js`
   - `RemotePlayerPresenter` also owns the temporary `F3`/`F6`/`F7` remote debug and tuning surfaces used during current animation/hitbox work
-  - `RemotePlayerPresenter` currently uses the `newtest.glb` path with standalone FBX overrides such as `newtest_run.fbx` as the active baseline, while still keeping the older `tester3.glb` path as a fallback
+  - `RemotePlayerPresenter` currently uses `newtest.glb` with standalone FBX overrides such as `newtest_run.fbx` as the default remote baseline, uses `defender.glb` for defender-team visuals, and still keeps the older `tester3.glb` path as a fallback
   - the remote hitbox branch is now functionally resolved enough for live authoritative PvP use and documented in `docs/remote-hitbox-audit.md`
 
 ## Near-Term Direction

@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { addImpactEffect, addMissTracer } from './weaponEffects.js';
-
 const SHOT_OFFSET = new THREE.Vector2();
 const FAR_POINT = new THREE.Vector3();
 const KNIFE_HIT_POINT = new THREE.Vector3();
@@ -97,10 +95,9 @@ export function applySprayRecoil(weapon, sprayShotCount = 1, target = SPRAY_CURV
 
 export function fireHitscan({
   camera,
-  scene,
   shootables,
   raycaster,
-  temporaryObjects,
+  effectsManager,
   muzzleWorld,
   weapon,
   isScoped,
@@ -114,7 +111,7 @@ export function fireHitscan({
   const hit = raycaster.intersectObjects(shootables, false)[0];
 
   if (hit) {
-    addImpactEffect(scene, temporaryObjects, muzzleWorld, hit);
+    effectsManager?.addImpactEffect?.(muzzleWorld, hit);
     if (applyDamage) {
       hit.object.userData.damageReceiver?.applyDamage(weapon.damage, hit.point, hit);
     }
@@ -123,7 +120,7 @@ export function fireHitscan({
 
   FAR_POINT.copy(raycaster.ray.origin)
     .addScaledVector(raycaster.ray.direction, 120);
-  addMissTracer(scene, temporaryObjects, muzzleWorld, FAR_POINT);
+  effectsManager?.addMissTracer?.(muzzleWorld, FAR_POINT);
   return null;
 }
 

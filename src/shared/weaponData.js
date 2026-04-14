@@ -5,6 +5,12 @@ export const SHARED_WEAPON_DATA = {
   rifle: {
     key: 'rifle',
     damage: 5,
+    damageByHitZone: {
+      head: 100,
+      body: 32,
+      arms: 24,
+      legs: 24,
+    },
     fireInterval: 1 / 8,
     automatic: true,
     canScope: true,

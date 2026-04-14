@@ -26,12 +26,19 @@ import {
   getRemoteSocketPoseKey,
 } from '../../shared/remoteCharacterConfig.js';
 import { PLAYER_MOVEMENT_DEFAULTS } from '../../shared/playerMovement.js';
+import {
+  getDefaultRemoteCharacterDefinition,
+  getFallbackRemoteCharacterDefinition,
+  getRemoteCharacterDefinition,
+  getRequestedRemoteCharacterDefinition,
+} from './remoteCharacterDefinitions.js';
+import { buildRemoteCharacterAnimations } from './remoteCharacterAnimationBuilder.js';
+import { createRemoteCharacterAssetLoader } from './remoteCharacterAssetLoader.js';
 import { createRemoteTuningStore } from './remoteTuningStore.js';
 import {
   createRemoteCharacterTuningPanelUi,
   createRemoteWeaponTuningPanelUi,
 } from './remoteTuningPanels.js';
-import { TEAMS } from '../../shared/constants.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_PLAYER_BODY_RADIUS = 0.35;
@@ -40,10 +47,6 @@ const REMOTE_PLAYER_WEAPON_FORWARD_Z = -0.1;
 const REMOTE_FIRE_FLASH_DURATION = 0.06;
 const REMOTE_HIT_REACTION_DURATION = 0.18;
 const REMOTE_DEATH_TRANSITION_DURATION = 0.26;
-const REMOTE_CHARACTER_MODEL_PATH = '/models/players/tester3.glb';
-const REMOTE_EXPERIMENTAL_CHARACTER_MODEL_PATH = '/models/players/newtest.glb';
-const REMOTE_DEFENDER_CHARACTER_MODEL_PATH = '/models/players/defender.glb';
-const REMOTE_EXPERIMENTAL_ANIMATION_ROOT = '/models/players/animations';
 const REMOTE_RIFLE_MODEL_PATH = '/models/weapons/newak.glb';
 const REMOTE_BORROWED_WEAPON_MODEL_PATH = '/models/viewmodels/cube-gunman/hand_base.glb';
 const REMOTE_BORROWED_WEAPON_TEXTURES = {
@@ -74,10 +77,10 @@ const REMOTE_WEAPON_TUNING_STORAGE_KEY = 'remoteWeaponTuning.v3';
 const REMOTE_UPPER_BODY_FADE_DURATION = 0.08;
 const REMOTE_UPPER_BODY_ACTION_DURATION = 0.22;
 const REMOTE_FULL_BODY_FIRE_ACTION_DURATION = 0.18;
+const REMOTE_PERSISTENT_ACTION_TIME = Number.POSITIVE_INFINITY;
 const REMOTE_IK_BLEND_FACTOR = 0.9;
 const REMOTE_IK_ITERATIONS = 2;
 const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
-const REMOTE_CHARACTER_VARIANT = import.meta.env.VITE_REMOTE_CHARACTER_VARIANT ?? 'experimental';
 const REMOTE_AIM_WEAPON_FACTOR = 0.9;
 const REMOTE_AIM_PROXY_WEAPON_FACTOR = 0.75;
 const REMOTE_AIM_WEAPON_AXIS = 'y';
@@ -115,140 +118,11 @@ const REMOTE_HITBOX_WORLD_POINT_A = new THREE.Vector3();
 const REMOTE_HITBOX_WORLD_POINT_B = new THREE.Vector3();
 const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
 const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
-const REMOTE_CHARACTER_ASSET_PROMISES = new Map();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
 let REMOTE_BORROWED_WEAPON_ASSET_PROMISE = null;
 let REMOTE_CCDIK_SOLVER_PROMISE = null;
-const REMOTE_EXPERIMENTAL_CLIP_PROMISES = new Map();
 const REMOTE_WEAPON_TEXTURE_PROMISES = new Map();
 const REMOTE_ROOT_MOTION_BONE_NAMES = ['mixamorighips', 'hips', 'root', '_rootjoint', 'armature', 'bip01'];
-const REMOTE_EXPERIMENTAL_LOWER_BODY_PATTERNS = [
-  /bip01$/i,
-  /bip01 pelvis/i,
-  /bip01 l thigh/i,
-  /bip01 l calf/i,
-  /bip01 l foot/i,
-  /bip01 l toe/i,
-  /bip01 r thigh/i,
-  /bip01 r calf/i,
-  /bip01 r foot/i,
-  /bip01 r toe/i,
-];
-const REMOTE_CHARACTER_DEFINITIONS = {
-  legacy: {
-    id: 'legacy',
-    modelPath: REMOTE_CHARACTER_MODEL_PATH,
-    animationMode: 'named-clips',
-    supportsUpperBodyOverlay: false,
-    supportsLeftHandIk: false,
-  },
-  experimental: {
-    id: 'experimental',
-    modelPath: REMOTE_EXPERIMENTAL_CHARACTER_MODEL_PATH,
-    animationMode: 'subclips',
-    sourceClipName: 'Take 001',
-    fps: 30,
-    modelYawOffset: 0,
-    supportsUpperBodyOverlay: true,
-    supportsLeftHandIk: true,
-    prefersFullBodyRifleFire: true,
-    prefersFullBodyPistolFire: true,
-    externalClips: {
-      idle: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_idle.fbx` },
-      run: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_run.fbx`, playbackSpeed: 1.05 },
-      'run back': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_run_back.fbx`, playbackSpeed: 1.9 },
-      'strafe left': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_strafe_left.fbx`, playbackSpeed: 1.8 },
-      'strafe right': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_strafe_right.fbx`, playbackSpeed: 1.8 },
-      'crouch walk': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_walk.fbx`, playbackSpeed: 1.55 },
-      'crouch idle': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_idle.fbx` },
-      'crouch back': {
-        path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_walk.fbx`,
-        playbackSpeed: 1.55,
-        reverse: true,
-      },
-      jump: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_jump.fbx` },
-      fire: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_fire.fbx` },
-    },
-    skeleton: {
-      rootJoint: 'Bip01',
-      rightHand: 'Bip01 R Hand',
-      weaponSocket: 'weapon_socket_r',
-      leftUpperArm: 'Bip01 L UpperArm',
-      leftForearm: 'Bip01 L Forearm',
-      leftHand: 'Bip01 L Hand',
-    },
-    clips: {
-      idle: { type: 'pose', frame: 1280 },
-      run: { type: 'subclip', startFrame: 2050, endFrame: 2080, playbackSpeed: 1.05, loopBlendFrames: 5 },
-      'run back': { type: 'subclip', startFrame: 2005, endFrame: 2045, playbackSpeed: 1.9, loopBlendFrames: 6 },
-      'strafe left': { type: 'subclip', startFrame: 2190, endFrame: 2220, playbackSpeed: 1.8, loopBlendFrames: 5 },
-      'strafe right': { type: 'subclip', startFrame: 2225, endFrame: 2255, playbackSpeed: 1.8, loopBlendFrames: 5 },
-      'crouch walk': { type: 'subclip', startFrame: 2260, endFrame: 2300, playbackSpeed: 1.55, loopBlendFrames: 8 },
-      'crouch idle': { type: 'subclip', startFrame: 2300, endFrame: 2400 },
-      'crouch back': { type: 'subclip', startFrame: 2260, endFrame: 2300, playbackSpeed: 1.55, loopBlendFrames: 8, reverse: true },
-      jump: { type: 'subclip', startFrame: 2085, endFrame: 2110 },
-      fire: {
-        type: 'upper-body-subclip',
-        startFrame: 2425,
-        endFrame: 2435,
-        lowerBodyPatterns: REMOTE_EXPERIMENTAL_LOWER_BODY_PATTERNS,
-      },
-    },
-  },
-  defender: {
-    id: 'defender',
-    modelPath: REMOTE_DEFENDER_CHARACTER_MODEL_PATH,
-    animationMode: 'subclips',
-    sourceClipName: 'Take 001',
-    fps: 30,
-    modelYawOffset: 0,
-    supportsUpperBodyOverlay: true,
-    supportsLeftHandIk: true,
-    prefersFullBodyRifleFire: true,
-    prefersFullBodyPistolFire: true,
-    externalClips: {
-      idle: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_idle.fbx` },
-      run: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_run.fbx`, playbackSpeed: 1.05 },
-      'run back': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_run_back.fbx`, playbackSpeed: 1.9 },
-      'strafe left': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_strafe_left.fbx`, playbackSpeed: 1.8 },
-      'strafe right': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_strafe_right.fbx`, playbackSpeed: 1.8 },
-      'crouch walk': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_walk.fbx`, playbackSpeed: 1.55 },
-      'crouch idle': { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_idle.fbx` },
-      'crouch back': {
-        path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_crouch_walk.fbx`,
-        playbackSpeed: 1.55,
-        reverse: true,
-      },
-      jump: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_jump.fbx` },
-      fire: { path: `${REMOTE_EXPERIMENTAL_ANIMATION_ROOT}/newtest_fire.fbx` },
-    },
-    skeleton: {
-      rootJoint: 'Bip01',
-      rightHand: 'Bip01 R Hand',
-      weaponSocket: 'weapon_socket_r',
-      leftUpperArm: 'Bip01 L UpperArm',
-      leftForearm: 'Bip01 L Forearm',
-      leftHand: 'Bip01 L Hand',
-    },
-    clips: {
-      idle: { type: 'pose', frame: 1280 },
-      run: { type: 'subclip', startFrame: 2050, endFrame: 2080, playbackSpeed: 1.05, loopBlendFrames: 5 },
-      'run back': { type: 'subclip', startFrame: 2005, endFrame: 2045, playbackSpeed: 1.9, loopBlendFrames: 6 },
-      'strafe left': { type: 'subclip', startFrame: 2190, endFrame: 2220, playbackSpeed: 1.8, loopBlendFrames: 5 },
-      'strafe right': { type: 'subclip', startFrame: 2225, endFrame: 2255, playbackSpeed: 1.8, loopBlendFrames: 5 },
-      'crouch walk': { type: 'subclip', startFrame: 2260, endFrame: 2300, playbackSpeed: 1.55, loopBlendFrames: 8 },
-      'crouch idle': { type: 'subclip', startFrame: 2300, endFrame: 2400 },
-      'crouch back': { type: 'subclip', startFrame: 2260, endFrame: 2300, playbackSpeed: 1.55, loopBlendFrames: 8, reverse: true },
-      jump: { type: 'subclip', startFrame: 2085, endFrame: 2110 },
-      fire: {
-        type: 'upper-body-subclip',
-        startFrame: 2425,
-        endFrame: 2435,
-        lowerBodyPatterns: REMOTE_EXPERIMENTAL_LOWER_BODY_PATTERNS,
-      },
-    },
-  },
-};
 const REMOTE_RIFLE_FALLBACK_SOCKET_ROTATION = new THREE.Euler(Math.PI / 2, 0, 0);
 const REMOTE_RIFLE_FALLBACK_SOCKET_PRESETS = {
   '/models/weapons/newak.glb': {
@@ -268,25 +142,20 @@ const remoteTuningStore = createRemoteTuningStore({
   defaultCharacterSettings: DEFAULT_REMOTE_CHARACTER_SETTINGS,
   defaultDebugSettings: DEFAULT_REMOTE_DEBUG_SETTINGS,
 });
-
-function getDefaultRemoteCharacterDefinition() {
-  return REMOTE_CHARACTER_DEFINITIONS[REMOTE_CHARACTER_VARIANT] ?? REMOTE_CHARACTER_DEFINITIONS.legacy;
-}
-
-function getRequestedRemoteCharacterDefinition(teamKey = null) {
-  if (teamKey === TEAMS.DEFENDERS) {
-    return REMOTE_CHARACTER_DEFINITIONS.defender ?? getDefaultRemoteCharacterDefinition();
-  }
-
-  return getDefaultRemoteCharacterDefinition();
-}
-
-function getFallbackRemoteCharacterDefinition(definition) {
-  if (!definition || definition.id === 'legacy') {
-    return null;
-  }
-  return REMOTE_CHARACTER_DEFINITIONS.legacy;
-}
+const { loadRemoteCharacterAsset } = createRemoteCharacterAssetLoader({
+  buildRemoteCharacterAnimations: (gltfAnimations, definition, externalClipOverrides) => buildRemoteCharacterAnimations(
+    gltfAnimations,
+    definition,
+    externalClipOverrides,
+    {
+      normalizeRemoteClipName,
+      stripRootMotionFromClip,
+      remoteFireClipName: REMOTE_CLIPS.fire,
+    },
+  ),
+  normalizeClipStartTime,
+  stripRootMotionFromClip,
+});
 
 function getRemoteRifleFallbackSocketPreset() {
   return REMOTE_RIFLE_FALLBACK_SOCKET_PRESETS[REMOTE_RIFLE_MODEL_PATH] ?? null;
@@ -312,198 +181,6 @@ function ensureRemoteWeaponSocket(root, socketName, fallbackPosition) {
   fallbackSocket.rotation.copy(REMOTE_RIFLE_FALLBACK_SOCKET_ROTATION);
   root.add(fallbackSocket);
   return fallbackSocket;
-}
-
-function getTrackTargetName(trackName) {
-  return normalizeRemoteClipName(String(trackName ?? '').replace(/\.(position|quaternion|scale)$/i, ''));
-}
-
-function createPoseClipFromFrame(sourceClip, clipName, frame, fps) {
-  const frameTime = 1 / Math.max(1, fps);
-  const startTime = frame / Math.max(1, fps);
-  const duration = frameTime;
-  const nextTracks = sourceClip.tracks.map((track) => {
-    const valueSize = track.getValueSize();
-    let sampleIndex = 0;
-    for (let index = 0; index < track.times.length; index += 1) {
-      if (track.times[index] <= startTime) {
-        sampleIndex = index;
-      } else {
-        break;
-      }
-    }
-    const start = sampleIndex * valueSize;
-    const values = track.values.slice(start, start + valueSize);
-    const heldValues = [...values, ...values];
-    const times = [0, duration];
-    return new track.constructor(track.name, times, heldValues, track.getInterpolation());
-  });
-
-  return new THREE.AnimationClip(clipName, duration, nextTracks, sourceClip.blendMode);
-}
-
-function createUpperBodyOnlyClip(clip, lowerBodyPatterns = []) {
-  const nextTracks = clip.tracks
-    .filter((track) => {
-      const targetName = getTrackTargetName(track.name);
-      return !lowerBodyPatterns.some((pattern) => pattern.test(targetName));
-    })
-    .map((track) => track.clone());
-
-  return new THREE.AnimationClip(clip.name, clip.duration, nextTracks, clip.blendMode);
-}
-
-function reverseAnimationTrack(track, duration) {
-  const sampleCount = track.times.length;
-  const valueSize = track.getValueSize();
-  if (sampleCount <= 1 || valueSize <= 0) {
-    return track.clone();
-  }
-
-  const nextTimes = new track.times.constructor(sampleCount);
-  const nextValues = new track.values.constructor(track.values.length);
-  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-    const sourceSampleIndex = sampleCount - 1 - sampleIndex;
-    nextTimes[sampleIndex] = duration - track.times[sourceSampleIndex];
-    const targetOffset = sampleIndex * valueSize;
-    const sourceOffset = sourceSampleIndex * valueSize;
-    for (let componentIndex = 0; componentIndex < valueSize; componentIndex += 1) {
-      nextValues[targetOffset + componentIndex] = track.values[sourceOffset + componentIndex];
-    }
-  }
-
-  return new track.constructor(track.name, nextTimes, nextValues, track.getInterpolation());
-}
-
-function reverseAnimationClip(clip) {
-  const duration = Math.max(0, Number(clip.duration ?? 0));
-  if (duration <= 0) {
-    return clip.clone();
-  }
-
-  const nextTracks = clip.tracks.map((track) => reverseAnimationTrack(track, duration));
-  return new THREE.AnimationClip(clip.name, duration, nextTracks, clip.blendMode);
-}
-
-function smoothLoopingTrack(track, blendFrames) {
-  const sampleCount = track.times.length;
-  const valueSize = track.getValueSize();
-  const blendCount = Math.max(0, Math.min(blendFrames, Math.floor(sampleCount / 2) - 1));
-  if (blendCount < 1 || valueSize < 1) {
-    return track.clone();
-  }
-
-  const nextTrack = track.clone();
-  const isQuaternionTrack = /\.quaternion$/i.test(track.name) && valueSize === 4;
-  if (isQuaternionTrack) {
-    const startQuat = new THREE.Quaternion();
-    const endQuat = new THREE.Quaternion();
-    const blendedQuat = new THREE.Quaternion();
-    for (let index = 0; index < blendCount; index += 1) {
-      const alpha = (index + 1) / (blendCount + 1);
-      const startOffset = index * valueSize;
-      const endOffset = (sampleCount - blendCount + index) * valueSize;
-      startQuat.fromArray(track.values, startOffset);
-      endQuat.fromArray(track.values, endOffset);
-      blendedQuat.copy(endQuat).slerp(startQuat, alpha);
-      nextTrack.values.set(
-        [blendedQuat.x, blendedQuat.y, blendedQuat.z, blendedQuat.w],
-        endOffset,
-      );
-    }
-    return nextTrack;
-  }
-
-  for (let index = 0; index < blendCount; index += 1) {
-    const alpha = (index + 1) / (blendCount + 1);
-    const startOffset = index * valueSize;
-    const endOffset = (sampleCount - blendCount + index) * valueSize;
-    for (let component = 0; component < valueSize; component += 1) {
-      const startValue = track.values[startOffset + component];
-      const endValue = track.values[endOffset + component];
-      nextTrack.values[endOffset + component] = THREE.MathUtils.lerp(endValue, startValue, alpha);
-    }
-  }
-
-  return nextTrack;
-}
-
-function smoothLoopingClip(clip, blendFrames = 0) {
-  if (!Number.isFinite(blendFrames) || blendFrames <= 0) {
-    return clip;
-  }
-
-  const nextTracks = clip.tracks.map((track) => smoothLoopingTrack(track, blendFrames));
-  return new THREE.AnimationClip(clip.name, clip.duration, nextTracks, clip.blendMode);
-}
-
-function buildRemoteCharacterAnimations(gltfAnimations, definition, externalClipOverrides = {}) {
-  if (definition.animationMode !== 'subclips') {
-    return {
-      baseClips: gltfAnimations.map((clip) => stripRootMotionFromClip(clip)),
-      upperBodyClips: [],
-    };
-  }
-
-  const needsEmbeddedSourceClip = Object.entries(definition.clips ?? {}).some(([clipName, clipDefinition]) => {
-    const externalOverride = externalClipOverrides[clipName] ?? null;
-    return !externalOverride && (clipDefinition.type === 'pose' || clipDefinition.type?.includes('subclip'));
-  });
-  const sourceClip = gltfAnimations.find(
-    (clip) => normalizeRemoteClipName(clip.name) === normalizeRemoteClipName(definition.sourceClipName),
-  ) ?? gltfAnimations[0];
-
-  if (needsEmbeddedSourceClip && !sourceClip) {
-    throw new Error(`Remote character definition "${definition.id}" has no source animation clip.`);
-  }
-
-  const baseClips = [];
-  const upperBodyClips = [];
-  for (const [clipName, clipDefinition] of Object.entries(definition.clips ?? {})) {
-    let clip = null;
-    const externalOverride = externalClipOverrides[clipName] ?? null;
-    if (externalOverride) {
-      clip = externalOverride.clone();
-      clip.name = clipName;
-      if (clipDefinition.reverse) {
-        clip = reverseAnimationClip(clip);
-      }
-      if (clipDefinition.type === 'upper-body-subclip') {
-        if (normalizeRemoteClipName(clipName) === normalizeRemoteClipName(REMOTE_CLIPS.fire)) {
-          baseClips.push(stripRootMotionFromClip(clip.clone()));
-        }
-        upperBodyClips.push(createUpperBodyOnlyClip(clip, clipDefinition.lowerBodyPatterns));
-      } else {
-        baseClips.push(stripRootMotionFromClip(clip));
-      }
-      continue;
-    }
-
-    if (clipDefinition.type === 'pose') {
-      clip = createPoseClipFromFrame(sourceClip, clipName, clipDefinition.frame, definition.fps ?? 30);
-      baseClips.push(stripRootMotionFromClip(clip));
-      continue;
-    }
-
-    clip = THREE.AnimationUtils.subclip(
-      sourceClip,
-      clipName,
-      clipDefinition.startFrame,
-      clipDefinition.endFrame,
-      definition.fps ?? 30,
-    );
-    if (clipDefinition.reverse) {
-      clip = reverseAnimationClip(clip);
-    }
-    clip = smoothLoopingClip(clip, clipDefinition.loopBlendFrames ?? 0);
-    if (clipDefinition.type === 'upper-body-subclip') {
-      upperBodyClips.push(createUpperBodyOnlyClip(clip, clipDefinition.lowerBodyPatterns));
-    } else {
-      baseClips.push(stripRootMotionFromClip(clip));
-    }
-  }
-
-  return { baseClips, upperBodyClips };
 }
 
 function ensureRemoteWeaponTuning() {
@@ -662,70 +339,6 @@ async function loadRemoteIkSolver() {
   return REMOTE_CCDIK_SOLVER_PROMISE;
 }
 
-async function loadExternalRemoteClip(path) {
-  if (!REMOTE_EXPERIMENTAL_CLIP_PROMISES.has(path)) {
-    REMOTE_EXPERIMENTAL_CLIP_PROMISES.set(path, (async () => {
-      const [{ FBXLoader }] = await Promise.all([
-        import('three/examples/jsm/loaders/FBXLoader.js'),
-      ]);
-      const loader = new FBXLoader();
-      const object = await loader.loadAsync(path);
-      const sourceClip = object.animations?.[0] ?? null;
-      if (!sourceClip) {
-        throw new Error(`Missing animation clip in external FBX: ${path}`);
-      }
-
-      return stripRootMotionFromClip(normalizeClipStartTime(sourceClip));
-    })());
-  }
-
-  return REMOTE_EXPERIMENTAL_CLIP_PROMISES.get(path);
-}
-
-async function loadRemoteCharacterAsset(definition = getRequestedRemoteCharacterDefinition()) {
-  if (!REMOTE_CHARACTER_ASSET_PROMISES.has(definition.id)) {
-    REMOTE_CHARACTER_ASSET_PROMISES.set(definition.id, (async () => {
-      const [{ GLTFLoader }, SkeletonUtils] = await Promise.all([
-        import('three/examples/jsm/loaders/GLTFLoader.js'),
-        import('three/examples/jsm/utils/SkeletonUtils.js'),
-      ]);
-      const loader = new GLTFLoader();
-      const gltf = await loader.loadAsync(definition.modelPath);
-      const externalClipEntries = await Promise.all(
-        Object.entries(definition.externalClips ?? {}).map(async ([clipName, clipConfig]) => {
-          if (!clipConfig?.path) {
-            return [clipName, null];
-          }
-
-          const clip = await loadExternalRemoteClip(clipConfig.path).catch((error) => {
-            console.warn(
-              `[RemotePlayerPresenter] Failed to load external experimental clip "${clipName}". Falling back to GLB clip.`,
-              error,
-            );
-            return null;
-          });
-          return [clipName, clip];
-        }),
-      );
-      const externalClipOverrides = Object.fromEntries(externalClipEntries.filter(([, clip]) => Boolean(clip)));
-      const { baseClips, upperBodyClips } = buildRemoteCharacterAnimations(
-        gltf.animations ?? [],
-        definition,
-        externalClipOverrides,
-      );
-      return {
-        scene: gltf.scene,
-        animations: baseClips,
-        upperBodyAnimations: upperBodyClips,
-        cloneSkinned: SkeletonUtils.clone,
-        definition,
-      };
-    })());
-  }
-
-  return REMOTE_CHARACTER_ASSET_PROMISES.get(definition.id);
-}
-
 async function loadRemoteRifleAsset() {
   if (!REMOTE_RIFLE_ASSET_PROMISE) {
     REMOTE_RIFLE_ASSET_PROMISE = (async () => {
@@ -803,7 +416,8 @@ function normalizeRemoteClipName(name) {
     .toLowerCase();
 }
 
-function stripRootMotionFromClip(clip) {
+function stripRootMotionFromClip(clip, options = null) {
+  const preserveY = Boolean(options?.preserveY);
   const nextTracks = clip.tracks.map((track) => {
     if (!track?.name?.endsWith('.position')) {
       return track.clone();
@@ -821,7 +435,7 @@ function stripRootMotionFromClip(clip) {
     const baseZ = Number(nextValues[2] ?? 0);
     for (let index = 0; index < nextValues.length; index += 3) {
       nextValues[index] = baseX;
-      nextValues[index + 1] = baseY;
+      nextValues[index + 1] = preserveY ? nextValues[index + 1] : baseY;
       nextValues[index + 2] = baseZ;
     }
 
@@ -857,42 +471,6 @@ function normalizeClipStartTime(clip) {
     return Math.max(accumulator, lastTime);
   }, 0);
   return new THREE.AnimationClip(clip.name, maxTime, nextTracks, clip.blendMode);
-}
-
-function createLabelTexture(text) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
-  const context = canvas.getContext('2d');
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = 'rgba(8, 12, 18, 0.78)';
-  context.fillRect(12, 10, canvas.width - 24, canvas.height - 20);
-  context.strokeStyle = 'rgba(149, 196, 255, 0.7)';
-  context.lineWidth = 2;
-  context.strokeRect(12, 10, canvas.width - 24, canvas.height - 20);
-  context.fillStyle = '#f3f8ff';
-  context.font = '600 24px monospace';
-  context.textAlign = 'center';
-  context.textBaseline = 'middle';
-  context.fillText(text, canvas.width / 2, canvas.height / 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function updateRemotePlayerLabel(visual, displayName) {
-  if (!visual?.labelSprite?.material) {
-    return;
-  }
-  const normalizedName = String(displayName ?? '').trim() || 'Player';
-  if (visual.displayName === normalizedName) {
-    return;
-  }
-  visual.labelSprite.material.map?.dispose?.();
-  visual.labelSprite.material.map = createLabelTexture(normalizedName);
-  visual.labelSprite.material.needsUpdate = true;
-  visual.displayName = normalizedName;
 }
 
 function createRemoteWeaponMesh(weaponKey) {
@@ -1434,17 +1012,6 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
   weaponAnchor.userData.baseRotationZ = weaponAnchor.rotation.z;
   root.add(weaponAnchor);
 
-  const labelSprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: createLabelTexture(displayName),
-      transparent: true,
-      depthWrite: false,
-    }),
-  );
-  labelSprite.position.set(0, 2.15, 0);
-  labelSprite.scale.set(1.6, 0.4, 1);
-  root.add(labelSprite);
-
   const hitVolumeDebugGroup = createRemoteHitVolumeDebugGroup();
   hitVolumeDebugGroup.group.visible = false;
 
@@ -1458,7 +1025,6 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     weaponAnchor,
     weaponMesh: null,
     weaponKey: null,
-    labelSprite,
     hitVolumeDebugGroup,
     showHitVolumeDebug: false,
     flashTime: 0,
@@ -1556,7 +1122,67 @@ function triggerRemotePlayerFireFlash(visual) {
   playRemoteUpperBodyClip(visual, REMOTE_CLIPS.fire);
 }
 
-function triggerRemotePlayerHitReaction(visual, { killed = false } = {}) {
+function stopRemoteUpperBodyActions(visual) {
+  for (const action of visual.characterUpperBodyActions.values()) {
+    action.stop();
+    action.paused = false;
+    action.setEffectiveWeight(0);
+  }
+  visual.activeUpperBodyClip = null;
+  visual.activeUpperBodyWeight = 1;
+  visual.upperBodyActionTime = 0;
+}
+
+function resetRemoteDeathPresentation(visual) {
+  if (!visual) {
+    return;
+  }
+
+  visual.fullBodyActionClip = null;
+  visual.fullBodyActionTime = 0;
+  visual.deathTransitionTime = 0;
+}
+
+function getRequestedRemoteDeathClip(player, authoritativeState) {
+  const deathClip = authoritativeState?.deathClip ?? player?.deathClip ?? null;
+  if (deathClip) {
+    return deathClip;
+  }
+  return REMOTE_CLIPS.dieBackward;
+}
+
+function resolveRemoteDeathClip(visual, player, authoritativeState) {
+  const preferredClip = getRequestedRemoteDeathClip(player, authoritativeState);
+  if (findRemoteClipAction(visual, preferredClip)) {
+    return preferredClip;
+  }
+  if (preferredClip !== REMOTE_CLIPS.dieBackward && findRemoteClipAction(visual, REMOTE_CLIPS.dieBackward)) {
+    return REMOTE_CLIPS.dieBackward;
+  }
+  if (preferredClip !== REMOTE_CLIPS.dieForward && findRemoteClipAction(visual, REMOTE_CLIPS.dieForward)) {
+    return REMOTE_CLIPS.dieForward;
+  }
+  return null;
+}
+
+function playRemoteDeathClip(visual, player, authoritativeState) {
+  if (!visual) {
+    return false;
+  }
+
+  const deathClip = resolveRemoteDeathClip(visual, player, authoritativeState);
+  if (!deathClip) {
+    return false;
+  }
+
+  stopRemoteUpperBodyActions(visual);
+  visual.fullBodyActionClip = deathClip;
+  visual.fullBodyActionTime = REMOTE_PERSISTENT_ACTION_TIME;
+  setRemoteCharacterClip(visual, deathClip);
+  return true;
+}
+
+function triggerRemotePlayerHitReaction(visual, { killed = false, player = null, authoritativeState = null } = {}) {
   if (!visual) {
     return;
   }
@@ -1564,6 +1190,7 @@ function triggerRemotePlayerHitReaction(visual, { killed = false } = {}) {
   visual.hitReactionTime = REMOTE_HIT_REACTION_DURATION;
   if (killed) {
     visual.deathTransitionTime = REMOTE_DEATH_TRANSITION_DURATION;
+    playRemoteDeathClip(visual, player, authoritativeState);
   }
 }
 
@@ -1829,7 +1456,7 @@ function attachRemoteCharacterModel(visual, asset) {
     return;
   }
 
-  const definition = asset.definition ?? REMOTE_CHARACTER_DEFINITIONS.legacy;
+  const definition = asset.definition ?? getRemoteCharacterDefinition('legacy') ?? getDefaultRemoteCharacterDefinition();
   const characterRoot = asset.cloneSkinned(asset.scene);
   characterRoot.traverse((child) => {
     if (child.isMesh) {
@@ -1913,7 +1540,11 @@ function attachRemoteCharacterModel(visual, asset) {
     const action = visual.characterMixer.clipAction(clip);
     const normalizedName = normalizeRemoteClipName(clip.name);
     action.enabled = true;
-    if (normalizedName === normalizeRemoteClipName(REMOTE_CLIPS.jump)) {
+    if (
+      normalizedName === normalizeRemoteClipName(REMOTE_CLIPS.jump)
+      || normalizedName === normalizeRemoteClipName(REMOTE_CLIPS.dieForward)
+      || normalizedName === normalizeRemoteClipName(REMOTE_CLIPS.dieBackward)
+    ) {
       action.setLoop(THREE.LoopOnce, 1);
       action.clampWhenFinished = true;
     } else {
@@ -2165,6 +1796,9 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   if (previousAlive && !isAlive) {
     visual.deathTransitionTime = REMOTE_DEATH_TRANSITION_DURATION;
   }
+  if (!previousAlive && isAlive) {
+    resetRemoteDeathPresentation(visual);
+  }
   visual.lastAlive = isAlive;
 
   visual.bodyCylinder.material = isAlive ? bodyMaterials.alive : bodyMaterials.dead;
@@ -2180,12 +1814,16 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   }
 
   const hitAlpha = Math.max(0, Math.min(1, visual.hitReactionTime / REMOTE_HIT_REACTION_DURATION));
+  const deathClip = !isAlive ? resolveRemoteDeathClip(visual, player, authoritativeState) : null;
+  if (!isAlive && deathClip && visual.fullBodyActionClip !== normalizeRemoteClipName(deathClip)) {
+    playRemoteDeathClip(visual, player, authoritativeState);
+  }
   const deathAlpha = isAlive
     ? 0
     : 1 - Math.max(0, Math.min(1, visual.deathTransitionTime / REMOTE_DEATH_TRANSITION_DURATION));
   const forwardFlinch = hitAlpha * 0.08;
   const sideFlinch = hitAlpha * 0.04;
-  const deathLean = deathAlpha * 0.92;
+  const deathLean = deathClip ? 0 : deathAlpha * 0.92;
 
   visual.root.rotation.set(
     -forwardFlinch + deathLean * 0.28,
@@ -2198,8 +1836,6 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   visual.bodyCylinder.scale.y = cylinderHeight;
   visual.bodyTop.position.y = cylinderHeight * 0.5;
   visual.bodyBottom.position.y = -cylinderHeight * 0.5;
-  visual.labelSprite.position.y = height + 0.43;
-  visual.labelSprite.material.opacity = isAlive ? 1 : 0.82;
   visual.weaponAnchor.position.set(
     isScopedStance ? REMOTE_PLAYER_WEAPON_SIDE_X * 0.72 : REMOTE_PLAYER_WEAPON_SIDE_X,
     Math.max(0.58, height * (isCrouched ? 0.64 : (isScopedStance ? 0.6 : 0.52))),
@@ -2213,7 +1849,7 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   visual.weaponAnchor.userData.baseRotationX = visual.weaponAnchor.rotation.x;
   visual.weaponAnchor.userData.baseRotationY = visual.weaponAnchor.rotation.y;
   visual.weaponAnchor.userData.baseRotationZ = visual.weaponAnchor.rotation.z;
-  visual.weaponAnchor.visible = isAlive;
+  visual.weaponAnchor.visible = true;
   if (visual.characterMixer) {
     const debugSettings = getRemoteDebugSettings();
     const targetClip = debugSettings.freezePose
@@ -2233,7 +1869,7 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
       const currentModelScaleSetting = getRemoteCharacterModelScale();
       const modelScale = visual.characterScaleBase * currentModelScaleSetting;
       const positionScaleRatio = currentModelScaleSetting / Math.max(visual.characterModelScaleAtAttach, 1e-6);
-      visual.characterRoot.visible = isAlive;
+      visual.characterRoot.visible = true;
       visual.characterRoot.rotation.set(0, visual.characterDefinition?.modelYawOffset ?? Math.PI, 0);
       visual.characterRoot.position.copy(visual.characterBasePosition).multiplyScalar(positionScaleRatio);
       visual.characterRoot.position.y += isAlive ? 0 : -0.04;
@@ -2247,7 +1883,7 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   applyRemoteAimPitch(visual, aimPitch, presentationState, visual.activeCharacterClip);
 
   if (visual.weaponMesh) {
-    visual.weaponMesh.visible = isAlive;
+    visual.weaponMesh.visible = true;
     if (visual.characterWeaponSocket) {
       const pose = getSocketWeaponPose(visual.weaponKey, isScopedStance);
       visual.characterWeaponAnchor.getWorldScale(REMOTE_WORLD_SCALE);
@@ -2330,8 +1966,6 @@ function disposeRemotePlayerVisual(visual) {
   visual.bodyCylinder.geometry.dispose();
   visual.bodyTop.geometry.dispose();
   visual.bodyBottom.geometry.dispose();
-  visual.labelSprite.material.map?.dispose?.();
-  visual.labelSprite.material.dispose();
 }
 
 export class RemotePlayerPresenter {
@@ -2371,7 +2005,18 @@ export class RemotePlayerPresenter {
     if (event?.type === 'player-hit') {
       const victimVisual = this.remotePlayerMeshes.get(event.victimPlayerId);
       if (victimVisual) {
-        triggerRemotePlayerHitReaction(victimVisual, { killed: Boolean(event.killed) });
+        triggerRemotePlayerHitReaction(victimVisual, {
+          killed: Boolean(event.killed),
+          authoritativeState: event.killed ? { deathClip: event.deathClip } : null,
+        });
+      }
+      return;
+    }
+
+    if (event?.type === 'player-respawned') {
+      const visual = this.remotePlayerMeshes.get(event.playerId);
+      if (visual) {
+        resetRemoteDeathPresentation(visual);
       }
     }
   }
@@ -2425,8 +2070,6 @@ export class RemotePlayerPresenter {
       visual.team = renderPlayer.team ?? authoritativeState?.team ?? null;
       ensureRemoteCharacterModel(visual);
       setRemotePlayerWeapon(visual, authoritativeState?.activeWeaponKey ?? renderPlayer.activeWeaponKey);
-      updateRemotePlayerLabel(visual, renderPlayer.displayName ?? authoritativeState?.displayName ?? player.playerId);
-      visual.labelSprite.visible = true;
       updateRemotePlayerVisual(visual, renderPlayer, delta, authoritativeState, {
         alive: this.remotePlayerMaterial,
         dead: this.remotePlayerDeadMaterial,

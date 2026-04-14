@@ -158,13 +158,15 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `3`: Knife
   - `4`: Sniper
 - Rifle, pistol, sniper, and knife all have functioning presentation/effects/audio paths.
+- A simple smoke grenade utility is now playable on `6` with local projectile bounce, CS-style smoke bloom, and round-reset inventory refill.
+- A first-pass bomb explosion visual now plays at the planted bomb position when the bomb detonates.
 - The sniper scope overlay works and is still HUD-driven.
 - HDR skyboxes can be swapped at runtime.
 - Additive multiplayer still works locally through Colyseus:
   - multiple tabs can join
   - remote placeholders render
   - local prediction and replay-based reconciliation are active
-  - authoritative movement now covers `Training Ground`, `Desert Compound`, and `Dust2 Import Test`
+  - authoritative movement now covers `Training Ground`, `Desert Compound`, `Dust2 Legacy Import`, and `Dust2 Test`
 - The current Railway deployment path also works as a one-service setup:
   - build the client at repo root
   - start the Colyseus server from `server/`
@@ -194,7 +196,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `L`: dump saved markers
   - `B`: toggle collision wireframe overlay
 - Baked navmesh generation exists through `npm run build:navmesh`.
-- Imported map support is working through `Dust2 Import Test`:
+- Imported map support is working through the current Dust2 imported-map path:
   - visual `.glb`
   - separate collision `.glb`
   - baked navmesh binary
@@ -218,6 +220,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Maps:
   - `Training Ground`
   - `Desert Compound`
+  - `Dust2 Legacy Import`
   - `Dust2 Test`
 - Weapons:
   - `Rifle`: full auto, ADS, low damage hitscan
@@ -242,7 +245,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - attacker/defender team selection
   - replicated display names
   - remote players use a remote third-person presentation path with placeholder fallback
-  - `RemotePlayerPresenter` currently supports both a legacy remote character path (`public/models/players/tester3.glb`) and an experimental path (`public/models/players/newtest.glb`)
+  - `RemotePlayerPresenter` now uses `public/models/players/newtest.glb` as the default remote baseline and `public/models/players/defender.glb` for defender-team visuals
+  - the older `public/models/players/tester3.glb` path remains as a fallback if a requested remote model fails to load
   - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
   - remote rifle presentation uses authored socket helpers and the current stable full-body locomotion path
   - remote locomotion playback now scales from actual replicated movement speed on both the visible client presenter and the authoritative server hitbox rig
@@ -287,10 +291,14 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 
 ## Imported Map Workflow Snapshot
 
-- Current imported map under active test: `Dust2 Import Test`.
+- Current imported maps under active test:
+  - `Dust2 Legacy Import`
+  - `Dust2 Test`
 - Current runtime asset paths:
-  - visual scene: `public/maps/de_dust2_-_cs_map.glb`
-  - collision scene: `public/maps/de_dust2_collision.glb`
+  - legacy visual scene: `public/maps/de_dust2_-_cs_map.glb`
+  - legacy collision scene: `public/maps/de_dust2_collision.glb`
+  - current Dust2 Test visual scene: `public/maps/d2maptestv3.glb`
+  - current Dust2 Test collision scene: `public/maps/d2colltest.glb`
   - baked navmesh: `public/navmeshes/dust2-import-test.bin`
 - Current Blender-to-game coordinate mapping:
   - Blender `X -> game x`
@@ -321,7 +329,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - glTF collision scenes
   - manifest-driven gameplay defaults
   - baked navmesh generation from imported collision geometry
-- `Dust2 Import Test` was made playable enough for real-scale environment testing.
+- `Dust2 Legacy Import` was made playable enough for real-scale environment testing and remains useful as a legacy imported-map checkpoint beside `Dust2 Test`.
 - High-altitude floor clamping bug was fixed in shared movement:
   - old behavior effectively snapped high maps down to `groundHeight - 32`
   - current behavior clamps relative to `groundHeight` on both bounds
@@ -340,9 +348,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Remote-player presentation was upgraded into an active remote playermodel workflow:
   - replicated display name, equipped weapon key, posture, and presentation state all now drive remote visuals
   - `RemotePlayerPresenter` still falls back to the older capsule proxy if the character model fails to load
-  - the current remote presentation path supports both `public/models/players/tester3.glb` as a legacy fallback and `public/models/players/newtest.glb` as the experimental branch
+  - the current remote presentation path uses `public/models/players/newtest.glb` as the default baseline, `public/models/players/defender.glb` for defender-team visuals, and `public/models/players/tester3.glb` as the legacy fallback
   - root-motion translation is stripped in code so the server-replicated actor transform stays authoritative
   - current jump handling still uses the tucked airborne hold behavior
+  - remote death presentation now prefers `newtest_die_forward.fbx` / `newtest_die_backward.fbx` and leaves corpses visible until respawn
   - remote rifle presentation still attaches through `weapon_socket_r` on the character plus `grip_socket` / `muzzle_socket` on `public/models/weapons/newak.glb`
   - remote rifle scaling still compensates for inherited world scale from the socket/bone chain
   - remote scoped weapon transform offsets currently reuse the hip socket-pose values until a real separate remote ADS pose exists
@@ -408,12 +417,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - graybox maps use shared movement/shared collision primitives
   - imported maps like Dust2 now load authoritative collision from manifest-defined glTF assets on the server, but the broader client/server map assembly path is still not one single source of truth
 - Imported-map support is good enough for iteration, but the export pipeline is still manual and Blender-driven.
-- Current highest-value gameplay/debug blocker is imported-map grounded movement on Dust2:
-  - the player can still hover on invisible support in some places after falling/jumping from height
-  - runtime `groundHeight` fallback support was already removed, so the remaining issue still needs focused trace/debug work
+- Older imported-map Dust2 grounding/support investigation notes remain useful historical context, but should not be treated as the current highest-value blocker without a fresh repro on the latest build
 - `GameApp` still owns some temporary debug/presentation responsibilities because that is the fastest path while broader runtime boundaries are still settling.
 - Remote character presentation is now out of `GameApp`, but the current weapon/model workflow is still a prototype content pipeline:
-  - remote character presentation supports both the legacy `tester3.glb` path and the experimental `newtest.glb` path
+  - remote character presentation now uses the `newtest.glb` baseline plus a `defender.glb` defender-team variant, while still retaining the legacy `tester3.glb` fallback
   - remote rifle now uses `newak.glb`
   - the character/weapon export path currently depends on a hand-authored `weapon_socket_r` helper on the character and `grip_socket` / `muzzle_socket` / `left_hand_grip` helpers on the rifle
   - the main animation-quality blocker is now the long-strip export/subclip path rather than the source run motion itself
@@ -445,11 +452,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - landing/fall-through fixed
   - wall phasing fixed
   - wall/slope contact jitter unresolved
-- `Dust2 Import Test` is currently best treated as:
+- `Dust2 Legacy Import` is currently best treated as:
   - traversal testbed
   - collision/scale/lighting/fog validation map
   - early multiplayer weapon-feel test space
-- `Dust2 Import Test` is not yet a fully production-ready gameplay map:
+- `Dust2 Legacy Import` is not yet a fully production-ready gameplay map:
   - collision is manually authored
   - server-side authoritative movement now uses the imported collision glTF, but broader gameplay authority is still incomplete
   - export workflow is manual
@@ -619,7 +626,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - round-state / respawn-rule authority
   - better remote player presentation, staged as:
       - maintain placeholder fallback
-      - continue iterating on the experimental `newtest.glb` remote character path while retaining the legacy fallback
+      - continue iterating on the `newtest.glb` baseline while retaining the defender-team `defender.glb` path and the legacy fallback
       - replace long-strip runtime subclips with standalone exported locomotion clips from Max
       - build on the new authored rifle helpers and the new rifle upper-body base clip
       - continue socket-relative rifle pose tuning and per-weapon hand offsets / pose adjustments

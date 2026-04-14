@@ -1,5 +1,7 @@
 # Session Note: 2026-04-09 Dust2 Grounding Investigation
 
+Historical note: this document captures the investigation state on 2026-04-09. It should not be treated as proof that the same grounding bug is still active on the latest build without a fresh repro.
+
 ## Summary
 
 Current active blocker: grounded movement on the imported Dust2 map can still leave the player hovering on an invisible support surface in some places after falling/jumping from height.

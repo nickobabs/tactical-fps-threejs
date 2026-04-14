@@ -20,6 +20,7 @@ import { GameSessionController } from './GameSessionController.js';
 import { createDebugMenu } from './createDebugMenu.js';
 import { createMovementTuningPanel } from '../game/player/createMovementTuningPanel.js';
 import { TEAMS } from '../shared/constants.js';
+import { VIEWMODEL_LAYER } from '../game/weapons/viewModels.js';
 
 const DEFAULT_HORIZONTAL_FOV = 103;
 const MOVEMENT_TRACE_STORAGE_KEY = 'tactical-fps-threejs-movement-trace';
@@ -125,6 +126,8 @@ export class GameApp {
     this.selectedPlayerName = loadStoredPlayerName();
     this.hudMode = loadStoredHudMode();
     this.lastLocalPlayerAlive = true;
+    this.lastObjectiveBombState = null;
+    this.lastRoundWinReason = null;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c1218);
@@ -145,6 +148,7 @@ export class GameApp {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.autoClear = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -281,9 +285,33 @@ export class GameApp {
   }
 
   unloadMap() {
+    this.lastObjectiveBombState = null;
+    this.lastRoundWinReason = null;
     this.sessionController.unloadCurrentRuntime({
       remotePlayerPresenter: this.remotePlayerPresenter,
     });
+  }
+
+  updateObjectiveAudioCues() {
+    const objectiveState = this.networkClient.getObjectiveState?.() ?? null;
+    const nextBombState = String(objectiveState?.bombState ?? '');
+    if (this.lastObjectiveBombState && this.lastObjectiveBombState !== 'planted' && nextBombState === 'planted') {
+      void this.audioManager.play('bomb-planted', {
+        baseVolume: 0.85,
+      });
+    }
+    this.lastObjectiveBombState = nextBombState || null;
+  }
+
+  updateRoundResultAudioCues() {
+    const roundState = this.networkClient.getRoundState?.() ?? null;
+    const nextWinReason = roundState?.roundEnded ? String(roundState?.winReason ?? '') : null;
+    if (this.lastRoundWinReason !== 'bomb-defused' && nextWinReason === 'bomb-defused') {
+      void this.audioManager.play('bomb-defused', {
+        baseVolume: 0.85,
+      });
+    }
+    this.lastRoundWinReason = nextWinReason;
   }
 
   toggleHudMode() {
@@ -511,6 +539,7 @@ export class GameApp {
 
     this.syncCombatNetworkingMode();
     this.runtime.playerController.updateLook(frameInput.lookDelta);
+    this.runtime.utilityManager.syncFrameInput(frameInput);
 
     if (!localPlayerAlive) {
       this.localSimulationLoop.accumulator = 0;
@@ -537,7 +566,11 @@ export class GameApp {
       this.networkJumpQueued = false;
     });
 
-    this.runtime.weaponManager.update(delta, frameInput);
+    const weaponInputBlockState = this.runtime.utilityManager.getWeaponInputBlockState({
+      roundManager: this.runtime.roundManager,
+      localPlayerAlive,
+    });
+    this.runtime.weaponManager.update(delta, frameInput, weaponInputBlockState);
     this.gameplayNetworking.syncWeaponStatusIfNeeded({
       authoritativeNetworkingEnabled: this.authoritativeNetworkingEnabled,
       playerController: this.runtime.playerController,
@@ -545,7 +578,7 @@ export class GameApp {
     });
   }
 
-  updateWorldSimulation(delta) {
+  updateWorldSimulation(delta, frameInput) {
     if (this.authoritativeNetworkingEnabled) {
       const authoritativeRoundState = this.networkClient.getRoundState?.();
       if (authoritativeRoundState) {
@@ -557,12 +590,15 @@ export class GameApp {
 
     this.runtime.utilityManager.update(delta, {
       input: this.input,
+      frameInput,
       playerController: this.runtime.playerController,
       roundManager: this.runtime.roundManager,
       networkClient: this.networkClient,
       selectedTeam: this.selectedTeam,
       weaponManager: this.runtime.weaponManager,
     });
+    this.updateObjectiveAudioCues();
+    this.updateRoundResultAudioCues();
   }
 
   updateNetworkState(delta) {
@@ -607,6 +643,10 @@ export class GameApp {
     });
   }
 
+  updateEffects(delta) {
+    this.runtime.effectsManager?.update?.(delta);
+  }
+
   updateRemotePlayers(delta) {
     if (this.authoritativeNetworkingEnabled) {
       this.remotePlayerPresenter.syncPlayers(
@@ -630,6 +670,7 @@ export class GameApp {
 
     if (this.pauseController.isPaused) {
       this.updateNetworkState(delta);
+      this.updateEffects(delta);
       this.updatePlayerPresentation(delta);
       this.updateRemotePlayers(delta);
       return;
@@ -637,8 +678,9 @@ export class GameApp {
 
     this.queueJumpIfRequested(frameInput);
     this.runLocalSimulation(delta, frameInput, localPlayerAlive);
-    this.updateWorldSimulation(delta);
+    this.updateWorldSimulation(delta, frameInput);
     this.updateNetworkState(delta);
+    this.updateEffects(delta);
     this.updatePlayerPresentation(delta);
     this.updateTargets(delta);
     this.updateRemotePlayers(delta);
@@ -751,8 +793,17 @@ export class GameApp {
       }
 
       this.hud.update();
-
+      const originalCameraMask = this.camera.layers.mask;
+      const originalBackground = this.scene.background;
+      this.renderer.clear();
+      this.camera.layers.disable(VIEWMODEL_LAYER);
       this.renderer.render(this.scene, this.camera);
+      this.renderer.clearDepth();
+      this.scene.background = null;
+      this.camera.layers.set(VIEWMODEL_LAYER);
+      this.renderer.render(this.scene, this.camera);
+      this.scene.background = originalBackground;
+      this.camera.layers.mask = originalCameraMask;
     } catch (error) {
       this.stop();
       this.fatalErrorOverlay.show(error);

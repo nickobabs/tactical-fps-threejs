@@ -40,12 +40,13 @@
   - `live`
 - Team scores are tracked
 - Bomb explosion can end the round for attackers
+- Bomb defuse can end the round for defenders
 - Server-authoritative round timing is active in multiplayer
 - The HUD consumes real round number/phase/timer/win state
+- Round-end UI now includes a winner banner plus a simple winning-team MVP line derived from scoreboard kills
 
 ## Limitations
 
 - No economy or buy phase
 - No elimination-based win logic yet
-- No bomb defuse path yet
 - Round rules are still narrow and currently centered on freeze/live timing plus the first bomb objective slice

@@ -28,6 +28,8 @@ const GAME_AUDIO_REGISTRATIONS = [
     { playback: 'interrupt', minIntervalMs: 80 },
   ],
   ['knife-slash', '/audio/guns/sword-slash-4.mp3', { playback: 'interrupt' }],
+  ['bomb-planted', '/audio/game/bomb planted.mp3', { playback: 'interrupt' }],
+  ['bomb-defused', '/audio/game/bomb defused.mp3', { playback: 'interrupt' }],
   ...FLOOR_FOOTSTEP_FILES.map((fileName, index) => {
     const sampleNumber = String(index + 1).padStart(3, '0');
     return [

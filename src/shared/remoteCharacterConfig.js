@@ -9,6 +9,8 @@ export const REMOTE_CLIPS = {
   crouchBackward: 'crouch back',
   jump: 'jump',
   fire: 'fire',
+  dieForward: 'die forward',
+  dieBackward: 'die backward',
 };
 
 export const REMOTE_PRIMARY_CHARACTER_SKELETON = {
@@ -115,4 +117,6 @@ export const REMOTE_AIM_CLIP_FACTORS = {
   [REMOTE_CLIPS.crouchBackward]: 0,
   [REMOTE_CLIPS.jump]: 0,
   [REMOTE_CLIPS.fire]: 1,
+  [REMOTE_CLIPS.dieForward]: 0,
+  [REMOTE_CLIPS.dieBackward]: 0,
 };

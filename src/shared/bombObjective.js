@@ -1,10 +1,14 @@
 import { TEAMS } from './constants.js';
 
-export const DEFAULT_UTILITY_LABEL = 'Flashbang';
+import { DEFAULT_SMOKE_GRENADES } from '../game/utility/utilityLoadout.js';
+
+export const DEFAULT_UTILITY_LABEL = 'Smoke Grenade';
 export const BOMB_UTILITY_KEY = 'bomb';
-export const DEFAULT_UTILITY_KEY = 'flashbang';
+export const SMOKE_UTILITY_KEY = 'smoke';
+export const DEFAULT_UTILITY_KEY = SMOKE_UTILITY_KEY;
 export const DEFAULT_BOMB_DURATION = 40;
-export const DEFAULT_PLANT_DURATION = 3;
+export const DEFAULT_PLANT_DURATION = 3.5;
+export const DEFAULT_DEFUSE_DURATION = 6;
 
 function hashString(value) {
   let hash = 0;
@@ -27,6 +31,7 @@ export function createBombObjectiveSnapshot() {
     bombTimeRemaining: 0,
     plantedZoneName: null,
     plantedPosition: null,
+    defuserPlayerId: null,
   };
 }
 
@@ -49,8 +54,8 @@ export function isLocalBombCarrier({ selectedTeam, bombCarrierPlayerId, localPla
     && bombCarrierPlayerId === (localPlayerId ?? 'local-player');
 }
 
-export function getActiveUtilityLabel({ selectedUtilityKey, localPlayerHasBomb }) {
+export function getActiveUtilityLabel({ selectedUtilityKey, localPlayerHasBomb, smokeCharges = DEFAULT_SMOKE_GRENADES }) {
   return selectedUtilityKey === BOMB_UTILITY_KEY && localPlayerHasBomb
     ? 'C4 Explosive'
-    : DEFAULT_UTILITY_LABEL;
+    : `${DEFAULT_UTILITY_LABEL} x${Math.max(0, Number(smokeCharges ?? 0))}`;
 }

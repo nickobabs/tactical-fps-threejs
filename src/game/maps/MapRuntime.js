@@ -5,6 +5,7 @@ import { WeaponManager } from '../weapons/WeaponManager.js';
 import { UtilityManager } from '../utility/UtilityManager.js';
 import { TargetManager } from '../targets/TargetManager.js';
 import { NavigationManager } from '../ai/NavigationManager.js';
+import { EffectsManager } from '../effects/EffectsManager.js';
 import { disposeObject3D } from '../../core/three/disposeObject3D.js';
 
 const ALLOW_RUNTIME_NAV_GENERATION = import.meta.env.DEV
@@ -27,6 +28,7 @@ export class MapRuntime {
     roundManager,
     weaponManager,
     utilityManager,
+    effectsManager,
     targetManager,
   }) {
     this.map = map;
@@ -37,6 +39,7 @@ export class MapRuntime {
     this.roundManager = roundManager;
     this.weaponManager = weaponManager;
     this.utilityManager = utilityManager;
+    this.effectsManager = effectsManager;
     this.targetManager = targetManager;
   }
 
@@ -131,11 +134,15 @@ export class MapRuntime {
         roundManager: new RoundManager(),
         weaponManager: null,
         utilityManager: new UtilityManager(),
+        effectsManager: new EffectsManager(scene),
         targetManager: new TargetManager(map.targets),
       });
       runtime.utilityManager.configureMap({
         plantZones: map.plantZones ?? [],
         scene: map.scene,
+        collisionWorld,
+        camera,
+        effectsManager: runtime.effectsManager,
       });
 
       runtime.weaponManager = new WeaponManager({
@@ -143,6 +150,7 @@ export class MapRuntime {
         scene,
         shootables: map.shootables,
         audioManager,
+        effectsManager: runtime.effectsManager,
         canEquipWeapon: (weaponKey) => runtime.utilityManager?.canEquipWeapon?.(weaponKey) ?? true,
       });
 
@@ -182,6 +190,7 @@ export class MapRuntime {
   destroy(scene) {
     this.weaponManager?.destroy();
     this.utilityManager?.destroy?.();
+    this.effectsManager?.destroy?.();
     this.targetManager?.destroy?.();
     this.detachFromScene(scene);
     this.navigationManager?.destroy();

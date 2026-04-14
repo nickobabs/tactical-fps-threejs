@@ -77,6 +77,26 @@ export function createBombPlantMessage(state) {
   };
 }
 
+export function createBombDefuseMessage(state) {
+  return {
+    position: {
+      x: Number(state?.position?.x ?? 0),
+      y: Number(state?.position?.y ?? 0),
+      z: Number(state?.position?.z ?? 0),
+    },
+    eyePosition: {
+      x: Number(state?.eyePosition?.x ?? 0),
+      y: Number(state?.eyePosition?.y ?? 0),
+      z: Number(state?.eyePosition?.z ?? 0),
+    },
+    direction: {
+      x: Number(state?.direction?.x ?? 0),
+      y: Number(state?.direction?.y ?? 0),
+      z: Number(state?.direction?.z ?? -1),
+    },
+  };
+}
+
 export function normalizeAuthoritativePlayerState(playerId, state) {
   return {
     playerId,
@@ -110,6 +130,7 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     activeWeaponKey: String(state?.activeWeaponKey ?? 'rifle'),
     isScoped: Boolean(state?.isScoped ?? false),
     presentationState: String(state?.presentationState ?? 'idle'),
+    deathClip: state?.deathClip ? String(state.deathClip) : null,
     hitboxes: state?.hitboxes ?? null,
     hitboxDebug: state?.hitboxDebug ?? null,
   };
@@ -148,6 +169,7 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     activeWeaponKey: String(player?.activeWeaponKey ?? 'rifle'),
     isScoped: Boolean(player?.isScoped ?? false),
     presentationState: String(player?.presentationState ?? 'idle'),
+    deathClip: player?.deathClip ? String(player.deathClip) : null,
     hitboxes: player?.authoritativeHitboxes ?? null,
     hitboxDebug: player?.hitboxRig?.debugState ?? null,
   };

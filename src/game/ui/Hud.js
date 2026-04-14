@@ -43,6 +43,21 @@ export function createHud({
   const hud = document.createElement('div');
   hud.className = 'hud';
   hud.innerHTML = `
+    <div class="hud__round-win">
+      <div class="hud__round-win-banner">
+        <span class="hud__round-win-chevron hud__round-win-chevron--left">»</span>
+        <div class="hud__round-win-text">
+          <div class="hud__round-win-title"></div>
+          <div class="hud__round-win-subtitle"></div>
+        </div>
+        <span class="hud__round-win-chevron hud__round-win-chevron--right">«</span>
+      </div>
+      <div class="hud__round-win-mvp">
+        <div class="hud__round-win-mvp-star">★</div>
+        <div class="hud__round-win-mvp-copy"></div>
+      </div>
+      <div class="hud__round-win-footer"></div>
+    </div>
     <div class="hud__top">
       <div class="hud__round"></div>
       <div class="hud__fps"></div>
@@ -169,6 +184,11 @@ export function createHud({
 
   const roundEl = hud.querySelector('.hud__round');
   const fpsEl = hud.querySelector('.hud__fps');
+  const roundWinEl = hud.querySelector('.hud__round-win');
+  const roundWinTitleEl = hud.querySelector('.hud__round-win-title');
+  const roundWinSubtitleEl = hud.querySelector('.hud__round-win-subtitle');
+  const roundWinMvpCopyEl = hud.querySelector('.hud__round-win-mvp-copy');
+  const roundWinFooterEl = hud.querySelector('.hud__round-win-footer');
   const weaponEl = hud.querySelector('.hud__weapon');
   const healthEl = hud.querySelector('.hud__health');
   const utilityEl = hud.querySelector('.hud__utility');
@@ -217,6 +237,73 @@ export function createHud({
   let lastDeadOverlay = null;
   let lastHitDamageHtml = '';
   let lastRespawnText = '';
+  let lastRoundWinVisible = null;
+  let lastRoundWinTitle = '';
+  let lastRoundWinSubtitle = '';
+  let lastRoundWinMvp = '';
+  let lastRoundWinFooter = '';
+
+  function formatWinReason(reason) {
+    const normalizedReason = String(reason ?? '').trim();
+    if (normalizedReason === 'bomb-defused') {
+      return 'BOMB DEFUSED';
+    }
+    if (normalizedReason === 'bomb-exploded') {
+      return 'BOMB EXPLODED';
+    }
+    if (normalizedReason === 'time-expired') {
+      return 'TIME EXPIRED';
+    }
+    if (!normalizedReason) {
+      return '';
+    }
+    return normalizedReason.replace(/-/g, ' ').toUpperCase();
+  }
+
+  function getRoundWinTitle(winnerTeam) {
+    if (winnerTeam === 'attackers') {
+      return 'ATTACKERS WIN';
+    }
+    if (winnerTeam === 'defenders') {
+      return 'DEFENDERS WIN';
+    }
+    return 'ROUND WON';
+  }
+
+  function getRoundWinFooter() {
+    // Reserved for future round-fact / stat lines.
+    return '';
+  }
+
+  function getRoundWinMvpText(roundManager, scoreboardState) {
+    const winnerTeam = String(roundManager?.winnerTeam ?? '');
+    if (!winnerTeam) {
+      return '';
+    }
+
+    const winningTeam = scoreboardState?.teams?.find?.((team) => team.key === winnerTeam) ?? null;
+    const players = winningTeam?.players ?? [];
+    if (players.length === 0) {
+      return '';
+    }
+
+    const mvp = [...players].sort((left, right) => {
+      const killDelta = Number(right.kills ?? 0) - Number(left.kills ?? 0);
+      if (killDelta !== 0) {
+        return killDelta;
+      }
+      const deathDelta = Number(left.deaths ?? 0) - Number(right.deaths ?? 0);
+      if (deathDelta !== 0) {
+        return deathDelta;
+      }
+      return String(left.displayName ?? left.playerId).localeCompare(String(right.displayName ?? right.playerId));
+    })[0];
+    if (!mvp) {
+      return '';
+    }
+
+    return `MVP: ${String(mvp.displayName ?? mvp.playerId)} for most kills`;
+  }
 
   function handleKeyDown(event) {
     if (event.code === 'F8') {
@@ -372,6 +459,11 @@ export function createHud({
       const scoreboardVisible = showScoreboard && !paused;
       const hudMode = getHudMode?.() ?? 'debug';
       const classicVisible = hudMode === 'classic' && !paused;
+      const roundWinVisible = Boolean(!paused && roundManager?.roundEnded && roundManager?.winnerTeam);
+      const roundWinTitle = roundWinVisible ? getRoundWinTitle(roundManager?.winnerTeam) : '';
+      const roundWinSubtitle = roundWinVisible ? formatWinReason(roundManager?.winReason) : '';
+      const roundWinMvp = roundWinVisible ? getRoundWinMvpText(roundManager, scoreboardState) : '';
+      const roundWinFooter = roundWinVisible ? getRoundWinFooter() : '';
       scoreboardController.update({
         visible: scoreboardVisible,
         subtitle: `Players: ${scoreboardState.playerCount}`,
@@ -383,6 +475,28 @@ export function createHud({
         paused,
         utilityHudState,
       });
+      if (roundWinVisible !== lastRoundWinVisible) {
+        roundWinEl.classList.toggle('hud__round-win--active', roundWinVisible);
+        lastRoundWinVisible = roundWinVisible;
+      }
+      roundWinEl.classList.toggle('hud__round-win--defenders', roundManager?.winnerTeam === 'defenders');
+      if (roundWinTitle !== lastRoundWinTitle) {
+        roundWinTitleEl.textContent = roundWinTitle;
+        lastRoundWinTitle = roundWinTitle;
+      }
+      if (roundWinSubtitle !== lastRoundWinSubtitle) {
+        roundWinSubtitleEl.textContent = roundWinSubtitle;
+        lastRoundWinSubtitle = roundWinSubtitle;
+      }
+      if (roundWinMvp !== lastRoundWinMvp) {
+        roundWinMvpCopyEl.textContent = roundWinMvp;
+        lastRoundWinMvp = roundWinMvp;
+      }
+      if (roundWinFooter !== lastRoundWinFooter) {
+        roundWinFooterEl.textContent = roundWinFooter;
+        roundWinFooterEl.classList.toggle('hud__round-win-footer--active', Boolean(roundWinFooter));
+        lastRoundWinFooter = roundWinFooter;
+      }
       debugPanelsController.updateDebugText({
         roundText,
         fpsText,

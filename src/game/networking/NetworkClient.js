@@ -5,6 +5,7 @@ import {
   NETCODE_SIMULATION_STEP,
 } from '../../shared/netcode.js';
 import {
+  createBombDefuseMessage,
   createBombPlantMessage,
   createPlayerFireMessage,
   createPlayerInputMessage,
@@ -332,6 +333,7 @@ export class NetworkClient {
         && previousSnapshot.activeWeaponKey === normalizedState.activeWeaponKey
         && previousSnapshot.isScoped === normalizedState.isScoped
         && previousSnapshot.presentationState === normalizedState.presentationState
+        && previousSnapshot.deathClip === normalizedState.deathClip
         && previousSnapshot.isAlive === normalizedState.isAlive
         && hasSameHitboxes(previousSnapshot.hitboxes, normalizedState.hitboxes);
 
@@ -511,6 +513,15 @@ export class NetworkClient {
     return true;
   }
 
+  sendBombDefuse(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('bomb-defuse', createBombDefuseMessage(state));
+    return true;
+  }
+
   sendRemoteHitboxAudit(audit) {
     if (!this.room || !audit) {
       return false;
@@ -630,6 +641,7 @@ export class NetworkClient {
           activeWeaponKey: snapshot.activeWeaponKey,
           isScoped: snapshot.isScoped,
           presentationState: snapshot.presentationState,
+          deathClip: snapshot.deathClip,
           isAlive: snapshot.isAlive,
         });
         continue;
@@ -662,6 +674,7 @@ export class NetworkClient {
           activeWeaponKey: nextSnapshot.activeWeaponKey,
           isScoped: nextSnapshot.isScoped,
           presentationState: nextSnapshot.presentationState,
+          deathClip: nextSnapshot.deathClip,
           isAlive: nextSnapshot.isAlive,
         });
         continue;
@@ -686,6 +699,7 @@ export class NetworkClient {
         activeWeaponKey: nextSnapshot.activeWeaponKey,
         isScoped: nextSnapshot.isScoped,
         presentationState: nextSnapshot.presentationState,
+        deathClip: nextSnapshot.deathClip,
         isAlive: nextSnapshot.isAlive,
       });
     }

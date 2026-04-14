@@ -1,18 +1,21 @@
 import { TEAMS } from '../../shared/constants.js';
 import {
-  BOMB_UTILITY_KEY,
   DEFAULT_BOMB_DURATION,
+  DEFAULT_DEFUSE_DURATION,
   DEFAULT_PLANT_DURATION,
-  DEFAULT_UTILITY_KEY,
   formatBombSeconds,
-  getActiveUtilityLabel,
   isLocalBombCarrier,
   selectBombCarrierPlayerId,
 } from '../../shared/bombObjective.js';
 
 export class BombObjectiveState {
-  constructor({ plantDuration = DEFAULT_PLANT_DURATION, bombDuration = DEFAULT_BOMB_DURATION } = {}) {
+  constructor({
+    plantDuration = DEFAULT_PLANT_DURATION,
+    defuseDuration = DEFAULT_DEFUSE_DURATION,
+    bombDuration = DEFAULT_BOMB_DURATION,
+  } = {}) {
     this.plantDuration = plantDuration;
+    this.defuseDuration = defuseDuration;
     this.bombDuration = bombDuration;
     this.lastRoundNumber = 0;
     this.lastRoundPhase = null;
@@ -22,10 +25,12 @@ export class BombObjectiveState {
     this.bombState = 'idle';
     this.bombTimeRemaining = 0;
     this.plantedZoneName = null;
+    this.defuserPlayerId = null;
     this.statusText = '';
     this.interactionText = '';
-    this.selectedUtilityKey = DEFAULT_UTILITY_KEY;
     this.pendingPlantRequest = false;
+    this.defuseProgress = 0;
+    this.pendingDefuseRequest = false;
   }
 
   resetRoundState() {
@@ -35,10 +40,12 @@ export class BombObjectiveState {
     this.bombState = 'idle';
     this.bombTimeRemaining = 0;
     this.plantedZoneName = null;
+    this.defuserPlayerId = null;
     this.statusText = '';
     this.interactionText = '';
-    this.selectedUtilityKey = DEFAULT_UTILITY_KEY;
     this.pendingPlantRequest = false;
+    this.defuseProgress = 0;
+    this.pendingDefuseRequest = false;
   }
 
   collectAttackerPlayerIds({ networkClient, localPlayerId, selectedTeam }) {
@@ -62,7 +69,6 @@ export class BombObjectiveState {
     if (attackerIds.length === 0) {
       this.bombCarrierPlayerId = null;
       this.localPlayerHasBomb = false;
-      this.selectedUtilityKey = DEFAULT_UTILITY_KEY;
       return;
     }
 
@@ -75,7 +81,6 @@ export class BombObjectiveState {
       bombCarrierPlayerId: this.bombCarrierPlayerId,
       localPlayerId,
     });
-    this.selectedUtilityKey = this.localPlayerHasBomb ? BOMB_UTILITY_KEY : DEFAULT_UTILITY_KEY;
     this.statusText = this.localPlayerHasBomb ? 'Bomb carrier' : '';
   }
 
@@ -98,15 +103,6 @@ export class BombObjectiveState {
     this.lastRoundPhase = roundManager.phase;
   }
 
-  syncEquippedUtility(input) {
-    this.interactionText = '';
-    if (input?.justPressed?.has?.('Digit5') && this.localPlayerHasBomb) {
-      this.selectedUtilityKey = BOMB_UTILITY_KEY;
-    } else if (input?.justPressed?.has?.('Digit6')) {
-      this.selectedUtilityKey = DEFAULT_UTILITY_KEY;
-    }
-  }
-
   applyAuthoritativeObjective({ objectiveState, networkClient, selectedTeam }) {
     this.bombCarrierPlayerId = objectiveState?.bombCarrierPlayerId ?? null;
     this.localPlayerHasBomb = isLocalBombCarrier({
@@ -117,31 +113,6 @@ export class BombObjectiveState {
     this.bombState = String(objectiveState?.bombState ?? 'idle');
     this.bombTimeRemaining = Math.max(0, Number(objectiveState?.bombTimeRemaining ?? 0));
     this.plantedZoneName = objectiveState?.plantedZoneName ?? null;
-    if (!this.localPlayerHasBomb && this.selectedUtilityKey === BOMB_UTILITY_KEY) {
-      this.selectedUtilityKey = DEFAULT_UTILITY_KEY;
-    }
-  }
-
-  getActiveUtilityLabel() {
-    return getActiveUtilityLabel({
-      selectedUtilityKey: this.selectedUtilityKey,
-      localPlayerHasBomb: this.localPlayerHasBomb,
-    });
-  }
-
-  getHudState(plantZones) {
-    return {
-      activeUtility: this.getActiveUtilityLabel(),
-      selectedUtilityKey: this.selectedUtilityKey,
-      bombCarrierPlayerId: this.bombCarrierPlayerId,
-      localPlayerHasBomb: this.localPlayerHasBomb,
-      plantProgress: this.plantProgress,
-      plantDuration: this.plantDuration,
-      bombState: this.bombState,
-      bombTimeRemaining: this.bombTimeRemaining,
-      interactionText: this.interactionText,
-      statusText: this.statusText,
-      plantZones,
-    };
+    this.defuserPlayerId = objectiveState?.defuserPlayerId ?? null;
   }
 }

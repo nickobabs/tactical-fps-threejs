@@ -8,11 +8,23 @@ export function createHudObjectiveWidgetsController({
   let lastPlantProgressVisible = null;
   let lastPlantProgressLabel = '';
   let lastPlantProgressValue = -1;
+  let lastDefusing = null;
 
   return {
     update({ paused, utilityHudState }) {
-      const plantProgressRatio = utilityHudState && utilityHudState.plantDuration > 0
-        ? Math.max(0, Math.min(1, Number(utilityHudState.plantProgress ?? 0) / Number(utilityHudState.plantDuration ?? 1)))
+      const defusing = Number(utilityHudState?.defuseProgress ?? 0) > 0;
+      const progressValue = Number(
+        defusing
+          ? utilityHudState.defuseProgress
+          : utilityHudState?.plantProgress ?? 0,
+      );
+      const progressDuration = Number(
+        defusing
+          ? utilityHudState.defuseDuration
+          : utilityHudState?.plantDuration ?? 0,
+      );
+      const plantProgressRatio = utilityHudState && progressDuration > 0
+        ? Math.max(0, Math.min(1, progressValue / progressDuration))
         : 0;
       const plantProgressVisible = !paused && plantProgressRatio > 0;
 
@@ -20,8 +32,12 @@ export function createHudObjectiveWidgetsController({
         plantProgressEl.classList.toggle('hud__plant-progress--active', plantProgressVisible);
         lastPlantProgressVisible = plantProgressVisible;
       }
+      if (defusing !== lastDefusing) {
+        plantProgressEl.classList.toggle('hud__plant-progress--defusing', defusing);
+        lastDefusing = defusing;
+      }
 
-      const plantProgressLabel = plantProgressVisible ? 'PLANTING' : '';
+      const plantProgressLabel = plantProgressVisible ? String(utilityHudState?.progressLabel ?? 'PLANTING') : '';
       lastPlantProgressLabel = setTextIfChanged(
         plantProgressLabelEl,
         plantProgressLabel,

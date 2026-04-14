@@ -157,6 +157,7 @@ export class FirstPersonController {
     this.viewModelStepBob = 0;
     this.viewModelStepBobTarget = 0;
     this.viewModelStepBobSide = 1;
+    this.interactionLockMode = null;
   }
 
   getObject() {
@@ -267,6 +268,7 @@ export class FirstPersonController {
       currentPositionDetailText: this.lastCurrentPositionText,
       authoritativePositionText: this.lastAuthoritativePositionText,
       replayPositionText: this.lastReplayPositionText,
+      interactionLockMode: this.interactionLockMode ?? 'none',
     };
 
     if (includeVectors) {
@@ -297,6 +299,14 @@ export class FirstPersonController {
 
   getMovementMode() {
     return this.movementMode;
+  }
+
+  setPlantInteractionLock(locked) {
+    this.interactionLockMode = Boolean(locked) && this.movementMode !== 'fly' ? 'plant' : null;
+  }
+
+  setDefuseInteractionLock(locked) {
+    this.interactionLockMode = Boolean(locked) && this.movementMode !== 'fly' ? 'defuse' : null;
   }
 
   spawnAt(spawnState = {}) {
@@ -657,7 +667,7 @@ export class FirstPersonController {
   }
 
   getMovementInputSnapshot(options = {}) {
-    return getMovementInputSnapshot({
+    const snapshot = getMovementInputSnapshot({
       input: this.input,
       movementMode: this.movementMode,
       yawAngle: this.yawAngle,
@@ -665,6 +675,20 @@ export class FirstPersonController {
       jumpPressed: options.jumpPressed,
       walkSpeedFactor: this.getWalkSpeedFactor(),
     });
+    if (!this.interactionLockMode || this.movementMode === 'fly') {
+      return snapshot;
+    }
+
+    return {
+      ...snapshot,
+      forward: false,
+      backward: false,
+      left: false,
+      right: false,
+      walk: false,
+      crouch: this.interactionLockMode === 'plant' ? true : snapshot.crouch,
+      jump: false,
+    };
   }
 
   getCurrentSpeedMultiplier() {

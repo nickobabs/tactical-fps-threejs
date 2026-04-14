@@ -5,10 +5,9 @@ export function executeWeaponShot({
   currentWeapon,
   audioManager,
   camera,
-  scene,
   shootables,
   raycaster,
-  temporaryObjects,
+  effectsManager,
   muzzle,
   muzzleWorld,
   isScoped,
@@ -22,10 +21,9 @@ export function executeWeaponShot({
   muzzle.getWorldPosition(muzzleWorld);
   fireHitscan({
     camera,
-    scene,
     shootables,
     raycaster,
-    temporaryObjects,
+    effectsManager,
     muzzleWorld,
     weapon: currentWeapon,
     isScoped,

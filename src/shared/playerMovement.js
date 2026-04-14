@@ -16,7 +16,7 @@ export const PLAYER_MOVEMENT_DEFAULTS = {
 const GROUNDED_PROBE_EPSILON = 0.04;
 const GROUNDED_STICK_EPSILON = 0.08;
 const LANDING_SNAP_PADDING = 0.14;
-const MAX_AIR_LANDING_SNAP_DISTANCE = 1.1;
+const MAX_AIR_LANDING_SNAP_DISTANCE = 0.1;
 const MAX_AIR_COLLISION_LIFT = 0.03;
 const POSITION_CLAMP_BELOW_GROUND = 4096;
 const POSITION_CLAMP_ABOVE_GROUND = 4096;
@@ -287,8 +287,8 @@ export function simulatePlayerMovement(
         : Math.min(
           MAX_AIR_LANDING_SNAP_DISTANCE,
           Math.max(
-            supportThreshold,
-            Math.abs(stepY) + config.radius + LANDING_SNAP_PADDING,
+            GROUNDED_PROBE_EPSILON,
+            Math.abs(stepY) + (LANDING_SNAP_PADDING * 0.25),
           ),
         );
       const minSupportRatio = wasGrounded ? 0.34 : 0.45;
