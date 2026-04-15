@@ -1865,8 +1865,8 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   const deathAlpha = isAlive
     ? 0
     : 1 - Math.max(0, Math.min(1, visual.deathTransitionTime / REMOTE_DEATH_TRANSITION_DURATION));
-  const forwardFlinch = hitAlpha * 0.08;
-  const sideFlinch = hitAlpha * 0.04;
+  const forwardFlinch = hitAlpha * 0.045;
+  const sideFlinch = hitAlpha * 0.02;
   const deathLean = deathClip ? 0 : deathAlpha * 0.92;
 
   visual.root.rotation.set(
@@ -1874,7 +1874,7 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
     player.yaw,
     -sideFlinch + deathLean,
   );
-  visual.root.position.y += hitAlpha * 0.02;
+  visual.root.position.y += hitAlpha * 0.01;
 
   visual.body.position.y = height * 0.5;
   visual.bodyCylinder.scale.y = cylinderHeight;

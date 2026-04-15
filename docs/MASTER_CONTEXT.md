@@ -580,6 +580,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - viewmodel tuning
     - remote body tuning
     - remote weapon tuning
+- HUD / local settings:
+  - the top-center round HUD now shows defender/attacker player icons plus a center-anchored round score
+  - dead players in that strip now render greyscaled/faded
+  - the top timer is now the primary round timer surface and swaps to a red C4 icon while the bomb is planted
+  - directional 4-way damage indicators now render around the crosshair
+  - pause-menu volume, sensitivity, and horizontal FOV now persist locally in browser storage
 - Movement tuning:
   - a dedicated movement panel now controls footstep cadence, trim, pitch, bob attack/damp, bob axes, and movement pull-back
   - local settings persist in browser storage until reset

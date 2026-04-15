@@ -106,6 +106,7 @@ It already supports real play loops:
 ### UI / Feedback
 
 - HUD with round state, FPS, weapon, utility, movement state, pointer state, and position
+- Top-center round HUD with team player icons, live round score, and planted-bomb icon/timer state
 - Hold-`Tab` scoreboard with team panels, player names, kills, deaths, and ping
 - Team-select overlay with player-name entry
 - Scope overlay and ADS reticle handling
@@ -113,8 +114,9 @@ It already supports real play loops:
 - Plant progress feedback
 - Utility HUD feedback for smoke availability and throw prompt
 - Pause menu for map, skybox, sensitivity, volume, and FOV
-- Damage vignette, hit damage numbers, dead overlay, and respawn countdown
+- Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
 - Live `NETDEBUG` panel with clipboard copy support
+- Local browser persistence for player name, HUD mode, volume, sensitivity, and horizontal FOV
 
 ### Audio / Effects
 

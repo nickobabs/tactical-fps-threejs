@@ -5,6 +5,18 @@ import { createHudClassicController } from './hudClassic.js';
 import { createHudObjectiveWidgetsController } from './hudObjectiveWidgets.js';
 import { createHudScoreboardController } from './hudScoreboard.js';
 
+const ATTACKER_ROSTER_ICON = '/icons/k3FcN65.png';
+const DEFENDER_ROSTER_ICON = '/icons/zcqziFR.png';
+const C4_ROSTER_ICON = '/icons/c4.png';
+
+function formatClock(seconds, { ceil = false } = {}) {
+  const safeSeconds = Math.max(0, Number(seconds ?? 0));
+  const wholeSeconds = ceil ? Math.ceil(safeSeconds) : Math.floor(safeSeconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  const remainingSeconds = wholeSeconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
 export function createHud({
   container,
   input,
@@ -14,6 +26,7 @@ export function createHud({
   networkClient,
   playerController,
   getDamageVignette,
+  getDamageIndicators,
   getHitDamagePopups,
   getFps,
   getMasterVolume,
@@ -62,9 +75,27 @@ export function createHud({
       <div class="hud__round"></div>
       <div class="hud__fps"></div>
     </div>
+    <div class="hud__round-roster" aria-hidden="true">
+      <div class="hud__round-roster-team hud__round-roster-team--defenders"></div>
+      <div class="hud__round-roster-center">
+        <div class="hud__round-roster-timer"></div>
+      </div>
+      <div class="hud__round-roster-score">
+        <span class="hud__round-roster-score-value hud__round-roster-score-value--defenders">0</span>
+        <span class="hud__round-roster-score-separator">|</span>
+        <span class="hud__round-roster-score-value hud__round-roster-score-value--attackers">0</span>
+      </div>
+      <div class="hud__round-roster-team hud__round-roster-team--attackers"></div>
+    </div>
     <div class="hud__crosshair" aria-hidden="true"></div>
     <div class="hud__dead-overlay" aria-hidden="true"></div>
     <div class="hud__damage-vignette" aria-hidden="true"></div>
+    <div class="hud__damage-indicators" aria-hidden="true">
+      <div class="hud__damage-indicator hud__damage-indicator--front"></div>
+      <div class="hud__damage-indicator hud__damage-indicator--right"></div>
+      <div class="hud__damage-indicator hud__damage-indicator--back"></div>
+      <div class="hud__damage-indicator hud__damage-indicator--left"></div>
+    </div>
     <div class="hud__hit-damage" aria-hidden="true"></div>
     <div class="hud__respawn" aria-hidden="true"></div>
     <div class="hud__ads-reticle" aria-hidden="true"></div>
@@ -184,6 +215,11 @@ export function createHud({
 
   const roundEl = hud.querySelector('.hud__round');
   const fpsEl = hud.querySelector('.hud__fps');
+  const roundRosterDefendersEl = hud.querySelector('.hud__round-roster-team--defenders');
+  const roundRosterAttackersEl = hud.querySelector('.hud__round-roster-team--attackers');
+  const roundRosterTimerEl = hud.querySelector('.hud__round-roster-timer');
+  const roundRosterDefendersScoreEl = hud.querySelector('.hud__round-roster-score-value--defenders');
+  const roundRosterAttackersScoreEl = hud.querySelector('.hud__round-roster-score-value--attackers');
   const roundWinEl = hud.querySelector('.hud__round-win');
   const roundWinTitleEl = hud.querySelector('.hud__round-win-title');
   const roundWinSubtitleEl = hud.querySelector('.hud__round-win-subtitle');
@@ -199,6 +235,11 @@ export function createHud({
   const crosshairEl = hud.querySelector('.hud__crosshair');
   const deadOverlayEl = hud.querySelector('.hud__dead-overlay');
   const damageVignetteEl = hud.querySelector('.hud__damage-vignette');
+  const damageIndicatorsEl = hud.querySelector('.hud__damage-indicators');
+  const damageIndicatorFrontEl = hud.querySelector('.hud__damage-indicator--front');
+  const damageIndicatorRightEl = hud.querySelector('.hud__damage-indicator--right');
+  const damageIndicatorBackEl = hud.querySelector('.hud__damage-indicator--back');
+  const damageIndicatorLeftEl = hud.querySelector('.hud__damage-indicator--left');
   const hitDamageEl = hud.querySelector('.hud__hit-damage');
   const respawnEl = hud.querySelector('.hud__respawn');
   const adsReticleEl = hud.querySelector('.hud__ads-reticle');
@@ -234,6 +275,10 @@ export function createHud({
   let lastScopeOverlay = null;
   let lastLoading = null;
   let lastDamageVignette = -1;
+  let lastDamageIndicatorFront = -1;
+  let lastDamageIndicatorRight = -1;
+  let lastDamageIndicatorBack = -1;
+  let lastDamageIndicatorLeft = -1;
   let lastDeadOverlay = null;
   let lastHitDamageHtml = '';
   let lastRespawnText = '';
@@ -242,6 +287,21 @@ export function createHud({
   let lastRoundWinSubtitle = '';
   let lastRoundWinMvp = '';
   let lastRoundWinFooter = '';
+  let lastRoundRosterDefendersHtml = '';
+  let lastRoundRosterAttackersHtml = '';
+  let lastRoundRosterTimerHtml = '';
+  let lastRoundRosterDefendersScore = '';
+  let lastRoundRosterAttackersScore = '';
+
+  function renderRoundRosterTeam(teamState, iconPath) {
+    const players = [...(teamState?.players ?? [])]
+      .sort((left, right) => String(left.displayName ?? left.playerId).localeCompare(String(right.displayName ?? right.playerId)));
+    return players.map((player) => {
+      const deadClass = player?.isAlive === false ? ' hud__round-roster-slot--dead' : '';
+      const title = String(player?.displayName ?? player?.playerId ?? '');
+      return `<div class="hud__round-roster-slot${deadClass}" title="${title}"><img class="hud__round-roster-icon" src="${iconPath}" alt="" /></div>`;
+    }).join('');
+  }
 
   function formatWinReason(reason) {
     const normalizedReason = String(reason ?? '').trim();
@@ -433,6 +493,8 @@ export function createHud({
         playerCount: 0,
         teams: [],
       };
+      const defendersTeam = scoreboardState.teams?.find?.((team) => team.key === 'defenders') ?? null;
+      const attackersTeam = scoreboardState.teams?.find?.((team) => team.key === 'attackers') ?? null;
       const healthText = `Health: ${localPlayerState?.health ?? '--'}/${localPlayerState?.maxHealth ?? '--'}${localPlayerState?.isAlive === false ? ' - DOWN' : ''}`;
       const weaponHudState = weaponManager?.getHudState?.() ?? null;
       const ammoLabel = weaponHudState && weaponHudState.magazineSize > 0
@@ -460,6 +522,24 @@ export function createHud({
       const hudMode = getHudMode?.() ?? 'debug';
       const classicVisible = hudMode === 'classic' && !paused;
       const roundWinVisible = Boolean(!paused && roundManager?.roundEnded && roundManager?.winnerTeam);
+      const phaseDuration = roundManager
+        ? (
+          roundManager.phase === 'freeze'
+            ? roundManager.freezeDuration
+            : roundManager.phase === 'live'
+              ? roundManager.liveDuration
+              : 0
+        )
+        : 0;
+      const timeLeft = roundManager?.roundEnded
+        ? Math.max(0, Number(roundManager.roundEndCountdown ?? 0))
+        : objectiveState?.bombState === 'planted'
+          ? Math.max(0, Number(objectiveState?.bombTimeRemaining ?? 0))
+          : Math.max(0, phaseDuration - Number(roundManager?.phaseTime ?? 0));
+      const bombPlanted = objectiveState?.bombState === 'planted';
+      const roundRosterTimerHtml = bombPlanted
+        ? `<img class="hud__round-roster-timer-icon hud__round-roster-timer-icon--bomb" src="${C4_ROSTER_ICON}" alt="" />`
+        : formatClock(timeLeft, { ceil: Boolean(roundManager?.roundEnded) });
       const roundWinTitle = roundWinVisible ? getRoundWinTitle(roundManager?.winnerTeam) : '';
       const roundWinSubtitle = roundWinVisible ? formatWinReason(roundManager?.winReason) : '';
       const roundWinMvp = roundWinVisible ? getRoundWinMvpText(roundManager, scoreboardState) : '';
@@ -508,6 +588,30 @@ export function createHud({
         positionText,
         pointerText,
       });
+      const defendersRosterHtml = renderRoundRosterTeam(defendersTeam, DEFENDER_ROSTER_ICON);
+      const attackersRosterHtml = renderRoundRosterTeam(attackersTeam, ATTACKER_ROSTER_ICON);
+      if (defendersRosterHtml !== lastRoundRosterDefendersHtml) {
+        roundRosterDefendersEl.innerHTML = defendersRosterHtml;
+        lastRoundRosterDefendersHtml = defendersRosterHtml;
+      }
+      if (attackersRosterHtml !== lastRoundRosterAttackersHtml) {
+        roundRosterAttackersEl.innerHTML = attackersRosterHtml;
+        lastRoundRosterAttackersHtml = attackersRosterHtml;
+      }
+      if (roundRosterTimerHtml !== lastRoundRosterTimerHtml) {
+        roundRosterTimerEl.innerHTML = roundRosterTimerHtml;
+        lastRoundRosterTimerHtml = roundRosterTimerHtml;
+      }
+      const defendersScoreText = String(defendersTeam?.roundsWon ?? 0);
+      const attackersScoreText = String(attackersTeam?.roundsWon ?? 0);
+      if (defendersScoreText !== lastRoundRosterDefendersScore) {
+        roundRosterDefendersScoreEl.textContent = defendersScoreText;
+        lastRoundRosterDefendersScore = defendersScoreText;
+      }
+      if (attackersScoreText !== lastRoundRosterAttackersScore) {
+        roundRosterAttackersScoreEl.textContent = attackersScoreText;
+        lastRoundRosterAttackersScore = attackersScoreText;
+      }
       classicController.update({
         visible: classicVisible,
         roundManager,
@@ -520,6 +624,29 @@ export function createHud({
       if (Math.abs(damageVignette - lastDamageVignette) > 0.01) {
         damageVignetteEl.style.opacity = String(damageVignette * 0.75);
         lastDamageVignette = damageVignette;
+      }
+      const damageIndicators = getDamageIndicators?.() ?? {};
+      const frontIndicator = Math.max(0, Math.min(1, Number(damageIndicators.front ?? 0)));
+      const rightIndicator = Math.max(0, Math.min(1, Number(damageIndicators.right ?? 0)));
+      const backIndicator = Math.max(0, Math.min(1, Number(damageIndicators.back ?? 0)));
+      const leftIndicator = Math.max(0, Math.min(1, Number(damageIndicators.left ?? 0)));
+      const indicatorsActive = frontIndicator > 0.01 || rightIndicator > 0.01 || backIndicator > 0.01 || leftIndicator > 0.01;
+      damageIndicatorsEl.classList.toggle('hud__damage-indicators--active', indicatorsActive);
+      if (Math.abs(frontIndicator - lastDamageIndicatorFront) > 0.01) {
+        damageIndicatorFrontEl.style.opacity = String(frontIndicator * 0.95);
+        lastDamageIndicatorFront = frontIndicator;
+      }
+      if (Math.abs(rightIndicator - lastDamageIndicatorRight) > 0.01) {
+        damageIndicatorRightEl.style.opacity = String(rightIndicator * 0.95);
+        lastDamageIndicatorRight = rightIndicator;
+      }
+      if (Math.abs(backIndicator - lastDamageIndicatorBack) > 0.01) {
+        damageIndicatorBackEl.style.opacity = String(backIndicator * 0.95);
+        lastDamageIndicatorBack = backIndicator;
+      }
+      if (Math.abs(leftIndicator - lastDamageIndicatorLeft) > 0.01) {
+        damageIndicatorLeftEl.style.opacity = String(leftIndicator * 0.95);
+        lastDamageIndicatorLeft = leftIndicator;
       }
 
       const deadOverlayActive = Boolean(localPlayerState?.isAlive === false);

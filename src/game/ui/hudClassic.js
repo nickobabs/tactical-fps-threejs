@@ -60,15 +60,7 @@ export function createHudClassicController({
           ? Math.max(0, Number(objectiveState?.bombTimeRemaining ?? 0))
           : Math.max(0, phaseDuration - Number(roundManager?.phaseTime ?? 0));
 
-      const classicTimeText = formatClock(timeLeft, { ceil: Boolean(roundManager?.roundEnded) });
       const bombPlanted = objectiveState?.bombState === 'planted';
-      const classicPhaseText = roundManager
-        ? roundManager.roundEnded && roundManager.winnerTeam
-          ? `${String(roundManager.winnerTeam).toUpperCase()} WIN`
-          : bombPlanted
-            ? `Round ${roundManager.roundNumber} - BOMB PLANTED`
-          : `Round ${roundManager.roundNumber} - ${String(roundManager.phase ?? '').toUpperCase()}`
-        : 'Round --';
       const classicHealthText = String(localPlayerState?.health ?? '--');
       const classicArmorText = '0';
       const classicAmmoMagText = weaponHudState && weaponHudState.magazineSize > 0
@@ -87,8 +79,8 @@ export function createHudClassicController({
 
       lastClassicHealthText = setTextIfChanged(classicHealthEl, classicHealthText, lastClassicHealthText);
       lastClassicArmorText = setTextIfChanged(classicArmorEl, classicArmorText, lastClassicArmorText);
-      lastClassicTimeText = setTextIfChanged(classicTimeEl, classicTimeText, lastClassicTimeText);
-      lastClassicPhaseText = setTextIfChanged(classicPhaseEl, classicPhaseText, lastClassicPhaseText);
+      lastClassicTimeText = setTextIfChanged(classicTimeEl, '', lastClassicTimeText);
+      lastClassicPhaseText = setTextIfChanged(classicPhaseEl, '', lastClassicPhaseText);
       lastClassicAmmoMagText = setTextIfChanged(classicAmmoMagEl, classicAmmoMagText, lastClassicAmmoMagText);
       lastClassicAmmoReserveText = setTextIfChanged(classicAmmoReserveEl, classicAmmoReserveText, lastClassicAmmoReserveText);
       lastClassicWeaponText = setTextIfChanged(classicWeaponEl, classicWeaponText, lastClassicWeaponText);

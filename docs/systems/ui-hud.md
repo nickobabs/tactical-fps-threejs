@@ -27,6 +27,7 @@
 - Team-select overlay DOM and interaction handlers
 - Scoped overlay and rifle ADS reticle state
 - Map-loading overlay state
+- Top-center round roster, score, and timer/icon state
 - Optional live multiplayer debug overlay and console summaries
 - Classic HUD / debug HUD mode switching
 - Scoreboard rendering
@@ -58,6 +59,11 @@
 - HUD text and toggle updates now only touch the DOM when displayed values actually change, rather than rewriting every element every frame
 - Multiplayer debug tooling is intentionally kept in the HUD path for now because it is the fastest way to compare local feel against network/correction state during active development
 - HUD responsibilities are now split by controller instead of keeping all rendering logic in one file
+- Pause-menu settings now use real runtime values and persist locally in browser `localStorage`
+- The top-center round HUD is now the primary round timer surface:
+  - player icons are team-colored and fade/greyscale on death
+  - the round score stays center-anchored between the two teams
+  - planted-bomb state swaps the timer text to a red C4 icon
 
 ## Current Status
 
@@ -78,8 +84,15 @@
 - Includes a toggleable classic HUD mode inspired by Source plus the older debug HUD mode
 - Includes planted-bomb timer/state and plant-progress feedback
 - Includes defender defuse progress feedback through the same objective widget path
+- Includes a CS-style top-center round strip with:
+  - defender/attacker player icons
+  - dead-state greyscale/fade
+  - center-anchored round score
+  - top round timer that swaps to a C4 icon while the bomb is planted
 - Includes a centered round-win banner with win-reason subtitle and a simple winning-team MVP line
+- Includes 4-way directional damage indicators around the crosshair
 - HUD structure is now split across smaller files for scoreboard, classic HUD, objective widgets, and debug panels
+- Pause-menu values for volume, sensitivity, and horizontal FOV now persist locally per browser
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`
     - live panel now includes a `Copy` button so the exact text can be pasted without screenshots

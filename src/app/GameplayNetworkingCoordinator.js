@@ -109,6 +109,7 @@ export class GameplayNetworkingCoordinator {
     utilityManager,
     getPopupId,
     onLocalPlayerHit,
+    onLocalPlayerDamageTaken,
     onLocalPlayerDamageDealt,
   }) {
     for (const event of this.networkClient.consumeCombatEvents()) {
@@ -132,6 +133,7 @@ export class GameplayNetworkingCoordinator {
 
       if (event.victimPlayerId === this.networkClient.playerId) {
         onLocalPlayerHit?.(event);
+        onLocalPlayerDamageTaken?.(event);
       }
     }
   }

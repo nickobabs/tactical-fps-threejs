@@ -25,9 +25,12 @@ import { TEAMS } from '../shared/constants.js';
 import { VIEWMODEL_LAYER } from '../game/weapons/viewModels.js';
 
 const DEFAULT_HORIZONTAL_FOV = 103;
+const DEFAULT_MOUSE_SENSITIVITY = 0.0011;
+const DEFAULT_MASTER_VOLUME = 0.6;
 const MOVEMENT_TRACE_STORAGE_KEY = 'tactical-fps-threejs-movement-trace';
 const PLAYER_NAME_STORAGE_KEY = 'tactical-fps-threejs-player-name';
 const HUD_MODE_STORAGE_KEY = 'tactical-fps-threejs-hud-mode';
+const SETTINGS_STORAGE_KEY = 'tactical-fps-threejs-settings';
 const MAX_PLAYER_NAME_LENGTH = 24;
 
 function sanitizePlayerName(value, fallback = 'Player') {
@@ -82,6 +85,62 @@ function persistHudMode(hudMode) {
   }
 }
 
+function loadStoredSettings() {
+  if (typeof window === 'undefined') {
+    return {
+      mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
+      horizontalFov: DEFAULT_HORIZONTAL_FOV,
+      masterVolume: DEFAULT_MASTER_VOLUME,
+    };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) {
+      return {
+        mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
+        horizontalFov: DEFAULT_HORIZONTAL_FOV,
+        masterVolume: DEFAULT_MASTER_VOLUME,
+      };
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      mouseSensitivity: Number.isFinite(parsed?.mouseSensitivity)
+        ? Math.max(0.0001, Number(parsed.mouseSensitivity))
+        : DEFAULT_MOUSE_SENSITIVITY,
+      horizontalFov: Number.isFinite(parsed?.horizontalFov)
+        ? THREE.MathUtils.clamp(Number(parsed.horizontalFov), 80, 120)
+        : DEFAULT_HORIZONTAL_FOV,
+      masterVolume: Number.isFinite(parsed?.masterVolume)
+        ? THREE.MathUtils.clamp(Number(parsed.masterVolume), 0, 1)
+        : DEFAULT_MASTER_VOLUME,
+    };
+  } catch {
+    return {
+      mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
+      horizontalFov: DEFAULT_HORIZONTAL_FOV,
+      masterVolume: DEFAULT_MASTER_VOLUME,
+    };
+  }
+}
+
+function persistSettings({ mouseSensitivity, horizontalFov, masterVolume }) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      mouseSensitivity: Math.max(0.0001, Number(mouseSensitivity ?? DEFAULT_MOUSE_SENSITIVITY)),
+      horizontalFov: THREE.MathUtils.clamp(Number(horizontalFov ?? DEFAULT_HORIZONTAL_FOV), 80, 120),
+      masterVolume: THREE.MathUtils.clamp(Number(masterVolume ?? DEFAULT_MASTER_VOLUME), 0, 1),
+    }));
+  } catch {
+    // Ignore localStorage write failures.
+  }
+}
+
 function getMovementTraceUploadUrl(serverUrl) {
   if (!serverUrl) {
     return null;
@@ -112,17 +171,25 @@ export class GameApp {
     this.root = root;
     this.clock = new THREE.Clock();
     this.currentFps = 0;
-    this.mouseSensitivity = 0.0011;
-    this.baseHorizontalFov = DEFAULT_HORIZONTAL_FOV;
+    const storedSettings = loadStoredSettings();
+    this.mouseSensitivity = storedSettings.mouseSensitivity;
+    this.baseHorizontalFov = storedSettings.horizontalFov;
     this.networkJumpQueued = false;
     this.lastMovementTraceSampleAt = 0;
     this.movementTraceSamples = [];
     this.fatalErrorOverlay = new FatalErrorOverlay(this.root);
     this.localSimulationLoop = new FixedStepLoop(NETCODE_SIMULATION_STEP);
     this.audioManager = createGameAudioManager();
+    this.audioManager.setMasterVolume(storedSettings.masterVolume);
     this.networkClient = new NetworkClient();
     this.gameplayNetworking = new GameplayNetworkingCoordinator(this.networkClient);
     this.damageVignette = 0;
+    this.damageIndicators = {
+      front: 0,
+      right: 0,
+      back: 0,
+      left: 0,
+    };
     this.hitDamagePopups = [];
     this.selectedTeam = null;
     this.selectedPlayerName = loadStoredPlayerName();
@@ -263,6 +330,7 @@ export class GameApp {
       networkClient: this.networkClient,
       playerController: this.runtime?.playerController ?? null,
       getDamageVignette: () => this.damageVignette,
+      getDamageIndicators: () => this.damageIndicators,
       getHitDamagePopups: () => this.hitDamagePopups,
       getFps: () => this.currentFps,
       getMasterVolume: () => this.audioManager.getMasterVolume(),
@@ -274,7 +342,7 @@ export class GameApp {
       onSelectMap: (mapId) => this.loadMap(mapId),
       onSensitivityChange: (value) => this.setMouseSensitivity(value),
       onFovChange: (value) => this.setHorizontalFov(value),
-      onVolumeChange: (volume) => this.audioManager.setMasterVolume(volume),
+      onVolumeChange: (volume) => this.setMasterVolume(volume),
       maps: MAP_OPTIONS,
       getSelectedMapId: () => this.selectedMapId,
       getSelectedTeam: () => this.selectedTeam,
@@ -550,6 +618,12 @@ export class GameApp {
   setMouseSensitivity(value) {
     this.mouseSensitivity = Math.max(0.0001, value);
     this.runtime?.playerController?.setMouseSensitivity(this.mouseSensitivity);
+    this.persistRuntimeSettings();
+  }
+
+  setMasterVolume(volume) {
+    this.audioManager.setMasterVolume(volume);
+    this.persistRuntimeSettings();
   }
 
   horizontalToVerticalFov(horizontalDegrees, aspect = this.camera?.aspect ?? (window.innerWidth / window.innerHeight)) {
@@ -565,6 +639,15 @@ export class GameApp {
     this.camera.updateProjectionMatrix();
     this.runtime?.weaponManager?.setBaseFov(verticalFov);
     this.runtime?.playerController?.setBaseFov(verticalFov);
+    this.persistRuntimeSettings();
+  }
+
+  persistRuntimeSettings() {
+    persistSettings({
+      mouseSensitivity: this.mouseSensitivity,
+      horizontalFov: this.baseHorizontalFov,
+      masterVolume: this.audioManager.getMasterVolume(),
+    });
   }
 
   onResize() {
@@ -578,6 +661,10 @@ export class GameApp {
 
   updateFrameStats(delta) {
     this.damageVignette = Math.max(0, this.damageVignette - delta * 1.8);
+    this.damageIndicators.front = Math.max(0, this.damageIndicators.front - delta * 2.8);
+    this.damageIndicators.right = Math.max(0, this.damageIndicators.right - delta * 2.8);
+    this.damageIndicators.back = Math.max(0, this.damageIndicators.back - delta * 2.8);
+    this.damageIndicators.left = Math.max(0, this.damageIndicators.left - delta * 2.8);
     this.hitDamagePopups = this.hitDamagePopups
       .map((popup) => ({
         ...popup,
@@ -748,6 +835,9 @@ export class GameApp {
         onLocalPlayerHit: () => {
           this.damageVignette = Math.min(1, this.damageVignette + 0.35);
         },
+        onLocalPlayerDamageTaken: (event) => {
+          this.registerDamageIndicator(event);
+        },
       });
 
       const authoritativeCorrection = this.networkClient.consumeLocalCorrection();
@@ -760,6 +850,60 @@ export class GameApp {
     this.networkClient.suspendGameplaySync({
       preserveRemotePlayers: this.runtime.playerController.getMovementMode?.() === 'fly',
     });
+  }
+
+  registerDamageIndicator(event) {
+    const direction = this.getDamageIndicatorDirection(event);
+    if (!direction) {
+      return;
+    }
+
+    this.damageIndicators[direction] = Math.max(
+      Number(this.damageIndicators[direction] ?? 0),
+      1,
+    );
+  }
+
+  getDamageIndicatorDirection(event) {
+    const attackerPlayerId = String(event?.attackerPlayerId ?? '');
+    if (!attackerPlayerId) {
+      return null;
+    }
+
+    const playerController = this.runtime?.playerController;
+    if (!playerController) {
+      return null;
+    }
+
+    const attacker = this.networkClient.getRemotePlayers()
+      .find((candidate) => candidate?.playerId === attackerPlayerId);
+    const attackerPosition = attacker?.position;
+    if (!attackerPosition) {
+      return null;
+    }
+
+    const deltaX = Number(attackerPosition.x ?? 0) - Number(playerController.position.x ?? 0);
+    const deltaZ = Number(attackerPosition.z ?? 0) - Number(playerController.position.z ?? 0);
+    const length = Math.hypot(deltaX, deltaZ);
+    if (length <= 1e-5) {
+      return null;
+    }
+
+    const dirX = deltaX / length;
+    const dirZ = deltaZ / length;
+    const yaw = Number(playerController.yawAngle ?? 0);
+    const forwardX = -Math.sin(yaw);
+    const forwardZ = -Math.cos(yaw);
+    const rightX = Math.cos(yaw);
+    const rightZ = -Math.sin(yaw);
+    const forwardDot = (dirX * forwardX) + (dirZ * forwardZ);
+    const rightDot = (dirX * rightX) + (dirZ * rightZ);
+
+    if (Math.abs(forwardDot) >= Math.abs(rightDot)) {
+      return forwardDot >= 0 ? 'front' : 'back';
+    }
+
+    return rightDot >= 0 ? 'right' : 'left';
   }
 
   updatePlayerPresentation(delta) {
