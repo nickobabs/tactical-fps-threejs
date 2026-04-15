@@ -294,7 +294,7 @@ export function createRemoteCharacterTuningPanelUi({
 
   const panel = createBasePanel({
     titleText: 'Remote Body Tuning',
-    helpText: 'F6 toggle • model scale + aim axes',
+    helpText: 'F6 toggle • model scale, aim, and hit volume sizing',
     side: 'left',
     width: '340px',
   });
@@ -332,7 +332,7 @@ export function createRemoteCharacterTuningPanelUi({
     row.appendChild(number);
 
     panel.appendChild(row);
-    return { spec, range, number };
+    return { spec, row, range, number };
   };
 
   const modelScaleControl = createRow({ label: 'Model Scale', min: 0.9, max: 1.35, step: 0.005 });
@@ -369,12 +369,24 @@ export function createRemoteCharacterTuningPanelUi({
   const weaponAxisSelect = createSelectRow('Weapon Axis', ['x', 'y', 'z']);
   const proxyWeaponAxisSelect = createSelectRow('Proxy Axis', ['x', 'y', 'z']);
   const boneAxisSelect = createSelectRow('Bone Axis', ['x', 'y', 'z']);
+  const hitVolumeSelect = createSelectRow('Hit Volume', ['head', 'torso', 'pelvis', 'arms', 'hands', 'legs']);
   const boneStrengthControl = createRow({ label: 'Bone Str', min: 0, max: 4, step: 0.05 });
   const weaponStrengthControl = createRow({ label: 'Weap Str', min: 0, max: 3, step: 0.05 });
   const headOffsetXControl = createRow({ label: 'Head X', min: -0.3, max: 0.3, step: 0.005 });
   const headOffsetYControl = createRow({ label: 'Head Y', min: -0.3, max: 0.3, step: 0.005 });
   const headOffsetZControl = createRow({ label: 'Head Z', min: -0.3, max: 0.3, step: 0.005 });
-  const headRadiusControl = createRow({ label: 'Head Rad', min: 0.04, max: 0.25, step: 0.005 });
+  const headWidthControl = createRow({ label: 'Head W', min: 0.08, max: 0.5, step: 0.005 });
+  const headHeightControl = createRow({ label: 'Head H', min: 0.08, max: 0.5, step: 0.005 });
+  const headDepthControl = createRow({ label: 'Head D', min: 0.08, max: 0.5, step: 0.005 });
+  const torsoRadiusControl = createRow({ label: 'Torso Rad', min: 0.05, max: 0.35, step: 0.005 });
+  const torsoLengthPaddingControl = createRow({ label: 'Torso Len', min: -0.5, max: 0.5, step: 0.005 });
+  const pelvisRadiusControl = createRow({ label: 'Pelvis Rad', min: 0.05, max: 0.35, step: 0.005 });
+  const pelvisLengthPaddingControl = createRow({ label: 'Pelvis Len', min: -0.5, max: 0.5, step: 0.005 });
+  const armRadiusControl = createRow({ label: 'Arm Rad', min: 0.03, max: 0.24, step: 0.005 });
+  const armLengthPaddingControl = createRow({ label: 'Arm Len', min: -0.4, max: 0.4, step: 0.005 });
+  const handRadiusControl = createRow({ label: 'Hand Rad', min: 0.03, max: 0.22, step: 0.005 });
+  const legRadiusControl = createRow({ label: 'Leg Rad', min: 0.04, max: 0.28, step: 0.005 });
+  const legLengthPaddingControl = createRow({ label: 'Leg Len', min: -0.5, max: 0.5, step: 0.005 });
 
   const localHitboxDebugRow = document.createElement('label');
   localHitboxDebugRow.style.display = 'flex';
@@ -404,6 +416,25 @@ export function createRemoteCharacterTuningPanelUi({
 
   document.body.appendChild(panel);
 
+  const hitboxControlGroups = {
+    head: [headOffsetXControl, headOffsetYControl, headOffsetZControl, headWidthControl, headHeightControl, headDepthControl],
+    torso: [torsoRadiusControl, torsoLengthPaddingControl],
+    pelvis: [pelvisRadiusControl, pelvisLengthPaddingControl],
+    arms: [armRadiusControl, armLengthPaddingControl],
+    hands: [handRadiusControl],
+    legs: [legRadiusControl, legLengthPaddingControl],
+  };
+
+  function updateHitboxControlVisibility() {
+    const selectedGroup = hitVolumeSelect.value || 'head';
+    for (const [groupKey, controls] of Object.entries(hitboxControlGroups)) {
+      const visible = groupKey === selectedGroup;
+      for (const control of controls) {
+        control.row.style.display = visible ? 'grid' : 'none';
+      }
+    }
+  }
+
   function syncModelScale() {
     const value = getRemoteCharacterModelScale();
     const text = String(Number(value).toFixed(3));
@@ -429,11 +460,45 @@ export function createRemoteCharacterTuningPanelUi({
     const headOffsetZText = String(Number(hitboxes.headOffset.z).toFixed(3));
     headOffsetZControl.range.value = headOffsetZText;
     headOffsetZControl.number.value = headOffsetZText;
-    const headRadiusText = String(Number(hitboxes.headRadius).toFixed(3));
-    headRadiusControl.range.value = headRadiusText;
-    headRadiusControl.number.value = headRadiusText;
+    const headWidthText = String(Number(hitboxes.headSize.x).toFixed(3));
+    headWidthControl.range.value = headWidthText;
+    headWidthControl.number.value = headWidthText;
+    const headHeightText = String(Number(hitboxes.headSize.y).toFixed(3));
+    headHeightControl.range.value = headHeightText;
+    headHeightControl.number.value = headHeightText;
+    const headDepthText = String(Number(hitboxes.headSize.z).toFixed(3));
+    headDepthControl.range.value = headDepthText;
+    headDepthControl.number.value = headDepthText;
+    const torsoRadiusText = String(Number(hitboxes.torsoRadius).toFixed(3));
+    torsoRadiusControl.range.value = torsoRadiusText;
+    torsoRadiusControl.number.value = torsoRadiusText;
+    const torsoLengthPaddingText = String(Number(hitboxes.torsoLengthPadding).toFixed(3));
+    torsoLengthPaddingControl.range.value = torsoLengthPaddingText;
+    torsoLengthPaddingControl.number.value = torsoLengthPaddingText;
+    const pelvisRadiusText = String(Number(hitboxes.pelvisRadius).toFixed(3));
+    pelvisRadiusControl.range.value = pelvisRadiusText;
+    pelvisRadiusControl.number.value = pelvisRadiusText;
+    const pelvisLengthPaddingText = String(Number(hitboxes.pelvisLengthPadding).toFixed(3));
+    pelvisLengthPaddingControl.range.value = pelvisLengthPaddingText;
+    pelvisLengthPaddingControl.number.value = pelvisLengthPaddingText;
+    const armRadiusText = String(Number(hitboxes.armRadius).toFixed(3));
+    armRadiusControl.range.value = armRadiusText;
+    armRadiusControl.number.value = armRadiusText;
+    const armLengthPaddingText = String(Number(hitboxes.armLengthPadding).toFixed(3));
+    armLengthPaddingControl.range.value = armLengthPaddingText;
+    armLengthPaddingControl.number.value = armLengthPaddingText;
+    const handRadiusText = String(Number(hitboxes.handRadius).toFixed(3));
+    handRadiusControl.range.value = handRadiusText;
+    handRadiusControl.number.value = handRadiusText;
+    const legRadiusText = String(Number(hitboxes.legRadius).toFixed(3));
+    legRadiusControl.range.value = legRadiusText;
+    legRadiusControl.number.value = legRadiusText;
+    const legLengthPaddingText = String(Number(hitboxes.legLengthPadding).toFixed(3));
+    legLengthPaddingControl.range.value = legLengthPaddingText;
+    legLengthPaddingControl.number.value = legLengthPaddingText;
     const debug = getRemoteDebugSettings();
     localHitboxDebugToggle.checked = Boolean(debug.localHitboxDebug);
+    updateHitboxControlVisibility();
   }
 
   const applyModelScale = (rawValue) => {
@@ -495,22 +560,80 @@ export function createRemoteCharacterTuningPanelUi({
   bindHeadOffset(headOffsetYControl, 'y');
   bindHeadOffset(headOffsetZControl, 'z');
 
-  const applyHeadRadius = (rawValue) => {
-    const nextValue = Number(rawValue);
-    if (!Number.isFinite(nextValue)) {
-      return;
-    }
-    const current = getRemoteHitboxSettings();
-    window.__remoteWeaponTuning.setHitboxes({
-      ...current,
-      headRadius: nextValue,
-    });
-    const text = String(Number(nextValue).toFixed(3));
-    headRadiusControl.range.value = text;
-    headRadiusControl.number.value = text;
+  const bindHeadSize = (control, axis) => {
+    const applyValue = (rawValue) => {
+      const nextValue = Number(rawValue);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      const current = getRemoteHitboxSettings();
+      const nextHeadSize = {
+        ...current.headSize,
+        [axis]: nextValue,
+      };
+      window.__remoteWeaponTuning.setHitboxes({
+        headSize: nextHeadSize,
+        headRadius: Math.max(nextHeadSize.x, nextHeadSize.y, nextHeadSize.z) * 0.5,
+      });
+      const text = String(Number(nextValue).toFixed(3));
+      control.range.value = text;
+      control.number.value = text;
+    };
+    control.range.addEventListener('input', (event) => applyValue(event.target.value));
+    control.number.addEventListener('input', (event) => applyValue(event.target.value));
   };
-  headRadiusControl.range.addEventListener('input', (event) => applyHeadRadius(event.target.value));
-  headRadiusControl.number.addEventListener('input', (event) => applyHeadRadius(event.target.value));
+
+  bindHeadSize(headWidthControl, 'x');
+  bindHeadSize(headHeightControl, 'y');
+  bindHeadSize(headDepthControl, 'z');
+
+  const bindHitboxRadius = (control, key) => {
+    const applyValue = (rawValue) => {
+      const nextValue = Number(rawValue);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      window.__remoteWeaponTuning.setHitboxes({
+        [key]: nextValue,
+      });
+      const text = String(Number(nextValue).toFixed(3));
+      control.range.value = text;
+      control.number.value = text;
+    };
+    control.range.addEventListener('input', (event) => applyValue(event.target.value));
+    control.number.addEventListener('input', (event) => applyValue(event.target.value));
+  };
+
+  bindHitboxRadius(torsoRadiusControl, 'torsoRadius');
+  bindHitboxRadius(pelvisRadiusControl, 'pelvisRadius');
+  bindHitboxRadius(armRadiusControl, 'armRadius');
+  bindHitboxRadius(handRadiusControl, 'handRadius');
+  bindHitboxRadius(legRadiusControl, 'legRadius');
+
+  const bindHitboxLengthPadding = (control, key) => {
+    const applyValue = (rawValue) => {
+      const nextValue = Number(rawValue);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      window.__remoteWeaponTuning.setHitboxes({
+        [key]: nextValue,
+      });
+      const text = String(Number(nextValue).toFixed(3));
+      control.range.value = text;
+      control.number.value = text;
+    };
+    control.range.addEventListener('input', (event) => applyValue(event.target.value));
+    control.number.addEventListener('input', (event) => applyValue(event.target.value));
+  };
+
+  bindHitboxLengthPadding(torsoLengthPaddingControl, 'torsoLengthPadding');
+  bindHitboxLengthPadding(pelvisLengthPaddingControl, 'pelvisLengthPadding');
+  bindHitboxLengthPadding(armLengthPaddingControl, 'armLengthPadding');
+  bindHitboxLengthPadding(legLengthPaddingControl, 'legLengthPadding');
+
+  hitVolumeSelect.addEventListener('change', () => updateHitboxControlVisibility());
+
   localHitboxDebugToggle.addEventListener('change', () => {
     window.__remoteWeaponTuning.setDebug({
       localHitboxDebug: localHitboxDebugToggle.checked,
@@ -544,6 +667,7 @@ export function createRemoteCharacterTuningPanelUi({
   window.addEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING, handleDebugMenuToggle);
   ensureRemoteWeaponTuning();
   syncModelScale();
+  updateHitboxControlVisibility();
 
   return {
     destroy() {

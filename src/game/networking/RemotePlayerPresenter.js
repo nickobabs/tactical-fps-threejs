@@ -777,6 +777,34 @@ function createRemoteHitSphereDebugMesh(color) {
   return mesh;
 }
 
+function updateRemoteHitEllipsoidDebugMesh(debugMesh, ellipsoid) {
+  if (!debugMesh || !ellipsoid?.center) {
+    return;
+  }
+
+  debugMesh.position.set(
+    Number(ellipsoid.center.x ?? 0),
+    Number(ellipsoid.center.y ?? 0),
+    Number(ellipsoid.center.z ?? 0),
+  );
+  debugMesh.scale.set(
+    Math.max(0.001, Number(ellipsoid.size?.x ?? Number(ellipsoid.radius ?? 0.15) * 2) * 0.5),
+    Math.max(0.001, Number(ellipsoid.size?.y ?? Number(ellipsoid.radius ?? 0.15) * 2) * 0.5),
+    Math.max(0.001, Number(ellipsoid.size?.z ?? Number(ellipsoid.radius ?? 0.15) * 2) * 0.5),
+  );
+
+  if (ellipsoid.right && ellipsoid.up && ellipsoid.forward) {
+    const basis = new THREE.Matrix4().makeBasis(
+      REMOTE_FORWARD.set(ellipsoid.right.x, ellipsoid.right.y, ellipsoid.right.z),
+      REMOTE_RIGHT.set(ellipsoid.up.x, ellipsoid.up.y, ellipsoid.up.z),
+      REMOTE_MOVE_VECTOR.set(ellipsoid.forward.x, ellipsoid.forward.y, ellipsoid.forward.z),
+    );
+    debugMesh.quaternion.setFromRotationMatrix(basis);
+  } else {
+    debugMesh.quaternion.identity();
+  }
+}
+
 function updateRemoteHitCapsuleDebugMesh(debugMesh, segment) {
   REMOTE_HITBOX_SEGMENT_START.set(segment.start.x, segment.start.y, segment.start.z);
   REMOTE_HITBOX_SEGMENT_END.set(segment.end.x, segment.end.y, segment.end.z);
@@ -881,8 +909,15 @@ function updateRemoteHitVolumeDebugGroup(debugGroup, player) {
     activeWeaponKey: player.activeWeaponKey ?? 'rifle',
   }, REMOTE_HITBOX_LAYOUT);
 
-  debugGroup.head.position.set(layout.head.center.x, layout.head.center.y, layout.head.center.z);
-  debugGroup.head.scale.setScalar(layout.head.radius);
+  updateRemoteHitEllipsoidDebugMesh(debugGroup.head, {
+    center: layout.head.center,
+    radius: layout.head.radius,
+    size: {
+      x: layout.head.radius * 2,
+      y: layout.head.radius * 2,
+      z: layout.head.radius * 2,
+    },
+  });
   updateRemoteHitCapsuleDebugMesh(debugGroup.torso, layout.torso);
   updateRemoteHitCapsuleDebugMesh(debugGroup.pelvis, layout.pelvis);
   updateRemoteHitCapsuleDebugMesh(debugGroup.arms[0], layout.arms[0]);
@@ -904,8 +939,7 @@ function updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, hitboxes) {
     return false;
   }
 
-  debugGroup.head.position.set(hitboxes.head.center.x, hitboxes.head.center.y, hitboxes.head.center.z);
-  debugGroup.head.scale.setScalar(hitboxes.head.radius);
+  updateRemoteHitEllipsoidDebugMesh(debugGroup.head, hitboxes.head);
   updateRemoteHitCapsuleDebugMesh(debugGroup.torso, hitboxes.torso);
   updateRemoteHitCapsuleDebugMesh(debugGroup.pelvis, hitboxes.pelvis);
 
@@ -958,6 +992,16 @@ function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones) {
     points: REMOTE_LOCAL_HITBOX_POINTS,
     headOffset: hitboxSettings.headOffset,
     headRadius: hitboxSettings.headRadius,
+    headSize: hitboxSettings.headSize,
+    torsoRadius: hitboxSettings.torsoRadius,
+    torsoLengthPadding: hitboxSettings.torsoLengthPadding,
+    pelvisRadius: hitboxSettings.pelvisRadius,
+    pelvisLengthPadding: hitboxSettings.pelvisLengthPadding,
+    armRadius: hitboxSettings.armRadius,
+    armLengthPadding: hitboxSettings.armLengthPadding,
+    handRadius: hitboxSettings.handRadius,
+    legRadius: hitboxSettings.legRadius,
+    legLengthPadding: hitboxSettings.legLengthPadding,
   }, REMOTE_LOCAL_HITBOX_SNAPSHOT);
 
   return updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, localSnapshot);
@@ -2128,10 +2172,21 @@ export class RemotePlayerPresenter {
       point.z = REMOTE_HITBOX_WORLD_POINT_A.z;
     }
 
+    const hitboxSettings = getRemoteHitboxSettings();
     const localSnapshot = buildRemoteHitboxSnapshotFromPoints({
       points: REMOTE_LOCAL_HITBOX_POINTS,
-      headOffset: getRemoteHitboxSettings().headOffset,
-      headRadius: getRemoteHitboxSettings().headRadius,
+      headOffset: hitboxSettings.headOffset,
+      headRadius: hitboxSettings.headRadius,
+      headSize: hitboxSettings.headSize,
+      torsoRadius: hitboxSettings.torsoRadius,
+      torsoLengthPadding: hitboxSettings.torsoLengthPadding,
+      pelvisRadius: hitboxSettings.pelvisRadius,
+      pelvisLengthPadding: hitboxSettings.pelvisLengthPadding,
+      armRadius: hitboxSettings.armRadius,
+      armLengthPadding: hitboxSettings.armLengthPadding,
+      handRadius: hitboxSettings.handRadius,
+      legRadius: hitboxSettings.legRadius,
+      legLengthPadding: hitboxSettings.legLengthPadding,
     }, createRemoteHitboxSnapshot());
 
     const signature = JSON.stringify({

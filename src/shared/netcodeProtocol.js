@@ -97,6 +97,37 @@ export function createBombDefuseMessage(state) {
   };
 }
 
+export function createSmokeBloomMessage(state) {
+  return {
+    position: {
+      x: Number(state?.position?.x ?? 0),
+      y: Number(state?.position?.y ?? 0),
+      z: Number(state?.position?.z ?? 0),
+    },
+  };
+}
+
+export function createSmokeThrowMessage(state) {
+  return {
+    origin: {
+      x: Number(state?.origin?.x ?? 0),
+      y: Number(state?.origin?.y ?? 0),
+      z: Number(state?.origin?.z ?? 0),
+    },
+    direction: {
+      x: Number(state?.direction?.x ?? 0),
+      y: Number(state?.direction?.y ?? 0),
+      z: Number(state?.direction?.z ?? -1),
+    },
+    inheritedVelocity: {
+      x: Number(state?.inheritedVelocity?.x ?? 0),
+      y: Number(state?.inheritedVelocity?.y ?? 0),
+      z: Number(state?.inheritedVelocity?.z ?? 0),
+    },
+    speed: Number(state?.speed ?? 15.2),
+  };
+}
+
 export function normalizeAuthoritativePlayerState(playerId, state) {
   return {
     playerId,
@@ -118,6 +149,7 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     isGrounded: Boolean(state?.isGrounded),
     isCrouched: Boolean(state?.isCrouched),
     currentHeight: Number(state?.currentHeight ?? 1.72),
+    airborneMaxSpeed: state?.airborneMaxSpeed == null ? null : Number(state.airborneMaxSpeed),
     health: Number(state?.health ?? 100),
     maxHealth: Number(state?.maxHealth ?? 100),
     isAlive: Boolean(state?.isAlive ?? true),
@@ -155,6 +187,9 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     isGrounded: Boolean(player?.motionState?.isGrounded),
     isCrouched: Boolean(player?.motionState?.isCrouched),
     currentHeight: Number(player?.motionState?.currentHeight ?? 1.72),
+    airborneMaxSpeed: player?.motionState?.airborneMaxSpeed == null
+      ? null
+      : Number(player.motionState.airborneMaxSpeed),
     lastProcessedSequence: Number(player?.lastProcessedSequence ?? 0),
     lastProcessedTimestamp: Number(player?.lastProcessedTimestamp ?? 0),
     health: Number(player?.health ?? 100),

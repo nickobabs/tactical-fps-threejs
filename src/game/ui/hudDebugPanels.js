@@ -39,6 +39,8 @@ function buildDebugText(networkDebug, movement, { ignoreLocalCorrections = false
     Math.abs(movement.correctionAlongVelocity ?? 0),
     Math.max(0, networkDebug.snapshotAgeMs),
   );
+  const footstepAudio = networkDebug.audioDebug?.lastFootstep ?? null;
+  const weaponAudio = networkDebug.audioDebug?.lastWeapon ?? null;
   return [
     'NETDEBUG',
     `ignore_local_corrections=${Boolean(ignoreLocalCorrections)}`,
@@ -65,6 +67,15 @@ function buildDebugText(networkDebug, movement, { ignoreLocalCorrections = false
     `cur_pos=${movement.currentPositionDetailText ?? '0.00, 0.00, 0.00'}`,
     `auth_pos=${movement.authoritativePositionText ?? '0.00, 0.00, 0.00'}`,
     `replay_pos=${movement.replayPositionText ?? '0.00, 0.00, 0.00'}`,
+    footstepAudio
+      ? `audio_footstep dist=${footstepAudio.distance.toFixed(2)} base=${footstepAudio.baseVolume.toFixed(3)} manual=${footstepAudio.manualVolume.toFixed(3)} spatial=${footstepAudio.spatialVolumeMultiplier.toFixed(3)} final=${footstepAudio.finalVolume.toFixed(3)} age_ms=${Math.round(footstepAudio.ageMs ?? 0)}`
+      : 'audio_footstep none',
+    footstepAudio
+      ? `audio_footstep_range min=${footstepAudio.minDistance.toFixed(2)} max=${footstepAudio.maxDistance.toFixed(2)} panner=${footstepAudio.panningModel} rolloff=${footstepAudio.rolloffFactor.toFixed(3)}`
+      : 'audio_footstep_range none',
+    weaponAudio
+      ? `audio_weapon dist=${weaponAudio.distance.toFixed(2)} base=${weaponAudio.baseVolume.toFixed(3)} manual=${weaponAudio.manualVolume.toFixed(3)} spatial=${weaponAudio.spatialVolumeMultiplier.toFixed(3)} final=${weaponAudio.finalVolume.toFixed(3)} age_ms=${Math.round(weaponAudio.ageMs ?? 0)}`
+      : 'audio_weapon none',
     `input=${movement.inputFlags ?? '-'} target_speed=${(movement.targetSpeed ?? 0).toFixed(3)} speed_ratio=${(movement.speedRatio ?? 0).toFixed(3)}`,
     `target_xz=${movement.targetVectorText ?? '0.00, 0.00'} vel_xz=${movement.velocityVectorText ?? '0.00, 0.00'}`,
     `sim_step_move=${movement.simulationDeltaMagnitude.toFixed(3)} speed=${movement.speed.toFixed(3)}`,

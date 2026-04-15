@@ -10,6 +10,8 @@ import {
   createPlayerFireMessage,
   createPlayerInputMessage,
   createPlayerReadyMessage,
+  createSmokeBloomMessage,
+  createSmokeThrowMessage,
   createPlayerStatusMessage,
   normalizeAuthoritativePlayerState,
 } from '../../shared/netcodeProtocol.js';
@@ -31,6 +33,27 @@ function getNow() {
   }
 
   return Date.now();
+}
+
+function formatAudioDebugEntry(entry, now) {
+  if (!entry) {
+    return null;
+  }
+
+  return {
+    eventType: entry.eventType ?? 'unknown',
+    soundKey: entry.soundKey ?? 'unknown',
+    distance: Number(entry.distance ?? 0),
+    baseVolume: Number(entry.baseVolume ?? 0),
+    manualVolume: Number(entry.manualVolume ?? 0),
+    spatialVolumeMultiplier: Number(entry.spatialVolumeMultiplier ?? 0),
+    finalVolume: Number(entry.finalVolume ?? 0),
+    minDistance: Number(entry.minDistance ?? 0),
+    maxDistance: Number(entry.maxDistance ?? 0),
+    rolloffFactor: Number(entry.rolloffFactor ?? 0),
+    panningModel: String(entry.panningModel ?? 'unknown'),
+    ageMs: Number(now - Number(entry.recordedAt ?? now)),
+  };
 }
 
 function lerp(start, end, alpha) {
@@ -66,6 +89,20 @@ function hasSameSphere(a, b) {
   return a && b && hasSamePoint(a.center, b.center) && a.radius === b.radius;
 }
 
+function hasSameVector(a, b) {
+  return a && b && a.x === b.x && a.y === b.y && a.z === b.z;
+}
+
+function hasSameHead(a, b) {
+  return a && b
+    && hasSamePoint(a.center, b.center)
+    && a.radius === b.radius
+    && hasSameVector(a.size, b.size)
+    && hasSameVector(a.right, b.right)
+    && hasSameVector(a.up, b.up)
+    && hasSameVector(a.forward, b.forward);
+}
+
 function hasSameHitboxes(a, b) {
   if (a === b) {
     return true;
@@ -73,7 +110,7 @@ function hasSameHitboxes(a, b) {
   if (!a || !b) {
     return !a && !b;
   }
-  if (!hasSameSphere(a.head, b.head) || !hasSameSegment(a.torso, b.torso) || !hasSameSegment(a.pelvis, b.pelvis)) {
+  if (!hasSameHead(a.head, b.head) || !hasSameSegment(a.torso, b.torso) || !hasSameSegment(a.pelvis, b.pelvis)) {
     return false;
   }
   const armsA = a.arms ?? [];
@@ -167,6 +204,7 @@ export class NetworkClient {
     this.lastPingReceivedAt = 0;
     this.roundState = null;
     this.objectiveState = null;
+    this.audioDebugState = null;
 
     void this.connect();
   }
@@ -529,6 +567,24 @@ export class NetworkClient {
     return true;
   }
 
+  sendSmokeBloom(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('smoke-bloom', createSmokeBloomMessage(state));
+    return true;
+  }
+
+  sendSmokeThrow(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('smoke-throw', createSmokeThrowMessage(state));
+    return true;
+  }
+
   sendRemoteHitboxAudit(audit) {
     if (!this.room || !audit) {
       return false;
@@ -757,7 +813,17 @@ export class NetworkClient {
       pingEstimatedNetworkMs: this.lastPingEstimatedNetworkMs,
       pingAgeMs: this.lastPingReceivedAt > 0 ? Math.round(now - this.lastPingReceivedAt) : -1,
       pingPending: this.pendingPingId > 0,
+      audioDebug: this.audioDebugState
+        ? {
+          lastFootstep: formatAudioDebugEntry(this.audioDebugState.lastFootstep, now),
+          lastWeapon: formatAudioDebugEntry(this.audioDebugState.lastWeapon, now),
+        }
+        : null,
     };
+  }
+
+  setAudioDebugState(audioDebugState) {
+    this.audioDebugState = audioDebugState ?? null;
   }
 
   destroy() {
@@ -786,6 +852,7 @@ export class NetworkClient {
     this.lastPingReceivedAt = 0;
     this.roundState = null;
     this.objectiveState = null;
+    this.audioDebugState = null;
 
     if (this.room) {
       void this.room.leave().catch((error) => {

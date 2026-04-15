@@ -16,6 +16,7 @@ import {
   createPlayerInputMessage,
   createPlayerFireMessage,
   createPlayerReadyMessage,
+  createSmokeThrowMessage,
   createPlayerStatusMessage,
   serializeAuthoritativePlayerState,
 } from '../../../src/shared/netcodeProtocol.js';
@@ -43,6 +44,7 @@ import {
   REMOTE_FOOTSTEP_SAMPLE_COUNT,
   REMOTE_FOOTSTEP_STRIDE_DISTANCE_CROUCH,
   REMOTE_FOOTSTEP_STRIDE_DISTANCE_WALK,
+  REMOTE_UTILITY_AUDIO,
   REMOTE_WEAPON_AUDIO,
 } from '../../../src/shared/audioEvents.js';
 import { RoundManager } from '../../../src/game/rounds/RoundManager.js';
@@ -94,6 +96,8 @@ const SERVER_OBJECTIVE_STEP = 1 / NETCODE_SIMULATION_RATE;
 const BOMB_DEFUSE_MAX_DISTANCE = 2.4;
 const BOMB_DEFUSE_AIM_DOT_THRESHOLD = 0.96;
 const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
+const SMOKE_BLOOM_MAX_VALIDATE_DISTANCE = 32;
+const SMOKE_THROW_MAX_VALIDATE_DISTANCE = 3;
 
 async function appendRemoteHitboxAudit(entry) {
   await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
@@ -130,6 +134,16 @@ function buildAuthoritativeHitboxes(player) {
     points: hitboxPoints,
     headOffset: REMOTE_CHARACTER_HITBOX_SETTINGS.headOffset ?? REMOTE_HITBOX_HEAD_OFFSET,
     headRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.headRadius,
+    headSize: REMOTE_CHARACTER_HITBOX_SETTINGS.headSize,
+    torsoRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoRadius,
+    torsoLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoLengthPadding,
+    pelvisRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisRadius,
+    pelvisLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisLengthPadding,
+    armRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.armRadius,
+    armLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.armLengthPadding,
+    handRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.handRadius,
+    legRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.legRadius,
+    legLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.legLengthPadding,
   }, player.authoritativeHitboxes ?? createRemoteHitboxSnapshot());
 }
 
@@ -149,6 +163,53 @@ function getRaySphereHitDistance(ray, center, radius, maxDistance) {
   }
 
   return Math.max(0, projectedDistance);
+}
+
+function getRayEllipsoidHitDistance(ray, ellipsoid, maxDistance) {
+  const center = ellipsoid?.center ?? null;
+  const size = ellipsoid?.size ?? null;
+  const right = ellipsoid?.right ?? null;
+  const up = ellipsoid?.up ?? null;
+  const forward = ellipsoid?.forward ?? null;
+  if (!center || !size || !right || !up || !forward) {
+    return Infinity;
+  }
+
+  const halfX = Math.max(1e-6, Number(size.x ?? 0) * 0.5);
+  const halfY = Math.max(1e-6, Number(size.y ?? 0) * 0.5);
+  const halfZ = Math.max(1e-6, Number(size.z ?? 0) * 0.5);
+  TARGET_TEST_VECTOR.set(
+    Number(ray.origin.x ?? 0) - Number(center.x ?? 0),
+    Number(ray.origin.y ?? 0) - Number(center.y ?? 0),
+    Number(ray.origin.z ?? 0) - Number(center.z ?? 0),
+  );
+  TARGET_RIGHT.set(Number(right.x ?? 1), Number(right.y ?? 0), Number(right.z ?? 0)).normalize();
+  TARGET_FORWARD.set(Number(up.x ?? 0), Number(up.y ?? 1), Number(up.z ?? 0)).normalize();
+  TARGET_SHOULDER.set(Number(forward.x ?? 0), Number(forward.y ?? 0), Number(forward.z ?? -1)).normalize();
+
+  const originX = TARGET_TEST_VECTOR.dot(TARGET_RIGHT) / halfX;
+  const originY = TARGET_TEST_VECTOR.dot(TARGET_FORWARD) / halfY;
+  const originZ = TARGET_TEST_VECTOR.dot(TARGET_SHOULDER) / halfZ;
+  const directionX = ray.direction.dot(TARGET_RIGHT) / halfX;
+  const directionY = ray.direction.dot(TARGET_FORWARD) / halfY;
+  const directionZ = ray.direction.dot(TARGET_SHOULDER) / halfZ;
+
+  const a = (directionX * directionX) + (directionY * directionY) + (directionZ * directionZ);
+  const b = 2 * ((originX * directionX) + (originY * directionY) + (originZ * directionZ));
+  const c = (originX * originX) + (originY * originY) + (originZ * originZ) - 1;
+  const discriminant = (b * b) - (4 * a * c);
+  if (a <= 1e-8 || discriminant < 0) {
+    return Infinity;
+  }
+
+  const sqrtDiscriminant = Math.sqrt(discriminant);
+  const nearDistance = (-b - sqrtDiscriminant) / (2 * a);
+  const farDistance = (-b + sqrtDiscriminant) / (2 * a);
+  const hitDistance = nearDistance >= 0 ? nearDistance : farDistance;
+  if (!Number.isFinite(hitDistance) || hitDistance < 0 || hitDistance >= maxDistance) {
+    return Infinity;
+  }
+  return hitDistance;
 }
 
 function getRayCapsuleHitDistance(ray, start, end, radius, maxDistance) {
@@ -286,7 +347,9 @@ function getAuthoritativeHitboxSnapshotResult(ray, hitboxes, maxDistance, curren
 
   TARGET_POINT.set(hitboxes.head.center.x, hitboxes.head.center.y, hitboxes.head.center.z);
   {
-    const hitDistance = getRaySphereHitDistance(ray, TARGET_POINT, Number(hitboxes.head.radius ?? REMOTE_HITBOX_RADII.head), bestDistance);
+    const hitDistance = hitboxes.head?.size && hitboxes.head?.right && hitboxes.head?.up && hitboxes.head?.forward
+      ? getRayEllipsoidHitDistance(ray, hitboxes.head, bestDistance)
+      : getRaySphereHitDistance(ray, TARGET_POINT, Number(hitboxes.head.radius ?? REMOTE_HITBOX_RADII.head), bestDistance);
     if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
       bestDistance = hitDistance;
       bestHitZone = 'head';
@@ -700,12 +763,13 @@ export class TacticalRoom extends Room {
             y: Number(player.motionState.position.y ?? 0),
             z: Number(player.motionState.position.z ?? 0),
           };
-          player.pitch = Number(nextInput.pitch ?? player.pitch ?? 0);
-          player.motionState = simulatePlayerMovement(player.motionState, nextInput, NETCODE_SIMULATION_STEP, {
-            groundHeight: collisionWorld?.getGroundHeight() ?? 0,
-            speedMultiplier: Number(nextInput.speedMultiplier ?? 1),
-            resolvePosition: collisionWorld
-              ? (position, radius, height, movementDelta) => {
+            const wasGroundedBeforeStep = Boolean(player.motionState?.isGrounded);
+            player.pitch = Number(nextInput.pitch ?? player.pitch ?? 0);
+            player.motionState = simulatePlayerMovement(player.motionState, nextInput, NETCODE_SIMULATION_STEP, {
+              groundHeight: collisionWorld?.getGroundHeight() ?? 0,
+              speedMultiplier: Number(nextInput.speedMultiplier ?? 1),
+              resolvePosition: collisionWorld
+                ? (position, radius, height, movementDelta) => {
                 const moved = collisionWorld.move(
                   SERVER_MOVE_POSITION.set(position.x, position.y, position.z),
                   radius,
@@ -730,12 +794,12 @@ export class TacticalRoom extends Room {
               : null,
           });
           player.presentationState = this.getPresentationStateForPlayer(player);
-          player.lastProcessedSequence = nextInput.sequence;
-          player.lastProcessedTimestamp = nextInput.timestamp;
-          player.lastDequeuedSequence = nextInput.sequence;
-          player.lastDequeuedTimestamp = nextInput.timestamp;
-          this.updatePlayerFootsteps(player, previousPosition, nextInput);
-        }
+            player.lastProcessedSequence = nextInput.sequence;
+            player.lastProcessedTimestamp = nextInput.timestamp;
+            player.lastDequeuedSequence = nextInput.sequence;
+            player.lastDequeuedTimestamp = nextInput.timestamp;
+            this.updatePlayerFootsteps(player, previousPosition, nextInput, wasGroundedBeforeStep);
+          }
 
         if (player.hitboxRig) {
           updateRemoteHitboxRig(player.hitboxRig, player, NETCODE_SIMULATION_STEP);
@@ -886,6 +950,39 @@ export class TacticalRoom extends Room {
       this.requestStateBroadcast();
     });
 
+    this.onMessage('smoke-throw', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (
+        !player
+        || !player.isReady
+        || !player.isAlive
+        || this.roundManager.phase === 'waiting'
+        || this.roundManager.roundEnded
+      ) {
+        return;
+      }
+
+      const smokeThrow = createSmokeThrowMessage(message);
+      const distanceFromPlayer = Math.hypot(
+        Number(smokeThrow.origin.x ?? 0) - Number(player.motionState?.position?.x ?? 0),
+        Number(smokeThrow.origin.y ?? 0) - (Number(player.motionState?.position?.y ?? 0) + Number(player.motionState?.currentHeight ?? 1.72)),
+        Number(smokeThrow.origin.z ?? 0) - Number(player.motionState?.position?.z ?? 0),
+      );
+      if (!Number.isFinite(distanceFromPlayer) || distanceFromPlayer > SMOKE_THROW_MAX_VALIDATE_DISTANCE) {
+        return;
+      }
+
+      this.broadcast('combat-event', {
+        type: 'smoke-thrown',
+        playerId: player.playerId,
+        mapId: player.mapId,
+        origin: smokeThrow.origin,
+        direction: smokeThrow.direction,
+        inheritedVelocity: smokeThrow.inheritedVelocity,
+        speed: smokeThrow.speed,
+      });
+    });
+
     this.onMessage('bomb-plant', (client, message) => {
       const player = this.players[client.sessionId];
       if (!player) {
@@ -902,6 +999,29 @@ export class TacticalRoom extends Room {
       }
 
       this.handleBombDefuse(player, message);
+    });
+
+    this.onMessage('smoke-bloom', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player || !player.isReady || !player.isAlive) {
+        return;
+      }
+
+      const position = {
+        x: Number(message?.position?.x ?? 0),
+        y: Number(message?.position?.y ?? 0),
+        z: Number(message?.position?.z ?? 0),
+      };
+      const distanceFromPlayer = Math.hypot(
+        position.x - Number(player.motionState?.position?.x ?? 0),
+        position.y - Number(player.motionState?.position?.y ?? 0),
+        position.z - Number(player.motionState?.position?.z ?? 0),
+      );
+      if (!Number.isFinite(distanceFromPlayer) || distanceFromPlayer > SMOKE_BLOOM_MAX_VALIDATE_DISTANCE) {
+        return;
+      }
+
+      this.emitSmokeBloomAudioEvent(player, position);
     });
 
     this.onMessage('request-player-state', (client) => {
@@ -1168,9 +1288,7 @@ export class TacticalRoom extends Room {
       return;
     }
 
-    const profile = player.motionState.isCrouched
-      ? REMOTE_FOOTSTEP_AUDIO.crouch
-      : REMOTE_FOOTSTEP_AUDIO.walk;
+    const profile = REMOTE_FOOTSTEP_AUDIO.walk;
     let sampleIndex = Math.floor(Math.random() * REMOTE_FOOTSTEP_SAMPLE_COUNT);
     if (REMOTE_FOOTSTEP_SAMPLE_COUNT > 1 && sampleIndex === player.lastFootstepSampleIndex) {
       sampleIndex = (sampleIndex + 1) % REMOTE_FOOTSTEP_SAMPLE_COUNT;
@@ -1191,12 +1309,39 @@ export class TacticalRoom extends Room {
       minDistance: profile.minDistance,
       maxDistance: profile.maxDistance,
       rolloffExponent: profile.rolloffExponent,
+      attenuationHoldExponent: profile.attenuationHoldExponent,
+      attenuationCutoffStart: profile.attenuationCutoffStart,
+      attenuationCutoffExponent: profile.attenuationCutoffExponent,
       playback: 'overlap',
-      minIntervalMs: player.motionState.isCrouched ? 80 : 60,
+      minIntervalMs: 60,
     });
   }
 
-  updatePlayerFootsteps(player, previousPosition, inputSnapshot) {
+  emitSmokeBloomAudioEvent(player, position) {
+    const config = REMOTE_UTILITY_AUDIO.smokeBloom;
+    if (!config || !player?.mapId || !position) {
+      return;
+    }
+
+    this.broadcastAudioEvent({
+      type: 'utility-smoke-bloom',
+      sourcePlayerId: player.playerId,
+      mapId: player.mapId,
+      soundKey: config.soundKey,
+      position: {
+        x: Number(position.x ?? 0),
+        y: Number(position.y ?? 0),
+        z: Number(position.z ?? 0),
+      },
+      baseVolume: config.baseVolume,
+      minDistance: config.minDistance,
+      maxDistance: config.maxDistance,
+      rolloffExponent: config.rolloffExponent,
+      playback: 'overlap',
+    });
+  }
+
+  updatePlayerFootsteps(player, previousPosition, inputSnapshot, wasGroundedBeforeStep = false) {
     if (!player?.motionState || !previousPosition) {
       return;
     }
@@ -1213,6 +1358,15 @@ export class TacticalRoom extends Room {
       REMOTE_FOOTSTEP_MIN_HORIZONTAL_SPEED,
       REMOTE_FOOTSTEP_AUDIBLE_SPEED_FLOOR,
     );
+    const landedThisStep = !wasGroundedBeforeStep
+      && Boolean(player.motionState.isGrounded)
+      && !Boolean(player.motionState.isCrouched)
+      && !Boolean(inputSnapshot?.walk);
+    if (landedThisStep) {
+      player.footstepDistance = 0;
+      player.wasFootstepAudible = false;
+      this.emitFootstepAudioEvent(player);
+    }
     const isAudible = Boolean(player.isAlive)
       && Boolean(player.motionState.isGrounded)
       && !Boolean(player.motionState.isCrouched)

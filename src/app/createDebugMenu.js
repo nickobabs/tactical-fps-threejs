@@ -1,5 +1,6 @@
 import {
   DEBUG_MENU_EVENT_TOGGLE_MOVEMENT_TUNING,
+  DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_RECOIL_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING,
@@ -74,6 +75,11 @@ export function createDebugMenu({
       label: 'Movement Tuning',
       description: 'Tune first-person movement bob and footstep timing, pitch, and trim.',
       onClick: () => dispatchDebugMenuEvent(DEBUG_MENU_EVENT_TOGGLE_MOVEMENT_TUNING),
+    },
+    {
+      label: 'Remote Audio Tuning',
+      description: 'Tune remote footstep attenuation live on the client and read back exact values.',
+      onClick: () => dispatchDebugMenuEvent(DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING),
     },
     {
       label: 'Remote Body Tuning',

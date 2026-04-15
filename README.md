@@ -28,8 +28,8 @@ The current build is a real multiplayer-capable tactical FPS foundation with:
 - server-authoritative PvP hit validation
 - server-authoritative segmented remote hit volumes
 - server-authoritative round state and first bomb-objective flow
-- first authoritative remote-audio slice for weapon fire and audible footsteps
-- live in-browser debug tooling for movement, networking, recoil, footsteps/bob, hitboxes, and weapon/model tuning
+- first authoritative remote-audio slice for weapon fire, smoke bloom, and audible footsteps
+- live in-browser debug tooling for movement, networking, recoil, remote audio, footsteps/bob, hitboxes, and weapon/model tuning
 
 It already supports real play loops:
 
@@ -53,7 +53,7 @@ It already supports real play loops:
 - Grounded movement now uses a softer ramp-in, explicit deceleration, and stronger reversal braking
 - Weapon-dependent movement speed and weapon-dependent walk speed factor
 - Utility slot with a simple smoke grenade equip/throw baseline
-- Smoke grenade now uses local projectile physics with bounce, settle-based bloom timing, and a heavier CS-style smoke cloud
+- Smoke grenade now uses replicated projectile throws with bounce, settle-based bloom timing, and a heavier CS-style smoke cloud
 - Hitscan rifle, pistol, sniper, knife, and bomb slot
 - ADS / scoped state
 - Rifle visual recoil plus actual gameplay spray recoil
@@ -75,7 +75,9 @@ It already supports real play loops:
 - Server-authoritative fire requests and hit validation
 - Replicated health, alive state, respawn timing, pitch, stance, weapon, presentation state, team, and display name
 - Server-authoritative round/objective snapshots for HUD and gameplay flow
-- Server-authoritative remote audio events for weapon fire and audible footsteps
+- Server-authoritative remote audio events for weapon fire, smoke bloom, and audible footsteps
+- Shared movement now preserves takeoff speed while airborne, so weapon swaps or walk changes midair do not change velocity until landing
+- Landing now emits a single footstep on real air-to-ground transitions to close silent bunnyhop movement
 - Spatial remote audio playback with listener updates and gameplay attenuation/cutoff
 
 ### Remote Character / Hitbox Tech
@@ -87,6 +89,7 @@ It already supports real play loops:
 - Remote weapon attachment through authored sockets/helpers
 - Remote pitch readability through weapon/socket pitch plus narrow neck/head aiming
 - Server-authoritative segmented hit volumes for head, torso, pelvis, arms, hands, and legs
+- Authoritative head volume now supports tuned width/height/depth instead of only a perfect sphere
 - `F3` authoritative hit-volume debug
 - `F6` local hitbox/model debug workflow
 
@@ -118,7 +121,7 @@ It already supports real play loops:
 - Shared `EffectsManager` path for weapon tracers/impacts, smoke clouds, and bomb explosion presentation
 - Bomb planted and bomb defused announcement stingers
 - Local footstep pool with movement-tuned duration trimming
-- Replicated remote weapon and footstep sounds driven from authoritative state
+- Replicated remote weapon, smoke bloom, and footstep sounds driven from authoritative state
 - Web Audio spatial playback now prefers `PannerNode` with `HRTF` when available
 - Manual hearing-range attenuation/cutoff still applies on top of the spatial path for gameplay consistency
 
@@ -130,6 +133,7 @@ It already supports real play loops:
 - `F6` remote body / aim / local hitbox tuning
 - `F7` remote weapon/socket tuning
 - `F8` network debug toggle with copy-to-clipboard
+- Debug menu remote-audio tuning panel for live footstep attenuation/range tuning
 - `F9` ignore-local-corrections toggle
 - `F10` movement trace capture to `debug/movement-traces/`
 - Recoil tuning panel with live sliders and weapon JSON export
@@ -203,6 +207,8 @@ The current live grounded baseline is:
 - no footsteps while shift-walking or crouched
 - no bob while ADS, walking, or crouched
 - current local footsteps use the concrete pool under `public/audio/players/footsteps/`
+- airborne movement now latches the takeoff speed until landing, so swapping weapons or toggling walk midair does not change momentum
+- landing emits one synthetic footstep on real air-to-ground transitions so bunnyhops are still audible
 
 ### Multiplayer
 
@@ -215,7 +221,8 @@ The active multiplayer baseline includes:
 - fire requests validated on the server
 - replicated damage, death, and respawn
 - replicated round, team, and objective state
-- replicated authoritative audio events for weapon fire and audible footsteps
+- replicated authoritative audio events for weapon fire, smoke bloom, and audible footsteps
+- replicated smoke throws now rebroadcast as shared combat events so remote clients spawn matching smoke projectiles/clouds
 - RTT ping probes for scoreboard/network diagnostics
 
 ### Remote Presentation
@@ -243,6 +250,13 @@ The server-authoritative segmented hitbox pipeline is built around:
 - [`remoteHitboxRig.js`](server/src/remoteHitboxRig.js)
 
 The active foundation is no longer locked to one rig naming style. Shared skeleton resolution now supports both the current Bip-style names and common Mixamo-style names at the mapping layer, which makes future model swaps much less invasive.
+
+The current baked remote hit-volume defaults now include a shaped head volume plus tuned limb/torso values:
+
+- `headSize = { x: 0.24, y: 0.3, z: 0.255 }`
+- `armRadius = 0.08`
+- `legRadius = 0.11`
+- `torsoLengthPadding = -0.085`
 
 ## Current Character / Rig Baseline
 
@@ -320,7 +334,7 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 - Footsteps do not yet switch by detected surface type.
 - Audio does not yet have separate buses for weapons, footsteps, ambience, or UI.
 - Smoke is currently a visual gameplay marker only and does not yet block line of sight or traces.
-- Smoke and bomb explosion effects are currently local presentation only and are not yet replicated as shared world FX.
+- Smoke visuals and smoke bloom audio now replicate through multiplayer, but bomb explosion presentation is still local-only.
 - The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.
 
 ## Repo Structure

@@ -62,9 +62,32 @@ function ensureSphere(sphere, radius) {
   };
 }
 
+function ensureVector3(vector, fallback) {
+  return {
+    x: Number.isFinite(Number(vector?.x)) ? Number(vector.x) : Number(fallback?.x ?? 0),
+    y: Number.isFinite(Number(vector?.y)) ? Number(vector.y) : Number(fallback?.y ?? 0),
+    z: Number.isFinite(Number(vector?.z)) ? Number(vector.z) : Number(fallback?.z ?? 0),
+  };
+}
+
+function ensureHead(head, radius) {
+  return {
+    center: ensurePoint(head?.center),
+    radius: Number.isFinite(Number(head?.radius)) ? Number(head.radius) : radius,
+    size: ensureVector3(head?.size, {
+      x: radius * 2,
+      y: radius * 2,
+      z: radius * 2,
+    }),
+    right: ensureVector3(head?.right, HEAD_RIGHT),
+    up: ensureVector3(head?.up, HEAD_UP),
+    forward: ensureVector3(head?.forward, HEAD_FORWARD),
+  };
+}
+
 function ensureRemoteHitboxSnapshotShape(target) {
   return {
-    head: ensureSphere(target?.head, REMOTE_HITBOX_RADII.head),
+    head: ensureHead(target?.head, REMOTE_HITBOX_RADII.head),
     torso: ensureSegment(target?.torso, REMOTE_HITBOX_RADII.torso),
     pelvis: ensureSegment(target?.pelvis, REMOTE_HITBOX_RADII.pelvis),
     arms: Array.from({ length: 6 }, (_, index) => ensureSegment(target?.arms?.[index], REMOTE_HITBOX_RADII.arm)),
@@ -116,11 +139,16 @@ function crossVectors(target, a, b) {
   return target;
 }
 
-function buildHeadCenter(target, points, headOffset) {
+function buildHeadCenter(target, points, headOffset, basis = null) {
   const head = points?.head ?? null;
   const neck = points?.neck ?? null;
   if (!head || !neck) {
     translatePoint(target, head, headOffset);
+    if (basis) {
+      copyPoint(basis.right, HEAD_RIGHT);
+      copyPoint(basis.up, HEAD_UP);
+      copyPoint(basis.forward, HEAD_FORWARD);
+    }
     return;
   }
 
@@ -139,6 +167,11 @@ function buildHeadCenter(target, points, headOffset) {
   };
   const right = normalizeVector(shoulderSpan, HEAD_RIGHT);
   const forward = normalizeVector(crossVectors({ x: 0, y: 0, z: 0 }, right, up), HEAD_FORWARD);
+  if (basis) {
+    copyPoint(basis.right, right);
+    copyPoint(basis.up, up);
+    copyPoint(basis.forward, forward);
+  }
 
   const offsetX = Number(headOffset?.x ?? 0);
   const offsetY = Number(headOffset?.y ?? 0);
@@ -152,9 +185,37 @@ function buildHeadCenter(target, points, headOffset) {
   );
 }
 
-function writeSegment(target, start, end, radius) {
-  copyPoint(target.start, start);
-  copyPoint(target.end, end);
+function writeSegment(target, start, end, radius, lengthPadding = 0, anchor = 'center') {
+  const startX = Number(start?.x ?? 0);
+  const startY = Number(start?.y ?? 0);
+  const startZ = Number(start?.z ?? 0);
+  const endX = Number(end?.x ?? 0);
+  const endY = Number(end?.y ?? 0);
+  const endZ = Number(end?.z ?? 0);
+  const padding = Number(lengthPadding ?? 0);
+  const dirX = endX - startX;
+  const dirY = endY - startY;
+  const dirZ = endZ - startZ;
+  const length = Math.hypot(dirX, dirY, dirZ);
+  if (Math.abs(padding) > 1e-6 && length > 1e-6) {
+    const clampedPadding = Math.max(-length + 0.001, padding);
+    if (anchor === 'start') {
+      const expand = clampedPadding / length;
+      copyPoint(target.start, start);
+      setPoint(target.end, endX + (dirX * expand), endY + (dirY * expand), endZ + (dirZ * expand));
+    } else if (anchor === 'end') {
+      const expand = clampedPadding / length;
+      setPoint(target.start, startX - (dirX * expand), startY - (dirY * expand), startZ - (dirZ * expand));
+      copyPoint(target.end, end);
+    } else {
+      const expand = clampedPadding * 0.5 / length;
+      setPoint(target.start, startX - (dirX * expand), startY - (dirY * expand), startZ - (dirZ * expand));
+      setPoint(target.end, endX + (dirX * expand), endY + (dirY * expand), endZ + (dirZ * expand));
+    }
+  } else {
+    copyPoint(target.start, start);
+    copyPoint(target.end, end);
+  }
   target.radius = radius;
 }
 
@@ -169,7 +230,18 @@ export function createRemoteHitboxPointCache() {
 
 export function createRemoteHitboxSnapshot() {
   return {
-    head: { center: createPoint(), radius: REMOTE_HITBOX_RADII.head },
+    head: {
+      center: createPoint(),
+      radius: REMOTE_HITBOX_RADII.head,
+      size: {
+        x: REMOTE_HITBOX_RADII.head * 2,
+        y: REMOTE_HITBOX_RADII.head * 2,
+        z: REMOTE_HITBOX_RADII.head * 2,
+      },
+      right: { ...HEAD_RIGHT },
+      up: { ...HEAD_UP },
+      forward: { ...HEAD_FORWARD },
+    },
     torso: { start: createPoint(), end: createPoint(), radius: REMOTE_HITBOX_RADII.torso },
     pelvis: { start: createPoint(), end: createPoint(), radius: REMOTE_HITBOX_RADII.pelvis },
     arms: Array.from({ length: 6 }, () => ({
@@ -195,6 +267,16 @@ export function buildRemoteHitboxSnapshotFromPoints({
   postAimPoints = preAimPoints,
   headOffset = REMOTE_HITBOX_HEAD_OFFSET,
   headRadius = REMOTE_HITBOX_RADII.head,
+  headSize = null,
+  torsoRadius = REMOTE_HITBOX_RADII.torso,
+  torsoLengthPadding = 0,
+  pelvisRadius = REMOTE_HITBOX_RADII.pelvis,
+  pelvisLengthPadding = 0,
+  armRadius = REMOTE_HITBOX_RADII.arm,
+  armLengthPadding = 0,
+  handRadius = REMOTE_HITBOX_RADII.hand,
+  legRadius = REMOTE_HITBOX_RADII.leg,
+  legLengthPadding = 0,
 }, target = createRemoteHitboxSnapshot()) {
   const finalPoints = points ?? postAimPoints ?? preAimPoints ?? null;
   const stablePoints = preAimPoints ?? points ?? postAimPoints ?? null;
@@ -203,27 +285,42 @@ export function buildRemoteHitboxSnapshotFromPoints({
   }
 
   const snapshot = ensureRemoteHitboxSnapshotShape(target);
+  const resolvedTorsoRadius = Number.isFinite(Number(torsoRadius)) ? Number(torsoRadius) : REMOTE_HITBOX_RADII.torso;
+  const resolvedPelvisRadius = Number.isFinite(Number(pelvisRadius)) ? Number(pelvisRadius) : REMOTE_HITBOX_RADII.pelvis;
+  const resolvedArmRadius = Number.isFinite(Number(armRadius)) ? Number(armRadius) : REMOTE_HITBOX_RADII.arm;
+  const resolvedHandRadius = Number.isFinite(Number(handRadius)) ? Number(handRadius) : REMOTE_HITBOX_RADII.hand;
+  const resolvedLegRadius = Number.isFinite(Number(legRadius)) ? Number(legRadius) : REMOTE_HITBOX_RADII.leg;
+  const resolvedHeadSize = {
+    x: Number.isFinite(Number(headSize?.x)) ? Number(headSize.x) : (Number.isFinite(Number(headRadius)) ? Number(headRadius) * 2 : REMOTE_HITBOX_RADII.head * 2),
+    y: Number.isFinite(Number(headSize?.y)) ? Number(headSize.y) : (Number.isFinite(Number(headRadius)) ? Number(headRadius) * 2 : REMOTE_HITBOX_RADII.head * 2),
+    z: Number.isFinite(Number(headSize?.z)) ? Number(headSize.z) : (Number.isFinite(Number(headRadius)) ? Number(headRadius) * 2 : REMOTE_HITBOX_RADII.head * 2),
+  };
 
-  buildHeadCenter(snapshot.head.center, finalPoints, headOffset);
-  snapshot.head.radius = Number.isFinite(Number(headRadius)) ? Number(headRadius) : REMOTE_HITBOX_RADII.head;
+  buildHeadCenter(snapshot.head.center, finalPoints, headOffset, snapshot.head);
+  snapshot.head.radius = Number.isFinite(Number(headRadius))
+    ? Number(headRadius)
+    : Math.max(resolvedHeadSize.x, resolvedHeadSize.y, resolvedHeadSize.z) * 0.5;
+  snapshot.head.size.x = resolvedHeadSize.x;
+  snapshot.head.size.y = resolvedHeadSize.y;
+  snapshot.head.size.z = resolvedHeadSize.z;
 
-  writeSegment(snapshot.torso, finalPoints.spine, finalPoints.neck, REMOTE_HITBOX_RADII.torso);
-  writeSegment(snapshot.pelvis, stablePoints.pelvis, stablePoints.spine, REMOTE_HITBOX_RADII.pelvis);
+  writeSegment(snapshot.torso, finalPoints.spine, finalPoints.neck, resolvedTorsoRadius, torsoLengthPadding, 'start');
+  writeSegment(snapshot.pelvis, stablePoints.pelvis, stablePoints.spine, resolvedPelvisRadius, pelvisLengthPadding);
 
-  writeSegment(snapshot.arms[0], finalPoints.leftClavicle, finalPoints.leftUpperArm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(snapshot.arms[1], finalPoints.leftUpperArm, finalPoints.leftForearm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(snapshot.arms[2], finalPoints.leftForearm, finalPoints.leftHand, REMOTE_HITBOX_RADII.arm);
-  writeSegment(snapshot.arms[3], finalPoints.rightClavicle, finalPoints.rightUpperArm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(snapshot.arms[4], finalPoints.rightUpperArm, finalPoints.rightForearm, REMOTE_HITBOX_RADII.arm);
-  writeSegment(snapshot.arms[5], finalPoints.rightForearm, finalPoints.rightHand, REMOTE_HITBOX_RADII.arm);
+  writeSegment(snapshot.arms[0], finalPoints.leftClavicle, finalPoints.leftUpperArm, resolvedArmRadius, armLengthPadding);
+  writeSegment(snapshot.arms[1], finalPoints.leftUpperArm, finalPoints.leftForearm, resolvedArmRadius, armLengthPadding);
+  writeSegment(snapshot.arms[2], finalPoints.leftForearm, finalPoints.leftHand, resolvedArmRadius, armLengthPadding);
+  writeSegment(snapshot.arms[3], finalPoints.rightClavicle, finalPoints.rightUpperArm, resolvedArmRadius, armLengthPadding);
+  writeSegment(snapshot.arms[4], finalPoints.rightUpperArm, finalPoints.rightForearm, resolvedArmRadius, armLengthPadding);
+  writeSegment(snapshot.arms[5], finalPoints.rightForearm, finalPoints.rightHand, resolvedArmRadius, armLengthPadding);
 
-  writeSphere(snapshot.hands[0], finalPoints.leftHand, REMOTE_HITBOX_RADII.hand);
-  writeSphere(snapshot.hands[1], finalPoints.rightHand, REMOTE_HITBOX_RADII.hand);
+  writeSphere(snapshot.hands[0], finalPoints.leftHand, resolvedHandRadius);
+  writeSphere(snapshot.hands[1], finalPoints.rightHand, resolvedHandRadius);
 
-  writeSegment(snapshot.legs[0], finalPoints.leftThigh, finalPoints.leftCalf, REMOTE_HITBOX_RADII.leg);
-  writeSegment(snapshot.legs[1], finalPoints.leftCalf, finalPoints.leftFoot, REMOTE_HITBOX_RADII.leg);
-  writeSegment(snapshot.legs[2], finalPoints.rightThigh, finalPoints.rightCalf, REMOTE_HITBOX_RADII.leg);
-  writeSegment(snapshot.legs[3], finalPoints.rightCalf, finalPoints.rightFoot, REMOTE_HITBOX_RADII.leg);
+  writeSegment(snapshot.legs[0], finalPoints.leftThigh, finalPoints.leftCalf, resolvedLegRadius, legLengthPadding);
+  writeSegment(snapshot.legs[1], finalPoints.leftCalf, finalPoints.leftFoot, resolvedLegRadius, legLengthPadding);
+  writeSegment(snapshot.legs[2], finalPoints.rightThigh, finalPoints.rightCalf, resolvedLegRadius, legLengthPadding);
+  writeSegment(snapshot.legs[3], finalPoints.rightCalf, finalPoints.rightFoot, resolvedLegRadius, legLengthPadding);
 
   return snapshot;
 }

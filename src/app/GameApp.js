@@ -19,6 +19,8 @@ import { GameDebugController } from './GameDebugController.js';
 import { GameSessionController } from './GameSessionController.js';
 import { createDebugMenu } from './createDebugMenu.js';
 import { createMovementTuningPanel } from '../game/player/createMovementTuningPanel.js';
+import { createRemoteAudioTuningPanel } from '../game/audio/createRemoteAudioTuningPanel.js';
+import { REMOTE_AUDIO_TUNING } from '../game/audio/remoteAudioTuning.js';
 import { TEAMS } from '../shared/constants.js';
 import { VIEWMODEL_LAYER } from '../game/weapons/viewModels.js';
 
@@ -128,6 +130,10 @@ export class GameApp {
     this.lastLocalPlayerAlive = true;
     this.lastObjectiveBombState = null;
     this.lastRoundWinReason = null;
+    this.audioDebugState = {
+      lastFootstep: null,
+      lastWeapon: null,
+    };
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c1218);
@@ -160,6 +166,7 @@ export class GameApp {
       onToggleHudMode: () => this.toggleHudMode(),
     });
     this.movementTuningPanel = createMovementTuningPanel();
+    this.remoteAudioTuningPanel = createRemoteAudioTuningPanel();
     this.pauseController = new GamePauseController({
       renderer: this.renderer,
       audioManager: this.audioManager,
@@ -241,6 +248,7 @@ export class GameApp {
     this.debugController.destroy();
     this.debugMenu?.destroy?.();
     this.movementTuningPanel?.destroy?.();
+    this.remoteAudioTuningPanel?.destroy?.();
     this.renderer.dispose();
   }
 
@@ -339,20 +347,91 @@ export class GameApp {
           z: Number(event.position?.z ?? 0),
         }
         : event.position;
-
-      void this.audioManager.playAtPosition(event.soundKey, {
-        baseVolume: Number(event.baseVolume ?? 1),
+      const footstepTuning = REMOTE_AUDIO_TUNING.footstep;
+      const baseVolume = event?.type === 'footstep'
+        ? Number(footstepTuning.baseVolume ?? event.baseVolume ?? 1)
+        : Number(event.baseVolume ?? 1);
+      const minDistance = event?.type === 'footstep'
+        ? Number(footstepTuning.minDistance ?? event.minDistance ?? 1.5)
+        : Number(event.minDistance ?? 1.5);
+      const maxDistance = event?.type === 'footstep'
+        ? Number(footstepTuning.maxDistance ?? event.maxDistance ?? 24)
+        : Number(event.maxDistance ?? 24);
+      const attenuationHoldExponent = event?.type === 'footstep'
+        ? Number(footstepTuning.attenuationHoldExponent ?? event.attenuationHoldExponent ?? 0.6)
+        : (event.attenuationHoldExponent == null ? undefined : Number(event.attenuationHoldExponent));
+      const attenuationCutoffStart = event?.type === 'footstep'
+        ? Number(footstepTuning.attenuationCutoffStart ?? event.attenuationCutoffStart ?? 0.82)
+        : (event.attenuationCutoffStart == null ? undefined : Number(event.attenuationCutoffStart));
+      const attenuationCutoffExponent = event?.type === 'footstep'
+        ? Number(footstepTuning.attenuationCutoffExponent ?? event.attenuationCutoffExponent ?? 3.2)
+        : (event.attenuationCutoffExponent == null ? undefined : Number(event.attenuationCutoffExponent));
+      const panningModel = event?.type === 'footstep' ? 'HRTF' : 'HRTF';
+      const rolloffFactor = event?.type === 'footstep'
+        ? Number(event.rolloffFactor ?? 0.03)
+        : Number(event.rolloffFactor ?? event.rolloffExponent ?? 1);
+      const manualVolume = this.audioManager.getAttenuatedVolume({
+        baseVolume,
+        listenerPosition,
+        emitterPosition,
+        minDistance,
+        maxDistance,
+        rolloffExponent: Number(event.rolloffExponent ?? 1.6),
+        attenuationHoldExponent,
+        attenuationCutoffStart,
+        attenuationCutoffExponent,
+      });
+      const spatialMix = this.audioManager.getSpatialMix({
         listenerPosition,
         listenerYaw,
         emitterPosition,
-        minDistance: Number(event.minDistance ?? 1.5),
-        maxDistance: Number(event.maxDistance ?? 24),
+      });
+      const distance = listenerPosition && emitterPosition
+        ? Math.hypot(
+          Number(emitterPosition.x ?? 0) - Number(listenerPosition.x ?? 0),
+          Number(emitterPosition.y ?? 0) - Number(listenerPosition.y ?? 0),
+          Number(emitterPosition.z ?? 0) - Number(listenerPosition.z ?? 0),
+        )
+        : 0;
+      const audioDebugEntry = {
+        eventType: String(event?.type ?? 'unknown'),
+        soundKey: String(event?.soundKey ?? 'unknown'),
+        distance,
+        baseVolume,
+        manualVolume,
+        spatialVolumeMultiplier: Number(spatialMix.volumeMultiplier ?? 1),
+        finalVolume: manualVolume * Number(spatialMix.volumeMultiplier ?? 1),
+        minDistance,
+        maxDistance,
+        rolloffFactor,
+        panningModel,
+        recordedAt: performance.now(),
+      };
+      if (event?.type === 'footstep') {
+        this.audioDebugState.lastFootstep = audioDebugEntry;
+      } else if (event?.type === 'weapon-fire') {
+        this.audioDebugState.lastWeapon = audioDebugEntry;
+      }
+      this.networkClient.setAudioDebugState(this.audioDebugState);
+
+      void this.audioManager.playAtPosition(event.soundKey, {
+        baseVolume,
+        listenerPosition,
+        listenerYaw,
+        emitterPosition,
+        minDistance,
+        maxDistance,
         rolloffExponent: Number(event.rolloffExponent ?? 1.6),
+        attenuationHoldExponent,
+        attenuationCutoffStart,
+        attenuationCutoffExponent,
         playback: event.playback ?? undefined,
         minIntervalMs: Number(event.minIntervalMs ?? 0),
         pitchMin: Number(event.pitchMin ?? 1),
         pitchMax: Number(event.pitchMax ?? 1),
         duration: event.duration,
+        panningModel,
+        rolloffFactor,
       });
     }
   }
@@ -661,6 +740,7 @@ export class GameApp {
       this.playReplicatedAudioEvents();
       this.gameplayNetworking.handleCombatEvents({
         remotePlayerPresenter: this.remotePlayerPresenter,
+        utilityManager: this.runtime?.utilityManager ?? null,
         getPopupId: () => `${performance.now()}-${Math.random()}`,
         onLocalPlayerDamageDealt: (popup) => {
           this.hitDamagePopups.push(popup);

@@ -17,7 +17,7 @@
 
 - Low-latency one-shot playback for weapon and UI-adjacent sounds
 - Low-latency one-shot playback for weapon and local footstep sounds
-- Spatialized playback for replicated remote weapon and footstep sounds
+- Spatialized playback for replicated remote weapon, smoke bloom, and footstep sounds
 - Centralized master gain control
 - Per-sound interruption or overlap behavior
 
@@ -41,11 +41,13 @@
   - player-local footstep audio currently loads from `/audio/players/footsteps/`
 - One-shot playback now supports an optional `duration` cap with a short fade-out, which is used by movement tuning to tighten footstep clips without pitch-shifting them.
 - Remote audio is now server-driven for gameplay-critical noise:
-  - `TacticalRoom` emits authoritative `audio-event` messages for weapon fire and audible footsteps
+  - `TacticalRoom` emits authoritative `audio-event` messages for weapon fire, smoke bloom, and audible footsteps
   - `NetworkClient` queues those events separately from combat events
   - `GameApp` consumes them and asks `AudioManager` to play them at replicated world positions
 - Spatial remote playback now prefers `PannerNode` with `HRTF` when available, but still keeps a manual gameplay attenuation/cutoff layer on top so sounds do not leak faintly across the whole map.
 - Crouch movement and shift-walk are intentionally silent for footsteps. Only normal audible grounded movement emits footstep events.
+- Landing now also emits a single synthetic footstep on real air-to-ground transitions so bunnyhops are still audible before a dedicated land sound exists.
+- The debug menu now includes a client-side remote-audio tuning panel for live footstep attenuation/range iteration without restarting the server.
 
 ## Current Status
 
@@ -56,8 +58,10 @@
 - Pause-menu master volume feeds directly into the master gain node
 - Remote weapon-fire sounds are now replicated from authoritative server state and played spatially on other clients
 - Remote footstep sounds are now replicated from authoritative server movement state and played spatially on other clients
+- Remote smoke bloom sounds are now replicated from authoritative utility state and played spatially on other clients
 - `GameApp` now updates the Web Audio listener transform each frame from the active first-person player so remote sound direction follows live head/camera orientation
 - Footstep playback currently flattens emitter height toward the listener ear plane to avoid odd HRTF coloration from ground-level emitters
+- Footsteps currently use `HRTF` plus manual gameplay attenuation/cutoff as the live baseline, rather than a separate `equalpower` footstep mode
 
 ## Limitations
 
@@ -68,4 +72,4 @@
 - Footsteps do not yet switch by detected material/surface type
 - Remote-audio tuning is still in progress:
   - footstep hearing range and nearby loudness still need live multiplayer tuning
-  - footsteps currently use the same general spatial path as other replicated sounds, and may still need their own `equalpower` vs `HRTF` decision
+  - smoke bloom and weapon ranges are still hand-tuned event profiles rather than a more formal propagation model

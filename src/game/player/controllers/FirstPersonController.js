@@ -502,7 +502,7 @@ export class FirstPersonController {
     });
   }
 
-  updateFootsteps(previousPosition) {
+  updateFootsteps(previousPosition, wasGroundedBeforeStep = this.isGrounded) {
     if (!this.audioManager || this.movementMode === 'fly') {
       this.footstepDistance = 0;
       return;
@@ -518,6 +518,15 @@ export class FirstPersonController {
       MOVEMENT_TUNING.footstepMinHorizontalSpeed,
       FOOTSTEP_AUDIBLE_SPEED_FLOOR,
     );
+    const landedThisStep = !wasGroundedBeforeStep
+      && this.isGrounded
+      && !this.isCrouched
+      && !isWalking;
+    if (landedThisStep) {
+      this.footstepDistance = 0;
+      this.wasFootstepAudible = false;
+      this.playFootstepFloor();
+    }
     const isAudible = this.isGrounded
       && !this.isCrouched
       && !isWalking
@@ -925,6 +934,7 @@ export class FirstPersonController {
 
   stepSimulation(delta, movementInput, speedMultiplier = this.getSpeedMultiplier()) {
     FOOTSTEP_POSITION_BEFORE_STEP.copy(this.position);
+    const wasGroundedBeforeStep = this.isGrounded;
     this.applyBufferedCanonicalCorrection(delta);
     this.motionState.position.x = this.position.x;
     this.motionState.position.y = this.position.y;
@@ -940,7 +950,7 @@ export class FirstPersonController {
     this.applyMotionState(
       this.simulateMovementStep(this.motionState, movementInput, delta, speedMultiplier),
     );
-    this.updateFootsteps(FOOTSTEP_POSITION_BEFORE_STEP);
+    this.updateFootsteps(FOOTSTEP_POSITION_BEFORE_STEP, wasGroundedBeforeStep);
   }
 
   reconcileAuthoritativeState(correction) {

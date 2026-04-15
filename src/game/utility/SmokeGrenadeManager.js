@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { REMOTE_UTILITY_AUDIO } from '../../shared/audioEvents.js';
 
 const PROJECTILE_RADIUS = 0.09;
 const PROJECTILE_GRAVITY = 23;
@@ -71,10 +72,11 @@ function createProjectileMesh() {
 }
 
 export class SmokeGrenadeManager {
-  constructor(scene = null, collisionWorld = null, effectsManager = null) {
+  constructor(scene = null, collisionWorld = null, effectsManager = null, audioManager = null) {
     this.scene = scene ?? null;
     this.collisionWorld = collisionWorld ?? null;
     this.effectsManager = effectsManager ?? null;
+    this.audioManager = audioManager ?? null;
     this.projectiles = [];
   }
 
@@ -83,6 +85,8 @@ export class SmokeGrenadeManager {
     direction = null,
     inheritedVelocity = null,
     speed = 9.2,
+    playBloomAudio = true,
+    emitBloomMessage = true,
   } = {}) {
     if (!this.scene || !origin || !direction) {
       return false;
@@ -110,14 +114,38 @@ export class SmokeGrenadeManager {
       age: 0,
       settled: false,
       settledAt: null,
+      playBloomAudio,
+      emitBloomMessage,
     });
     return true;
   }
 
-  detonate(projectile) {
+  detonate(projectile, {
+    listenerPosition = null,
+    listenerYaw = 0,
+    onBloom = null,
+  } = {}) {
+    const config = REMOTE_UTILITY_AUDIO.smokeBloom;
     this.effectsManager?.addSmokeCloud?.(projectile.position, {
       duration: 14,
     });
+    if (projectile.playBloomAudio !== false) {
+      void this.audioManager?.playAtPosition?.('smoke-bloom', {
+        baseVolume: Number(config?.baseVolume ?? 0.78),
+        listenerPosition,
+        listenerYaw,
+        emitterPosition: projectile.position,
+        minDistance: Number(config?.minDistance ?? 2.4),
+        maxDistance: Number(config?.maxDistance ?? 22),
+        rolloffExponent: Number(config?.rolloffExponent ?? 1.04),
+        panningModel: 'HRTF',
+        rolloffFactor: Number(config?.rolloffExponent ?? 1.04),
+        playback: 'overlap',
+      });
+    }
+    if (projectile.emitBloomMessage !== false) {
+      onBloom?.(projectile.position);
+    }
   }
 
   updateProjectile(projectile, delta) {
@@ -191,7 +219,7 @@ export class SmokeGrenadeManager {
     return null;
   }
 
-  update(delta) {
+  update(delta, options = {}) {
     this.projectiles = this.projectiles.filter((projectile) => {
       const result = this.updateProjectile(projectile, delta);
       if (!result) {
@@ -199,7 +227,7 @@ export class SmokeGrenadeManager {
       }
 
       if (result === 'detonate') {
-        this.detonate(projectile);
+        this.detonate(projectile, options);
       }
       disposeMesh(projectile.mesh);
       return false;

@@ -158,9 +158,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `3`: Knife
   - `4`: Sniper
 - Rifle, pistol, sniper, and knife all have functioning presentation/effects/audio paths.
-- A simple smoke grenade utility is now playable on `6` with local projectile bounce, CS-style smoke bloom, and round-reset inventory refill.
+- A simple smoke grenade utility is now playable on `6` with authoritative throw replication, CS-style smoke bloom, and round-reset inventory refill.
 - A first-pass bomb explosion visual now plays at the planted bomb position when the bomb detonates.
-- Remote weapon-fire and footstep audio now replicate from authoritative state with spatial playback on other clients.
+- Remote weapon-fire, smoke bloom, and footstep audio now replicate from authoritative state with spatial playback on other clients.
 - The sniper scope overlay works and is still HUD-driven.
 - HDR skyboxes can be swapped at runtime.
 - Additive multiplayer still works locally through Colyseus:
@@ -256,9 +256,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - client prediction with replay/reconciliation
   - first server-authoritative PvP combat slice for hits, health, death, and respawn
   - server-authoritative round state and first bomb-objective slice
-  - first server-authoritative remote audio slice for weapon fire and audible footsteps
+  - first server-authoritative remote audio slice for weapon fire, smoke bloom, and audible footsteps
   - server-authoritative segmented remote hitboxes are active and now track the visible remote mesh closely enough for current PvP use
-  - `F3` shows authoritative remote hit volumes and `F6` includes `Local Hitbox Debug` for safe visual tuning
+  - the head volume now supports shaped width/height/depth tuning instead of a perfect sphere
+  - `F3` shows authoritative remote hit volumes and `F6` includes `Local Hitbox Debug` plus live remote-body tuning for safe visual iteration
   - debug workflow still active
 
 ## Main Runtime Flow
@@ -587,11 +588,13 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - weapon audio is registered from `/audio/guns/`
   - current local step pool is the concrete set with random non-repeat selection
   - footsteps are currently silent while shift-walking, crouched, or moving below the audible-speed threshold
+  - landing now emits one synthetic footstep on real air-to-ground transitions so bunnyhops are still audible
 - Remote audio:
-  - weapon fire and audible footsteps now replicate from authoritative state as `audio-event` messages
+  - weapon fire, smoke bloom, and audible footsteps now replicate from authoritative state as `audio-event` messages
   - remote playback now uses Web Audio spatial panning with listener transforms updated from the live first-person view
   - a manual attenuation/cutoff layer still sits on top of the spatial panner so sounds do not leak faintly cross-map
-  - current tuning work is focused on footstep hearing range, nearby loudness, and whether footsteps should keep `HRTF` or use a lighter spatial mode
+  - footsteps currently keep `HRTF` plus manual attenuation/cutoff as the live baseline
+  - the debug menu now includes a remote-audio tuning panel for live footstep range/curve iteration
 - Walking:
   - `Shift` grounded walk is back
   - most weapons use `50%` walk speed
@@ -600,6 +603,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Shared movement feel:
   - grounded movement now uses a softer ramp-in, explicit deceleration, and stronger reversal braking
   - the local presentation layer no longer gets to lead grounded motion with desired velocity
+  - airborne movement now preserves takeoff speed until landing, so weapon swaps or walk changes midair do not change horizontal velocity
 
 ## Near-Term Direction
 

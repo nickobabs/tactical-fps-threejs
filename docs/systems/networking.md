@@ -13,11 +13,13 @@ The current networking slice supports:
 - Client-to-server player-ready/team/name initialization
 - Client-to-server bomb plant requests
 - Client-to-server bomb defuse requests
+- Client-to-server smoke-throw requests
 - Server-authoritative player positions derived from those inputs
 - Server-authoritative player health / alive state for PvP
 - Server-authoritative round state
 - Server-authoritative bomb/objective state
 - Server-broadcast combat events for hit / death / respawn feedback
+- Server-broadcast combat events for replicated smoke throws
 - A fixed-rate authoritative room simulation on the server
 - Client-side local movement prediction with replay-based reconciliation and a separate local presentation layer
 - Remote-player placeholder rendering through replicated authoritative state, now including visible weapon and simple labels
@@ -93,6 +95,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - client reports the smoothed value for scoreboard replication
   - server stamps `pong` with receive/send times so `F8` can separate RTT from server turnaround
 - The current remote-hitbox path has moved from coarse fallback gameplay capsules to server-authoritative bone-driven segmented hit volumes.
+- Utility replication has now started with a narrow authoritative slice:
+  - smoke throws are validated on the server
+  - the server rebroadcasts `smoke-thrown` combat events
+  - remote clients spawn matching smoke projectiles/blooms locally
+  - smoke bloom audio also replicates as positional `audio-event` traffic
 
 ## Current Status
 
@@ -153,6 +160,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Server authority also loads imported collision glTF data for the Dust2 imported-map path, including `Dust2 Legacy Import` and `Dust2 Test`
 - Server-authoritative round state and bomb/objective state are active
 - Server-authoritative imported-map bomb-site validation now supports `plantable_*` markers
+- Server-authoritative smoke throw validation and rebroadcast are active
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests
   - the server validates hits against authoritative player state
@@ -169,9 +177,13 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - hit validation now prefers the authoritative segmented hitbox snapshot path
   - left-hand IK is intentionally disabled in the authoritative rig because it caused upper-body pose drift relative to the visible remote mesh
   - `F6` includes a local hitbox debug mode for visual tuning without changing authoritative hitreg
-  - the baked shared head tuning baseline is:
+  - the baked shared head/body tuning baseline now includes:
     - `headOffset = { x: 0, y: 0.035, z: -0.005 }`
-    - `headRadius = 0.15`
+    - `headSize = { x: 0.24, y: 0.3, z: 0.255 }`
+    - `armRadius = 0.08`
+    - `legRadius = 0.11`
+    - `torsoLengthPadding = -0.085`
+  - the head volume is no longer limited to a perfect sphere; the authoritative path now supports a shaped head ellipsoid
 - `NETDEBUG` instrumentation exists in the HUD/devtools path for local multiplayer diagnosis and is intentionally being kept available while multiplayer expands
 - Current live ping diagnostics include:
   - `server_url`
@@ -185,7 +197,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 ## Limitations
 
 - Server/client movement can still diverge intermittently because the browser map runtime and the server collision runtime are not yet driven from one single source of truth
-- Bots, rounds, utility, and most world interactions are still local-only and are not yet synchronized
+- Bots and most world interactions are still local-only and are not yet synchronized
+- Utility synchronization is still narrow:
+  - smoke projectile/bloom replication exists
+  - smoke still does not block line of sight or traces
+  - bomb explosion presentation is still local-only
 - Local movement feel is now materially improved by correction deadzone/hysteresis, but this still needs validation across more cases like ramps, jump arcs, and future combat-driven correction
 - PvP shot validation is intentionally simple for now:
   - player hit detection is currently split between:

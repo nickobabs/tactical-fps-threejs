@@ -18,6 +18,9 @@ const DEFUSE_AIM_DOT_THRESHOLD = 0.96;
 const SMOKE_THROW_DIRECTION = new THREE.Vector3();
 const SMOKE_THROW_ORIGIN = new THREE.Vector3();
 const SMOKE_INHERITED_VELOCITY = new THREE.Vector3();
+const REMOTE_SMOKE_THROW_ORIGIN = new THREE.Vector3();
+const REMOTE_SMOKE_THROW_DIRECTION = new THREE.Vector3();
+const REMOTE_SMOKE_INHERITED_VELOCITY = new THREE.Vector3();
 
 function disposeObject3D(root) {
   root?.removeFromParent?.();
@@ -104,6 +107,7 @@ export class UtilityManager {
     collisionWorld = null,
     camera = null,
     effectsManager = null,
+    audioManager = null,
   } = {}) {
     this.plantZones = Array.isArray(plantZones) ? plantZones : [];
     this.plantedBombVisual = new PlantedBombVisual(scene ?? null);
@@ -111,6 +115,7 @@ export class UtilityManager {
       scene ?? null,
       collisionWorld ?? null,
       effectsManager ?? null,
+      audioManager ?? null,
     );
     this.camera = camera ?? null;
     if (this.camera && !this.smokeViewModel) {
@@ -226,7 +231,7 @@ export class UtilityManager {
     };
   }
 
-  tryThrowSmoke(frameInput, playerController, roundManager, localPlayerAlive) {
+  tryThrowSmoke(frameInput, playerController, roundManager, localPlayerAlive, networkClient = null) {
     if (!this.canUseSmokeGrenade(roundManager, localPlayerAlive)) {
       return false;
     }
@@ -256,6 +261,13 @@ export class UtilityManager {
       return false;
     }
 
+    networkClient?.sendSmokeThrow?.({
+      origin: SMOKE_THROW_ORIGIN,
+      direction: SMOKE_THROW_DIRECTION,
+      inheritedVelocity: SMOKE_INHERITED_VELOCITY,
+      speed: 15.2,
+    });
+
     this.smokeCharges = Math.max(0, this.smokeCharges - 1);
     this.equippedUtilityKey = null;
     return true;
@@ -264,6 +276,46 @@ export class UtilityManager {
   handleSmokeThrown(weaponManager) {
     weaponManager?.replayActiveWeaponEquip?.();
     return true;
+  }
+
+  handleCombatEvent(event, {
+    localPlayerId = null,
+    localMapId = null,
+  } = {}) {
+    if (event?.type !== 'smoke-thrown' || !this.smokeGrenadeManager) {
+      return;
+    }
+    if (event.playerId && localPlayerId && event.playerId === localPlayerId) {
+      return;
+    }
+    if (localMapId && event.mapId && event.mapId !== localMapId) {
+      return;
+    }
+
+    REMOTE_SMOKE_THROW_ORIGIN.set(
+      Number(event.origin?.x ?? 0),
+      Number(event.origin?.y ?? 0),
+      Number(event.origin?.z ?? 0),
+    );
+    REMOTE_SMOKE_THROW_DIRECTION.set(
+      Number(event.direction?.x ?? 0),
+      Number(event.direction?.y ?? 0),
+      Number(event.direction?.z ?? -1),
+    );
+    REMOTE_SMOKE_INHERITED_VELOCITY.set(
+      Number(event.inheritedVelocity?.x ?? 0),
+      Number(event.inheritedVelocity?.y ?? 0),
+      Number(event.inheritedVelocity?.z ?? 0),
+    );
+
+    this.smokeGrenadeManager.spawn({
+      origin: REMOTE_SMOKE_THROW_ORIGIN,
+      direction: REMOTE_SMOKE_THROW_DIRECTION,
+      inheritedVelocity: REMOTE_SMOKE_INHERITED_VELOCITY,
+      speed: Number(event.speed ?? 15.2),
+      playBloomAudio: false,
+      emitBloomMessage: false,
+    });
   }
 
   updateSmokeViewModelVisibility({
@@ -321,7 +373,15 @@ export class UtilityManager {
     });
     this.lastRoundNumber = roundManager.roundNumber;
     this.lastRoundPhase = roundManager.phase;
-    this.smokeGrenadeManager?.update?.(delta);
+    this.smokeGrenadeManager?.update?.(delta, {
+      listenerPosition: playerController?.getEyePosition?.() ?? playerController?.position ?? null,
+      listenerYaw: Number(playerController?.yawAngle ?? 0),
+      onBloom: (position) => {
+        networkClient?.sendSmokeBloom?.({
+          position,
+        });
+      },
+    });
 
     if (authoritativeObjective) {
       this.state.applyAuthoritativeObjective({
@@ -447,7 +507,7 @@ export class UtilityManager {
       return;
     }
 
-    const smokeThrown = this.tryThrowSmoke(frameInput, playerController, roundManager, localPlayerAlive);
+    const smokeThrown = this.tryThrowSmoke(frameInput, playerController, roundManager, localPlayerAlive, networkClient);
     if (smokeThrown) {
       this.handleSmokeThrown(weaponManager);
     }

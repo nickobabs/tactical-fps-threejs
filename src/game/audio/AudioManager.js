@@ -144,6 +144,9 @@ export class AudioManager {
     minDistance = 1.5,
     maxDistance = 24,
     rolloffExponent = 1.6,
+    attenuationHoldExponent = null,
+    attenuationCutoffStart = null,
+    attenuationCutoffExponent = null,
   } = {}) {
     if (!listenerPosition || !emitterPosition) {
       return clamp01(baseVolume);
@@ -161,7 +164,26 @@ export class AudioManager {
     }
 
     const normalized = (distance - minDistance) / Math.max(maxDistance - minDistance, 0.001);
-    const attenuation = Math.pow(1 - clamp01(normalized), Math.max(0.01, rolloffExponent));
+    const clampedNormalized = clamp01(normalized);
+    const holdExponent = Number.isFinite(attenuationHoldExponent)
+      ? Math.max(0.01, Number(attenuationHoldExponent))
+      : null;
+    const cutoffStart = Number.isFinite(attenuationCutoffStart)
+      ? clamp01(Number(attenuationCutoffStart))
+      : 1;
+    const cutoffExponent = Number.isFinite(attenuationCutoffExponent)
+      ? Math.max(0.01, Number(attenuationCutoffExponent))
+      : 1;
+
+    let attenuation = holdExponent == null
+      ? Math.pow(1 - clampedNormalized, Math.max(0.01, rolloffExponent))
+      : (1 - Math.pow(clampedNormalized, holdExponent));
+
+    if (cutoffStart < 1 && clampedNormalized > cutoffStart) {
+      const tailAlpha = (clampedNormalized - cutoffStart) / Math.max(1 - cutoffStart, 0.001);
+      attenuation *= Math.pow(1 - clamp01(tailAlpha), cutoffExponent);
+    }
+
     return clamp01(baseVolume * attenuation);
   }
 

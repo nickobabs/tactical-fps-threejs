@@ -62,6 +62,16 @@ export const REMOTE_CHARACTER_AIM_SETTINGS = {
 export const REMOTE_CHARACTER_HITBOX_SETTINGS = {
   headOffset: { x: 0, y: 0.035, z: -0.005 },
   headRadius: 0.15,
+  headSize: { x: 0.24, y: 0.3, z: 0.255 },
+  torsoRadius: 0.17,
+  torsoLengthPadding: -0.085,
+  pelvisRadius: 0.19,
+  pelvisLengthPadding: 0,
+  armRadius: 0.08,
+  armLengthPadding: 0,
+  handRadius: 0.09,
+  legRadius: 0.11,
+  legLengthPadding: 0,
 };
 
 export function getRemoteSocketPoseKey(weaponKey, isScoped) {

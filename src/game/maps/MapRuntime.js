@@ -143,6 +143,7 @@ export class MapRuntime {
         collisionWorld,
         camera,
         effectsManager: runtime.effectsManager,
+        audioManager,
       });
 
       runtime.weaponManager = new WeaponManager({

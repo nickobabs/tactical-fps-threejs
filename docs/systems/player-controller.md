@@ -45,6 +45,7 @@
 - Look input is gathered from browser pointer-lock movement events and applied once per render frame, which keeps aiming tied to the same timing as camera/render updates.
 - Movement speed can be scaled externally without changing controller internals, which is now used for weapon-dependent mobility such as the knife.
 - Core locomotion math is now shared with the multiplayer server through `src/shared/playerMovement.js`, while the browser controller still layers local collision queries on top of that shared simulation.
+- Shared movement now latches the player's effective max speed when they leave the ground and preserves that airborne speed cap until landing.
 - Grounded sprint has been removed from the current live ruleset. Grounded locomotion now uses walk/crouch speeds plus weapon speed multipliers, while fly mode still keeps its own sprint behavior.
 - `FirstPersonController` is being refactored by responsibility instead of rewritten wholesale:
   - `playerInputState.js` owns movement input snapshotting and immediate presentation-velocity calculation
@@ -67,12 +68,14 @@
 - Supports fly mode for debugging/imported-map exploration
 - Supports weapon-dependent movement speed modifiers through a callback passed from `GameApp`
 - Supports per-weapon grounded walk speed factors through the shared input/simulation/network path
+- Preserves takeoff momentum while airborne, so weapon swaps or walk changes in the air do not change horizontal speed until landing
 - Default base sensitivity is lower than the original prototype tuning and can be adjusted from the pause menu
 - Jump descent no longer snaps early back to the floor from the apex
 - Exposes compact movement input snapshots for server-authoritative multiplayer
 - Reconciles authoritative server state into the predicted simulation path, while presentation follows that simulation through correction-offset handling and bounded local responsiveness
 - Current local footsteps and viewmodel bob are also driven from the controller:
-  - footsteps are local-only for now
+  - ordinary stride footsteps are still locally triggered from the controller
+  - landing now emits one synthetic footstep on real air-to-ground transitions
   - ADS, crouch, and shift-walk currently suppress bob
 - The controller refactor is partially complete:
   - low-risk helper boundaries have been extracted

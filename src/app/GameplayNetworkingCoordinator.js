@@ -106,12 +106,17 @@ export class GameplayNetworkingCoordinator {
 
   handleCombatEvents({
     remotePlayerPresenter,
+    utilityManager,
     getPopupId,
     onLocalPlayerHit,
     onLocalPlayerDamageDealt,
   }) {
     for (const event of this.networkClient.consumeCombatEvents()) {
       remotePlayerPresenter.handleCombatEvent(event);
+      utilityManager?.handleCombatEvent?.(event, {
+        localPlayerId: this.networkClient.playerId,
+        localMapId: this.networkClient.getLocalPlayerState?.()?.mapId ?? null,
+      });
 
       if (event?.type !== 'player-hit') {
         continue;

@@ -52,6 +52,44 @@ export function createRemoteTuningStore({
       headRadius: Number.isFinite(Number(settings?.headRadius))
         ? Number(settings.headRadius)
         : defaultCharacterSettings.hitboxes.headRadius,
+      headSize: {
+        x: Number.isFinite(Number(settings?.headSize?.x))
+          ? Number(settings.headSize.x)
+          : defaultCharacterSettings.hitboxes.headSize.x,
+        y: Number.isFinite(Number(settings?.headSize?.y))
+          ? Number(settings.headSize.y)
+          : defaultCharacterSettings.hitboxes.headSize.y,
+        z: Number.isFinite(Number(settings?.headSize?.z))
+          ? Number(settings.headSize.z)
+          : defaultCharacterSettings.hitboxes.headSize.z,
+      },
+      torsoRadius: Number.isFinite(Number(settings?.torsoRadius))
+        ? Number(settings.torsoRadius)
+        : defaultCharacterSettings.hitboxes.torsoRadius,
+      torsoLengthPadding: Number.isFinite(Number(settings?.torsoLengthPadding))
+        ? Number(settings.torsoLengthPadding)
+        : defaultCharacterSettings.hitboxes.torsoLengthPadding,
+      pelvisRadius: Number.isFinite(Number(settings?.pelvisRadius))
+        ? Number(settings.pelvisRadius)
+        : defaultCharacterSettings.hitboxes.pelvisRadius,
+      pelvisLengthPadding: Number.isFinite(Number(settings?.pelvisLengthPadding))
+        ? Number(settings.pelvisLengthPadding)
+        : defaultCharacterSettings.hitboxes.pelvisLengthPadding,
+      armRadius: Number.isFinite(Number(settings?.armRadius))
+        ? Number(settings.armRadius)
+        : defaultCharacterSettings.hitboxes.armRadius,
+      armLengthPadding: Number.isFinite(Number(settings?.armLengthPadding))
+        ? Number(settings.armLengthPadding)
+        : defaultCharacterSettings.hitboxes.armLengthPadding,
+      handRadius: Number.isFinite(Number(settings?.handRadius))
+        ? Number(settings.handRadius)
+        : defaultCharacterSettings.hitboxes.handRadius,
+      legRadius: Number.isFinite(Number(settings?.legRadius))
+        ? Number(settings.legRadius)
+        : defaultCharacterSettings.hitboxes.legRadius,
+      legLengthPadding: Number.isFinite(Number(settings?.legLengthPadding))
+        ? Number(settings.legLengthPadding)
+        : defaultCharacterSettings.hitboxes.legLengthPadding,
     };
   }
 

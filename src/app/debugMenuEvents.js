@@ -3,6 +3,7 @@ export const DEBUG_MENU_EVENT_TOGGLE_RECOIL_TUNING = 'tactical-fps:toggle-recoil
 export const DEBUG_MENU_EVENT_TOGGLE_MOVEMENT_TUNING = 'tactical-fps:toggle-movement-tuning';
 export const DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING = 'tactical-fps:toggle-remote-body-tuning';
 export const DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING = 'tactical-fps:toggle-remote-weapon-tuning';
+export const DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING = 'tactical-fps:toggle-remote-audio-tuning';
 
 export function dispatchDebugMenuEvent(eventName) {
   if (typeof window === 'undefined') {

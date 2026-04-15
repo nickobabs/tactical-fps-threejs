@@ -111,6 +111,7 @@ export function createPlayerMovementState({
   distanceToGround = 0,
   supportHeight = null,
   supportRatio = 0,
+  airborneMaxSpeed = null,
 } = {}) {
   return {
     position: { x: position.x, y: position.y, z: position.z },
@@ -122,6 +123,7 @@ export function createPlayerMovementState({
     distanceToGround: Number(distanceToGround ?? 0),
     supportHeight: Number.isFinite(supportHeight) ? Number(supportHeight) : null,
     supportRatio: Number(supportRatio ?? 0),
+    airborneMaxSpeed: Number.isFinite(airborneMaxSpeed) ? Math.max(0, Number(airborneMaxSpeed)) : null,
   };
 }
 
@@ -182,16 +184,19 @@ export function simulatePlayerMovement(
     moveZ /= moveLength;
   }
 
-  const maxSpeed = (wantsCrouch
+  const groundedMaxSpeed = (wantsCrouch
     ? config.crouchSpeed
     : (wantsWalk ? config.walkSpeed * walkSpeedFactor : config.walkSpeed)) * speedMultiplier;
+  const effectiveMaxSpeed = state.isGrounded
+    ? groundedMaxSpeed
+    : (Number.isFinite(state.airborneMaxSpeed) ? Number(state.airborneMaxSpeed) : groundedMaxSpeed);
 
-  const targetVelocityX = moveLength > 0 ? moveX * maxSpeed : 0;
-  const targetVelocityZ = moveLength > 0 ? moveZ * maxSpeed : 0;
+  const targetVelocityX = moveLength > 0 ? moveX * effectiveMaxSpeed : 0;
+  const targetVelocityZ = moveLength > 0 ? moveZ * effectiveMaxSpeed : 0;
   const control = state.isGrounded ? 1 : config.airControl;
   const currentHorizontalSpeed = Math.hypot(state.velocity.x, state.velocity.z);
-  const speedAlpha = maxSpeed > 1e-6
-    ? clamp(currentHorizontalSpeed / maxSpeed, 0, 1)
+  const speedAlpha = effectiveMaxSpeed > 1e-6
+    ? clamp(currentHorizontalSpeed / effectiveMaxSpeed, 0, 1)
     : 0;
   const groundedAccelerationRamp = state.isGrounded
     ? lerp(0.24, 1, Math.pow(speedAlpha, 0.9))
@@ -217,6 +222,7 @@ export function simulatePlayerMovement(
 
   const wasGrounded = state.isGrounded;
   if (state.isGrounded && wantsJump) {
+    state.airborneMaxSpeed = groundedMaxSpeed;
     state.velocity.y = config.jumpForce;
     state.isGrounded = false;
   }
@@ -340,6 +346,9 @@ export function simulatePlayerMovement(
     );
     if (state.isGrounded) {
       state.distanceToGround = 0;
+      state.airborneMaxSpeed = null;
+    } else if (wasGrounded) {
+      state.airborneMaxSpeed = groundedMaxSpeed;
     }
     return state;
   }
@@ -429,6 +438,11 @@ export function simulatePlayerMovement(
     groundHeight - POSITION_CLAMP_BELOW_GROUND,
     groundHeight + POSITION_CLAMP_ABOVE_GROUND,
   );
+  if (state.isGrounded) {
+    state.airborneMaxSpeed = null;
+  } else if (wasGrounded) {
+    state.airborneMaxSpeed = groundedMaxSpeed;
+  }
 
   return state;
 }

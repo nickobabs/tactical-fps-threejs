@@ -2,7 +2,7 @@
 
 ## Summary
 
-`UtilityManager` now coordinates the bomb-objective gameplay slice, local smoke-grenade flow, utility/HUD integration, and bomb-objective world effects.
+`UtilityManager` now coordinates the bomb-objective gameplay slice, smoke-grenade flow, utility/HUD integration, and bomb-objective world effects.
 
 ## Inputs
 
@@ -24,7 +24,8 @@
 - Defuse progress state
 - Bomb-carrier state for local inventory/equip rules
 - Planted-bomb visual state in the scene
-- Local smoke projectile, smoke-cloud, and bomb-explosion effect state
+- Local and replicated smoke projectile/smoke-cloud effect state
+- Local bomb-explosion effect state
 
 ## Dependencies
 
@@ -42,6 +43,7 @@
 - The default utility slot is now a simple smoke grenade on `6`
 - Smoke grenades currently live fully in the utility path rather than pretending to be a firearm inside `WeaponManager`
 - Smoke projectile physics stay in `SmokeGrenadeManager`, while smoke bloom visuals and the bomb explosion effect render through `EffectsManager`
+- In authoritative multiplayer, smoke throws are validated by the server and rebroadcast so remote clients spawn matching projectile/bloom visuals
 - Planting is constrained by map-authored plant zones
 - Defusing is constrained by both proximity and aim alignment against the planted bomb
 - Plant/defuse interactions now temporarily lock local movement input through `FirstPersonController` while the hold action is active
@@ -69,10 +71,14 @@
 - Current smoke flow:
   - `6` selects the smoke utility
   - left click throws the grenade when smoke is selected
+  - local throws send a `smoke-throw` request to the server
+  - the server validates that request and rebroadcasts a `combat-event` of type `smoke-thrown`
+  - remote clients spawn the same smoke projectile locally and let it fly/bloom through the existing smoke sim
   - after throwing, the utility immediately leaves smoke mode and replays the currently equipped weapon's normal equip lockout before firing is allowed again
   - the grenade uses local gravity plus collision bounce/roll damping against `CollisionWorld`
   - smoke bloom now requires both a minimum fuse and a post-settle delay, so it does not bloom instantly on first ground contact after a long arc
   - the smoke cloud is now a heavier CS-style layered sprite effect with a dense center, softer edge, wide footprint, and a 14-second duration after bloom
+  - smoke bloom audio is also emitted as a replicated positional audio event so other players can hear it
   - the current round baseline gives the player one smoke grenade and restores it on round reset/freeze
 - Current bomb explosion presentation:
   - when a planted bomb explodes, `UtilityManager` now triggers a local first-pass blast effect at the planted world position
@@ -85,7 +91,6 @@
 ## Limitations
 
 - No bomb drop/pickup flow yet
-- Smoke grenade throw/simulation is currently local-only and not synchronized through multiplayer
 - Smoke is currently a visual cloud only; it does not yet block line of sight or gameplay traces
 - Bomb explosion effect is currently local presentation only; it does not yet apply blast damage or other gameplay consequences beyond the round result
 - No broader grenade inventory system yet beyond the single smoke baseline
