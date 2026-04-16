@@ -24,6 +24,23 @@ export function formatBombSeconds(value) {
   return Math.max(0, value).toFixed(1);
 }
 
+export function getBombPulseIntervalSeconds(secondsRemaining) {
+  const safeSeconds = Math.max(0, Number(secondsRemaining ?? 0));
+  if (safeSeconds > 25) {
+    return 1;
+  }
+  if (safeSeconds > 15) {
+    return 0.75;
+  }
+  if (safeSeconds > 8) {
+    return 0.5;
+  }
+
+  const normalized = Math.min(1, Math.max(0, safeSeconds / 8));
+  const eased = normalized * normalized;
+  return 0.1 + (0.5 - 0.1) * eased;
+}
+
 export function createBombObjectiveSnapshot() {
   return {
     bombCarrierPlayerId: null,
@@ -31,6 +48,7 @@ export function createBombObjectiveSnapshot() {
     bombTimeRemaining: 0,
     plantedZoneName: null,
     plantedPosition: null,
+    plantedMapId: null,
     defuserPlayerId: null,
   };
 }

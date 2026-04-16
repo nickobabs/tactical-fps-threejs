@@ -108,11 +108,13 @@ export class GameplayNetworkingCoordinator {
     remotePlayerPresenter,
     utilityManager,
     getPopupId,
+    onCombatEvent,
     onLocalPlayerHit,
     onLocalPlayerDamageTaken,
     onLocalPlayerDamageDealt,
   }) {
     for (const event of this.networkClient.consumeCombatEvents()) {
+      onCombatEvent?.(event);
       remotePlayerPresenter.handleCombatEvent(event);
       utilityManager?.handleCombatEvent?.(event, {
         localPlayerId: this.networkClient.playerId,

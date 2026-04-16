@@ -1,4 +1,5 @@
 import {
+  DEBUG_MENU_EVENT_TOGGLE_HUD_LAYOUT_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_MOVEMENT_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_RECOIL_TUNING,
@@ -7,6 +8,7 @@ import {
   DEBUG_MENU_EVENT_TOGGLE_VIEWMODEL_TUNING,
   dispatchDebugMenuEvent,
 } from './debugMenuEvents.js';
+import { makeDebugPanelDraggable } from './makeDebugPanelDraggable.js';
 
 function isEditableTarget(target) {
   if (!(target instanceof HTMLElement)) {
@@ -48,6 +50,7 @@ export function createDebugMenu({
   title.style.fontWeight = '700';
   title.style.marginBottom = '8px';
   panel.appendChild(title);
+  const dragController = makeDebugPanelDraggable(panel, title);
 
   const help = document.createElement('div');
   help.textContent = '` toggle';
@@ -70,6 +73,11 @@ export function createDebugMenu({
       label: 'Recoil Tuning',
       description: 'Tune visual recoil, spray recoil, and export current values.',
       onClick: () => dispatchDebugMenuEvent(DEBUG_MENU_EVENT_TOGGLE_RECOIL_TUNING),
+    },
+    {
+      label: 'HUD Layout Tuning',
+      description: 'Pick a HUD element, outline it on-screen, and tune its live layout values.',
+      onClick: () => dispatchDebugMenuEvent(DEBUG_MENU_EVENT_TOGGLE_HUD_LAYOUT_TUNING),
     },
     {
       label: 'Movement Tuning',
@@ -142,6 +150,7 @@ export function createDebugMenu({
   return {
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
+      dragController.destroy();
       panel.remove();
     },
   };

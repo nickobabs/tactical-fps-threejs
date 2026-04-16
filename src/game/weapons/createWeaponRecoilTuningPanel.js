@@ -4,6 +4,7 @@ import {
   WEAPON_CONFIGS,
 } from './weaponConfigs.js';
 import { DEBUG_MENU_EVENT_TOGGLE_RECOIL_TUNING } from '../../app/debugMenuEvents.js';
+import { makeDebugPanelDraggable } from '../../app/makeDebugPanelDraggable.js';
 
 const RECOIL_SLIDER_GROUPS = [
   {
@@ -106,6 +107,7 @@ export function createWeaponRecoilTuningPanel(getWeaponKey) {
   title.style.fontWeight = '700';
   title.style.marginBottom = '8px';
   overlay.appendChild(title);
+  const dragController = makeDebugPanelDraggable(overlay, title);
 
   const help = document.createElement('div');
   help.textContent = 'F2 toggle • saves automatically';
@@ -300,6 +302,7 @@ export function createWeaponRecoilTuningPanel(getWeaponKey) {
     sync,
     destroy() {
       window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_RECOIL_TUNING, handleDebugMenuToggle);
+      dragController.destroy();
       overlay.remove();
     },
   };

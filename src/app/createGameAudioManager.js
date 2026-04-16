@@ -29,6 +29,7 @@ const GAME_AUDIO_REGISTRATIONS = [
   ],
   ['knife-slash', '/audio/guns/sword-slash-4.mp3', { playback: 'interrupt' }],
   ['smoke-bloom', '/audio/utility/smokebloom.mp3', { playback: 'overlap', minIntervalMs: 80 }],
+  ['bomb-beep', '/audio/game/bomb beep.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ['bomb-planted', '/audio/game/bomb planted.mp3', { playback: 'interrupt' }],
   ['bomb-defused', '/audio/game/bomb defused.mp3', { playback: 'interrupt' }],
   ...FLOOR_FOOTSTEP_FILES.map((fileName, index) => {

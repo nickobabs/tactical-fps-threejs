@@ -56,6 +56,13 @@ export const REMOTE_UTILITY_AUDIO = {
     maxDistance: 22,
     rolloffExponent: 1.04,
   },
+  bombBeep: {
+    soundKey: 'bomb-beep',
+    baseVolume: 0.8,
+    minDistance: 1.5,
+    maxDistance: 18,
+    rolloffExponent: 1.18,
+  },
 };
 
 export const REMOTE_FOOTSTEP_SAMPLE_COUNT = 16;

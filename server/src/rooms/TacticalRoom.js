@@ -30,6 +30,7 @@ import {
 import {
   createBombObjectiveSnapshot,
   DEFAULT_BOMB_DURATION,
+  getBombPulseIntervalSeconds,
   selectBombCarrierPlayerId,
 } from '../../../src/shared/bombObjective.js';
 import {
@@ -446,7 +447,10 @@ export class TacticalRoom extends Room {
   }
 
   createObjectiveState() {
-    return createBombObjectiveSnapshot();
+    return {
+      ...createBombObjectiveSnapshot(),
+      bombBeepCountdown: 0,
+    };
   }
 
   getPlantZonesForMap(mapId) {
@@ -585,8 +589,17 @@ export class TacticalRoom extends Room {
     }
 
     this.objectiveState.bombTimeRemaining = Math.max(0, this.objectiveState.bombTimeRemaining - delta);
+    this.objectiveState.bombBeepCountdown = Math.max(
+      Number(this.objectiveState.bombBeepCountdown ?? 0) - delta,
+      -delta,
+    );
+    while (this.objectiveState.bombTimeRemaining > 0 && this.objectiveState.bombBeepCountdown <= 0) {
+      this.emitBombBeepAudioEvent();
+      this.objectiveState.bombBeepCountdown += getBombPulseIntervalSeconds(this.objectiveState.bombTimeRemaining);
+    }
     if (this.objectiveState.bombTimeRemaining === 0) {
       this.objectiveState.bombState = 'exploded';
+      this.objectiveState.bombBeepCountdown = 0;
       this.roundManager.endRound(TEAMS.ATTACKERS, 'bomb-exploded');
     }
   }
@@ -615,6 +628,8 @@ export class TacticalRoom extends Room {
     this.objectiveState.bombTimeRemaining = DEFAULT_BOMB_DURATION;
     this.objectiveState.plantedZoneName = zoneName || 'plant-site';
     this.objectiveState.defuserPlayerId = null;
+    this.objectiveState.plantedMapId = player.mapId ?? null;
+    this.objectiveState.bombBeepCountdown = getBombPulseIntervalSeconds(DEFAULT_BOMB_DURATION);
     this.objectiveState.plantedPosition = {
       x: Number(message?.position?.x ?? player.motionState?.position?.x ?? 0),
       y: Number(message?.position?.y ?? player.motionState?.position?.y ?? 0),
@@ -686,6 +701,8 @@ export class TacticalRoom extends Room {
     this.objectiveState.bombState = 'idle';
     this.objectiveState.bombTimeRemaining = 0;
     this.objectiveState.plantedZoneName = null;
+    this.objectiveState.plantedMapId = null;
+    this.objectiveState.bombBeepCountdown = 0;
     this.objectiveState.plantedPosition = null;
     this.roundManager.endRound(TEAMS.DEFENDERS, 'bomb-defused');
     this.requestStateBroadcast();
@@ -1341,6 +1358,38 @@ export class TacticalRoom extends Room {
     });
   }
 
+  emitBombBeepAudioEvent() {
+    const config = REMOTE_UTILITY_AUDIO.bombBeep;
+    const plantedPosition = this.objectiveState?.plantedPosition ?? null;
+    const plantedMapId = this.objectiveState?.plantedMapId ?? null;
+    const bombTimeRemaining = Number(this.objectiveState?.bombTimeRemaining ?? 0);
+    if (!config || !plantedPosition || !plantedMapId) {
+      return;
+    }
+
+    const pulseInterval = getBombPulseIntervalSeconds(bombTimeRemaining);
+    const beepDuration = Math.max(0.05, Math.min(0.16, pulseInterval * 0.58));
+
+    this.broadcastAudioEvent({
+      type: 'objective-bomb-beep',
+      sourcePlayerId: null,
+      mapId: plantedMapId,
+      soundKey: config.soundKey,
+      position: {
+        x: Number(plantedPosition.x ?? 0),
+        y: Number(plantedPosition.y ?? 0),
+        z: Number(plantedPosition.z ?? 0),
+      },
+      baseVolume: config.baseVolume,
+      minDistance: config.minDistance,
+      maxDistance: config.maxDistance,
+      rolloffExponent: config.rolloffExponent,
+      playback: 'interrupt',
+      minIntervalMs: 0,
+      duration: beepDuration,
+    });
+  }
+
   updatePlayerFootsteps(player, previousPosition, inputSnapshot, wasGroundedBeforeStep = false) {
     if (!player?.motionState || !previousPosition) {
       return;
@@ -1517,6 +1566,7 @@ export class TacticalRoom extends Room {
       type: 'player-hit',
       attackerPlayerId: player.playerId,
       victimPlayerId: bestTarget.playerId,
+      weaponKey: String(weapon?.key ?? player.activeWeaponKey ?? 'rifle'),
       damage,
       hitZone: bestHitZone,
       remainingHealth: bestTarget.health,

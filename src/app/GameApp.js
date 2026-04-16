@@ -21,6 +21,8 @@ import { createDebugMenu } from './createDebugMenu.js';
 import { createMovementTuningPanel } from '../game/player/createMovementTuningPanel.js';
 import { createRemoteAudioTuningPanel } from '../game/audio/createRemoteAudioTuningPanel.js';
 import { REMOTE_AUDIO_TUNING } from '../game/audio/remoteAudioTuning.js';
+import { createHudLayoutTuningPanel } from '../game/ui/createHudLayoutTuningPanel.js';
+import { HUD_LAYOUT_TUNING, applyHudLayoutTuningToRoot, loadHudLayoutTuning } from '../game/ui/hudLayoutTuning.js';
 import { TEAMS } from '../shared/constants.js';
 import { VIEWMODEL_LAYER } from '../game/weapons/viewModels.js';
 
@@ -32,6 +34,7 @@ const PLAYER_NAME_STORAGE_KEY = 'tactical-fps-threejs-player-name';
 const HUD_MODE_STORAGE_KEY = 'tactical-fps-threejs-hud-mode';
 const SETTINGS_STORAGE_KEY = 'tactical-fps-threejs-settings';
 const MAX_PLAYER_NAME_LENGTH = 24;
+const KILLFEED_ENTRY_LIFETIME_MS = 4500;
 
 function sanitizePlayerName(value, fallback = 'Player') {
   const normalized = String(value ?? '')
@@ -191,6 +194,7 @@ export class GameApp {
       left: 0,
     };
     this.hitDamagePopups = [];
+    this.killfeedEntries = [];
     this.selectedTeam = null;
     this.selectedPlayerName = loadStoredPlayerName();
     this.hudMode = loadStoredHudMode();
@@ -201,6 +205,7 @@ export class GameApp {
       lastFootstep: null,
       lastWeapon: null,
     };
+    Object.assign(HUD_LAYOUT_TUNING, loadHudLayoutTuning());
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0c1218);
@@ -232,6 +237,8 @@ export class GameApp {
       container: this.root,
       onToggleHudMode: () => this.toggleHudMode(),
     });
+    applyHudLayoutTuningToRoot();
+    this.hudLayoutTuningPanel = createHudLayoutTuningPanel();
     this.movementTuningPanel = createMovementTuningPanel();
     this.remoteAudioTuningPanel = createRemoteAudioTuningPanel();
     this.pauseController = new GamePauseController({
@@ -314,6 +321,7 @@ export class GameApp {
     this.audioManager.destroy();
     this.debugController.destroy();
     this.debugMenu?.destroy?.();
+    this.hudLayoutTuningPanel?.destroy?.();
     this.movementTuningPanel?.destroy?.();
     this.remoteAudioTuningPanel?.destroy?.();
     this.renderer.dispose();
@@ -350,6 +358,7 @@ export class GameApp {
       getHudMode: () => this.hudMode,
       getIsLoading: () => this.isLoadingMap,
       getLoadingStatus: () => this.loadingStatus,
+      getKillfeedEntries: () => this.killfeedEntries,
       getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
       getIsMovementTraceRecording: () => this.debugController.isMovementTraceRecording(),
       consumeMarkDebugSnapshotRequested: () => this.debugController.consumeMarkDebugSnapshotRequested(),
@@ -822,6 +831,7 @@ export class GameApp {
   }
 
   updateNetworkState(delta) {
+    this.pruneKillfeedEntries();
     if (this.getGameplaySyncEnabled()) {
       this.networkClient.update(delta);
       this.playReplicatedAudioEvents();
@@ -829,6 +839,9 @@ export class GameApp {
         remotePlayerPresenter: this.remotePlayerPresenter,
         utilityManager: this.runtime?.utilityManager ?? null,
         getPopupId: () => `${performance.now()}-${Math.random()}`,
+        onCombatEvent: (event) => {
+          this.handleCombatEventForUi(event);
+        },
         onLocalPlayerDamageDealt: (popup) => {
           this.hitDamagePopups.push(popup);
         },
@@ -850,6 +863,33 @@ export class GameApp {
     this.networkClient.suspendGameplaySync({
       preserveRemotePlayers: this.runtime.playerController.getMovementMode?.() === 'fly',
     });
+  }
+
+  handleCombatEventForUi(event) {
+    if (event?.type !== 'player-hit' || !event?.killed) {
+      return;
+    }
+
+    const attacker = this.networkClient.getScoreboardPlayer?.(event.attackerPlayerId) ?? null;
+    const victim = this.networkClient.getScoreboardPlayer?.(event.victimPlayerId) ?? null;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const entry = {
+      id: `${now}-${Math.random()}`,
+      attackerName: String(attacker?.displayName ?? event.attackerPlayerId ?? 'Player'),
+      attackerTeam: String(attacker?.team ?? ''),
+      victimName: String(victim?.displayName ?? event.victimPlayerId ?? 'Player'),
+      victimTeam: String(victim?.team ?? ''),
+      weaponKey: String(event.weaponKey ?? 'rifle'),
+      headshot: String(event.hitZone ?? '') === 'head',
+      expiresAt: now + KILLFEED_ENTRY_LIFETIME_MS,
+    };
+
+    this.killfeedEntries = [entry, ...this.killfeedEntries].slice(0, 5);
+  }
+
+  pruneKillfeedEntries() {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.killfeedEntries = this.killfeedEntries.filter((entry) => Number(entry?.expiresAt ?? 0) > now);
   }
 
   registerDamageIndicator(event) {

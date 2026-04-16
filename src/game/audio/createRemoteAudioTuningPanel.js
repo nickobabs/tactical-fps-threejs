@@ -4,6 +4,7 @@ import {
   setRemoteAudioTuningValue,
 } from './remoteAudioTuning.js';
 import { DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING } from '../../app/debugMenuEvents.js';
+import { makeDebugPanelDraggable } from '../../app/makeDebugPanelDraggable.js';
 
 const GROUPS = [
   {
@@ -58,6 +59,7 @@ export function createRemoteAudioTuningPanel() {
   title.style.fontWeight = '700';
   title.style.marginBottom = '8px';
   overlay.appendChild(title);
+  const dragController = makeDebugPanelDraggable(overlay, title);
 
   const help = document.createElement('div');
   help.textContent = 'Tune remote footstep attenuation live on the client.';
@@ -188,6 +190,7 @@ export function createRemoteAudioTuningPanel() {
     sync,
     destroy() {
       window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING, handleToggle);
+      dragController.destroy();
       overlay.remove();
     },
   };

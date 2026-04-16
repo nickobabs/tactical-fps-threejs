@@ -4,10 +4,16 @@ import { createTeamSelectOverlay } from './createTeamSelectOverlay.js';
 import { createHudClassicController } from './hudClassic.js';
 import { createHudObjectiveWidgetsController } from './hudObjectiveWidgets.js';
 import { createHudScoreboardController } from './hudScoreboard.js';
+import { getBombPulseIntervalSeconds } from '../../shared/bombObjective.js';
 
 const ATTACKER_ROSTER_ICON = '/icons/k3FcN65.png';
 const DEFENDER_ROSTER_ICON = '/icons/zcqziFR.png';
 const C4_ROSTER_ICON = '/icons/c4.png';
+const KILLFEED_WEAPON_ICONS = {
+  pistol: '/icons/pistol.svg',
+  rifle: '/icons/ak47.svg',
+};
+const KILLFEED_HEADSHOT_ICON = '/icons/headshot.png';
 
 function formatClock(seconds, { ceil = false } = {}) {
   const safeSeconds = Math.max(0, Number(seconds ?? 0));
@@ -15,6 +21,17 @@ function formatClock(seconds, { ceil = false } = {}) {
   const minutes = Math.floor(wholeSeconds / 60);
   const remainingSeconds = wholeSeconds % 60;
   return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function restartBombFlash(iconEl, flashDurationSeconds) {
+  if (!iconEl) {
+    return;
+  }
+
+  iconEl.style.setProperty('--hud-bomb-flash-duration', `${flashDurationSeconds.toFixed(3)}s`);
+  iconEl.classList.remove('hud__round-roster-timer-icon--bomb-flash');
+  void iconEl.offsetWidth;
+  iconEl.classList.add('hud__round-roster-timer-icon--bomb-flash');
 }
 
 export function createHud({
@@ -46,6 +63,7 @@ export function createHud({
   getHudMode,
   getIsLoading,
   getLoadingStatus,
+  getKillfeedEntries,
   getIgnoreLocalCorrections,
   getIsMovementTraceRecording,
   consumeMarkDebugSnapshotRequested,
@@ -149,6 +167,7 @@ export function createHud({
         </div>
       </div>
     </div>
+    <div class="hud__killfeed" aria-hidden="true"></div>
     <div class="hud__plant-progress">
       <div class="hud__plant-progress-label"></div>
       <div class="hud__plant-progress-track">
@@ -249,6 +268,7 @@ export function createHud({
   const topClusterEl = hud.querySelector('.hud__top');
   const bottomClusterEl = hud.querySelector('.hud__bottom');
   const scoreboardEl = hud.querySelector('.hud__scoreboard');
+  const killfeedEl = hud.querySelector('.hud__killfeed');
   const plantProgressEl = hud.querySelector('.hud__plant-progress');
   const plantProgressLabelEl = hud.querySelector('.hud__plant-progress-label');
   const plantProgressFillEl = hud.querySelector('.hud__plant-progress-fill');
@@ -264,6 +284,7 @@ export function createHud({
   const scoreboardTeamEls = [...hud.querySelectorAll('.hud__scoreboard-team')];
   const netDebugCopyEl = hud.querySelector('.hud__netdebug-copy');
   const netDebugEl = hud.querySelector('.hud__netdebug');
+
   let paused = false;
   let pauseMode = null;
   let showNetDebug = false;
@@ -292,6 +313,10 @@ export function createHud({
   let lastRoundRosterTimerHtml = '';
   let lastRoundRosterDefendersScore = '';
   let lastRoundRosterAttackersScore = '';
+  let lastKillfeedHtml = '';
+  let lastHudUpdateAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  let bombPulseCountdown = null;
+  let lastBombPlanted = false;
 
   function renderRoundRosterTeam(teamState, iconPath) {
     const players = [...(teamState?.players ?? [])]
@@ -363,6 +388,72 @@ export function createHud({
     }
 
     return `MVP: ${String(mvp.displayName ?? mvp.playerId)} for most kills`;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function getKillfeedNameClass(teamKey) {
+    if (teamKey === 'attackers') {
+      return 'hud__killfeed-name--attackers';
+    }
+    if (teamKey === 'defenders') {
+      return 'hud__killfeed-name--defenders';
+    }
+    return '';
+  }
+
+  function isKillfeedDebugPreviewEnabled() {
+    return document?.documentElement?.dataset?.hudDebugElement === 'killfeed';
+  }
+
+  function getKillfeedDebugPreviewEntry() {
+    const rootDataset = document?.documentElement?.dataset ?? {};
+    return {
+      attackerName: 'storste mand',
+      attackerTeam: 'attackers',
+      victimName: 'storste mand',
+      victimTeam: 'defenders',
+      weaponKey: rootDataset.hudDebugKillfeedWeapon === 'pistol' ? 'pistol' : 'rifle',
+      headshot: rootDataset.hudDebugKillfeedHeadshot !== 'false',
+    };
+  }
+
+  function buildKillfeedMarkup(entries = []) {
+    const nextEntries = entries.length ? entries : (isKillfeedDebugPreviewEnabled() ? [getKillfeedDebugPreviewEntry()] : []);
+    if (!nextEntries.length) {
+      return '';
+    }
+
+    return nextEntries.map((entry) => {
+      const attackerClass = getKillfeedNameClass(entry.attackerTeam);
+      const victimClass = getKillfeedNameClass(entry.victimTeam);
+      const weaponIcon = KILLFEED_WEAPON_ICONS[entry.weaponKey] ?? KILLFEED_WEAPON_ICONS.rifle;
+      const weaponLayoutClass = entry.headshot ? 'hud__killfeed-weapon--headshot' : 'hud__killfeed-weapon--single';
+      const weaponTypeClass = entry.weaponKey === 'rifle'
+        ? 'hud__killfeed-weapon--rifle'
+        : 'hud__killfeed-weapon--pistol';
+      const weaponIconClass = entry.weaponKey === 'rifle'
+        ? 'hud__killfeed-weapon-icon--rifle'
+        : 'hud__killfeed-weapon-icon--pistol';
+      const headshotIcon = entry.headshot
+        ? `<img class="hud__killfeed-headshot-icon" src="${KILLFEED_HEADSHOT_ICON}" alt="" />`
+        : '';
+      return `<div class="hud__killfeed-entry">
+        <span class="hud__killfeed-name ${attackerClass}">${escapeHtml(entry.attackerName)}</span>
+        <span class="hud__killfeed-weapon ${weaponLayoutClass} ${weaponTypeClass}">
+          <img class="hud__killfeed-weapon-icon ${weaponIconClass}" src="${weaponIcon}" alt="" />
+          ${headshotIcon}
+        </span>
+        <span class="hud__killfeed-name ${victimClass}">${escapeHtml(entry.victimName)}</span>
+      </div>`;
+    }).join('');
   }
 
   function handleKeyDown(event) {
@@ -451,6 +542,9 @@ export function createHud({
       teamSelectOverlay.setPlayerName(getSelectedPlayerName?.() ?? '');
     },
     update() {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const deltaSeconds = Math.min(0.25, Math.max(0, (now - lastHudUpdateAt) / 1000));
+      lastHudUpdateAt = now;
       const markDebugSnapshotRequested = Boolean(consumeMarkDebugSnapshotRequested?.());
       const movement = playerController?.getDebugState?.() ?? {
         grounded: true,
@@ -519,6 +613,7 @@ export function createHud({
           ? 'Pointer locked'
           : 'Click to capture mouse';
       const scoreboardVisible = showScoreboard && !paused;
+      const killfeedEntries = getKillfeedEntries?.() ?? [];
       const hudMode = getHudMode?.() ?? 'debug';
       const classicVisible = hudMode === 'classic' && !paused;
       const roundWinVisible = Boolean(!paused && roundManager?.roundEnded && roundManager?.winnerTeam);
@@ -538,8 +633,26 @@ export function createHud({
           : Math.max(0, phaseDuration - Number(roundManager?.phaseTime ?? 0));
       const bombPlanted = objectiveState?.bombState === 'planted';
       const roundRosterTimerHtml = bombPlanted
-        ? `<img class="hud__round-roster-timer-icon hud__round-roster-timer-icon--bomb" src="${C4_ROSTER_ICON}" alt="" />`
+        ? `<span class="hud__round-roster-bomb-shell"><img class="hud__round-roster-timer-icon hud__round-roster-timer-icon--bomb" src="${C4_ROSTER_ICON}" alt="" /></span>`
         : formatClock(timeLeft, { ceil: Boolean(roundManager?.roundEnded) });
+      let triggerBombFlash = false;
+      let bombFlashDuration = 0.16;
+      if (bombPlanted) {
+        if (!lastBombPlanted || bombPulseCountdown == null) {
+          bombPulseCountdown = getBombPulseIntervalSeconds(timeLeft);
+        } else {
+          bombPulseCountdown -= deltaSeconds;
+          while (bombPulseCountdown <= 0 && timeLeft > 0) {
+            triggerBombFlash = true;
+            const pulseInterval = getBombPulseIntervalSeconds(timeLeft);
+            bombFlashDuration = Math.min(0.18, Math.max(0.08, pulseInterval * 0.42));
+            bombPulseCountdown += pulseInterval;
+          }
+        }
+      } else {
+        bombPulseCountdown = null;
+      }
+      lastBombPlanted = bombPlanted;
       const roundWinTitle = roundWinVisible ? getRoundWinTitle(roundManager?.winnerTeam) : '';
       const roundWinSubtitle = roundWinVisible ? formatWinReason(roundManager?.winReason) : '';
       const roundWinMvp = roundWinVisible ? getRoundWinMvpText(roundManager, scoreboardState) : '';
@@ -551,6 +664,11 @@ export function createHud({
         roundManager,
         localPlayerId: networkClient?.playerId ?? null,
       });
+      const killfeedHtml = buildKillfeedMarkup(killfeedEntries);
+      if (killfeedHtml !== lastKillfeedHtml) {
+        killfeedEl.innerHTML = killfeedHtml;
+        lastKillfeedHtml = killfeedHtml;
+      }
       objectiveWidgetsController.update({
         paused,
         utilityHudState,
@@ -601,6 +719,10 @@ export function createHud({
       if (roundRosterTimerHtml !== lastRoundRosterTimerHtml) {
         roundRosterTimerEl.innerHTML = roundRosterTimerHtml;
         lastRoundRosterTimerHtml = roundRosterTimerHtml;
+      }
+      const bombTimerFlashEl = roundRosterTimerEl.querySelector('.hud__round-roster-bomb-shell');
+      if (bombTimerFlashEl && triggerBombFlash) {
+        restartBombFlash(bombTimerFlashEl, bombFlashDuration);
       }
       const defendersScoreText = String(defendersTeam?.roundsWon ?? 0);
       const attackersScoreText = String(attackersTeam?.roundsWon ?? 0);

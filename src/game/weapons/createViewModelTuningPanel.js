@@ -5,6 +5,7 @@ import {
   setViewModelTransformValue,
 } from './weaponConfigs.js';
 import { DEBUG_MENU_EVENT_TOGGLE_VIEWMODEL_TUNING } from '../../app/debugMenuEvents.js';
+import { makeDebugPanelDraggable } from '../../app/makeDebugPanelDraggable.js';
 
 export function createViewModelTuningPanel(getWeaponKey, options = {}) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -33,6 +34,7 @@ export function createViewModelTuningPanel(getWeaponKey, options = {}) {
   title.style.fontWeight = '700';
   title.style.marginBottom = '8px';
   overlay.appendChild(title);
+  const dragController = makeDebugPanelDraggable(overlay, title);
 
   const help = document.createElement('div');
   help.textContent = 'F4 toggle â€¢ saves automatically';
@@ -279,6 +281,7 @@ export function createViewModelTuningPanel(getWeaponKey, options = {}) {
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_VIEWMODEL_TUNING, handleDebugMenuToggle);
+      dragController.destroy();
       overlay.remove();
     },
   };

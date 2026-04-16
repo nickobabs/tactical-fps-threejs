@@ -688,6 +688,15 @@ export class NetworkClient {
     };
   }
 
+  getScoreboardPlayer(playerId) {
+    if (!playerId) {
+      return null;
+    }
+
+    const player = this.scoreboardPlayers.get(String(playerId));
+    return player ? { ...player } : null;
+  }
+
   getRemotePlayers() {
     const renderTime = getNow() - NETCODE_REMOTE_INTERPOLATION_DELAY_MS;
     const interpolatedPlayers = [];

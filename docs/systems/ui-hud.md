@@ -33,6 +33,8 @@
 - Scoreboard rendering
 - Objective widgets such as plant/defuse progress
 - Round-win banner and MVP copy
+- Killfeed rendering with weapon/headshot icons
+- HUD layout tuning/debug overlays
 
 ## Dependencies
 
@@ -64,6 +66,8 @@
   - player icons are team-colored and fade/greyscale on death
   - the round score stays center-anchored between the two teams
   - planted-bomb state swaps the timer text to a red C4 icon
+- HUD layout tuning is intentionally CSS-variable-driven so live slider changes can update the DOM immediately without rebuilding the HUD
+- Killfeed preview tuning is intentionally part of the HUD debug flow so bodyshot/headshot and rifle/pistol variants can be matched against the real live feed
 
 ## Current Status
 
@@ -90,9 +94,20 @@
   - center-anchored round score
   - top round timer that swaps to a C4 icon while the bomb is planted
 - Includes a centered round-win banner with win-reason subtitle and a simple winning-team MVP line
+- Includes a top-right killfeed with:
+  - team-colored killer/victim names
+  - rifle and pistol weapon icons
+  - headshot marker support
+  - content-width cards capped by a tunable max width
 - Includes 4-way directional damage indicators around the crosshair
 - HUD structure is now split across smaller files for scoreboard, classic HUD, objective widgets, and debug panels
 - Pause-menu values for volume, sensitivity, and horizontal FOV now persist locally per browser
+- Includes draggable HUD tuning/debug panels so tuning workflows do not have to overlap the live HUD they are inspecting
+- Includes HUD layout tuning for:
+  - top-center round roster offsets
+  - planted bomb icon sizing/offsets/pulse scale
+  - killfeed position, border, spacing, and per-weapon icon tuning
+  - dummy killfeed preview variants for rifle/pistol and headshot/bodyshot
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`
     - live panel now includes a `Copy` button so the exact text can be pasted without screenshots

@@ -63,6 +63,7 @@ It already supports real play loops:
 - Attacker/defender teams with first round-state flow
 - Bomb equip, carry, plant, countdown, and explosion baseline
 - First-pass bomb explosion visual at the planted position
+- Top-right killfeed with team-colored names, weapon icons, and headshot marker support
 
 ### Multiplayer
 
@@ -111,9 +112,11 @@ It already supports real play loops:
 - Team-select overlay with player-name entry
 - Scope overlay and ADS reticle handling
 - Bomb-planted state and planted-bomb timer feedback
+- Planted-bomb HUD pulse synced to authoritative bomb beep cadence
 - Plant progress feedback
 - Utility HUD feedback for smoke availability and throw prompt
 - Pause menu for map, skybox, sensitivity, volume, and FOV
+- Top-right killfeed with rifle/pistol icon support and headshot marker
 - Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
 - Live `NETDEBUG` panel with clipboard copy support
 - Local browser persistence for player name, HUD mode, volume, sensitivity, and horizontal FOV
@@ -122,6 +125,7 @@ It already supports real play loops:
 
 - Shared `EffectsManager` path for weapon tracers/impacts, smoke clouds, and bomb explosion presentation
 - Bomb planted and bomb defused announcement stingers
+- Bomb planted now also emits a world-positioned replicated beep that follows the planted countdown cadence
 - Local footstep pool with movement-tuned duration trimming
 - Replicated remote weapon, smoke bloom, and footstep sounds driven from authoritative state
 - Web Audio spatial playback now prefers `PannerNode` with `HRTF` when available
@@ -140,6 +144,7 @@ It already supports real play loops:
 - `F10` movement trace capture to `debug/movement-traces/`
 - Recoil tuning panel with live sliders and weapon JSON export
 - Movement tuning panel for footsteps, bob, and movement pull-back
+- HUD layout tuning panel with live element outlines, killfeed preview controls, drag-to-move panels, and localStorage-backed export/reset workflow
 - Collision wireframe and marker/position debug tools
 - Offline navmesh generation script
 

@@ -4,6 +4,7 @@ import {
   setMovementTuningValue,
 } from './movementTuning.js';
 import { DEBUG_MENU_EVENT_TOGGLE_MOVEMENT_TUNING } from '../../app/debugMenuEvents.js';
+import { makeDebugPanelDraggable } from '../../app/makeDebugPanelDraggable.js';
 
 const MOVEMENT_TUNING_GROUPS = [
   {
@@ -77,6 +78,7 @@ export function createMovementTuningPanel() {
   title.style.fontWeight = '700';
   title.style.marginBottom = '8px';
   overlay.appendChild(title);
+  const dragController = makeDebugPanelDraggable(overlay, title);
 
   const help = document.createElement('div');
   help.textContent = 'Tune movement bob and footstep feel.';
@@ -201,6 +203,7 @@ export function createMovementTuningPanel() {
     sync,
     destroy() {
       window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_MOVEMENT_TUNING, handleDebugMenuToggle);
+      dragController.destroy();
       overlay.remove();
     },
   };

@@ -2,6 +2,7 @@ import {
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING,
 } from '../../app/debugMenuEvents.js';
+import { makeDebugPanelDraggable } from '../../app/makeDebugPanelDraggable.js';
 
 function clonePose(pose) {
   return {
@@ -35,6 +36,7 @@ function createBasePanel({ titleText, helpText, side, width }) {
   title.style.fontWeight = '700';
   title.style.marginBottom = '10px';
   panel.appendChild(title);
+  const dragController = makeDebugPanelDraggable(panel, title);
 
   const help = document.createElement('div');
   help.textContent = helpText;
@@ -42,6 +44,7 @@ function createBasePanel({ titleText, helpText, side, width }) {
   help.style.marginBottom = '10px';
   panel.appendChild(help);
 
+  panel.__dragController = dragController;
   return panel;
 }
 
@@ -274,6 +277,7 @@ export function createRemoteWeaponTuningPanelUi({
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING, handleDebugMenuToggle);
+      panel.__dragController?.destroy?.();
       panel.remove();
     },
   };
@@ -673,6 +677,7 @@ export function createRemoteCharacterTuningPanelUi({
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING, handleDebugMenuToggle);
+      panel.__dragController?.destroy?.();
       panel.remove();
     },
   };

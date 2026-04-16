@@ -159,20 +159,21 @@ canvas {
 
 .hud__round-roster {
   position: absolute;
-  top: 22px;
+  top: var(--hud-round-roster-top, 21px);
   left: 50%;
   width: min(520px, calc(100vw - 120px));
-  height: 88px;
+  height: var(--hud-round-roster-height, 72px);
   transform: translateX(-50%);
 }
 
 .hud__round-roster-center {
   position: absolute;
-  top: 0;
+  top: var(--hud-round-roster-center-top, 7px);
   left: 50%;
   display: flex;
-  justify-items: center;
+  justify-content: center;
   align-items: center;
+  z-index: 2;
   transform: translateX(-50%);
 }
 
@@ -180,6 +181,7 @@ canvas {
   color: #d5b365;
   font: 700 22px/1 "Trebuchet MS", "Segoe UI", sans-serif;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85);
+  line-height: 1;
 }
 
 .hud__round-roster-timer-icon {
@@ -189,7 +191,36 @@ canvas {
   object-fit: contain;
 }
 
+.hud__round-roster-bomb-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--hud-bomb-icon-size, 33px) + 8px);
+  height: calc(var(--hud-bomb-icon-size, 33px) + 8px);
+  isolation: isolate;
+}
+
+.hud__round-roster-bomb-shell::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 170, 92, 0.5) 0%, rgba(255, 108, 54, 0.28) 55%, rgba(255, 96, 48, 0) 100%);
+  opacity: 0;
+  transform: translate(var(--hud-bomb-icon-offset-x, 0px), var(--hud-bomb-icon-offset-y, -6px)) scale(0.82);
+  transform-origin: center;
+  pointer-events: none;
+}
+
 .hud__round-roster-timer-icon--bomb {
+  position: relative;
+  z-index: 1;
+  width: var(--hud-bomb-icon-size, 33px);
+  height: var(--hud-bomb-icon-size, 33px);
+  transform: translate(var(--hud-bomb-icon-offset-x, 0px), var(--hud-bomb-icon-offset-y, -6px)) rotate(90deg);
+  transform-origin: center;
+  opacity: 0.96;
   filter:
     brightness(0)
     saturate(100%)
@@ -201,14 +232,59 @@ canvas {
     contrast(116%);
 }
 
+.hud__round-roster-timer-icon--bomb-flash {
+  animation-name: hud-bomb-flash;
+  animation-duration: var(--hud-bomb-flash-duration, 0.16s);
+  animation-timing-function: ease-out;
+  animation-iteration-count: 1;
+}
+
+@keyframes hud-bomb-flash {
+  0% {
+    transform: scale(1);
+  }
+
+  35% {
+    transform: scale(var(--hud-bomb-pulse-max-scale, 1.22));
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.hud__round-roster-timer-icon--bomb-flash::before {
+  animation-name: hud-bomb-flash-glow;
+  animation-duration: var(--hud-bomb-flash-duration, 0.16s);
+  animation-timing-function: ease-out;
+  animation-iteration-count: 1;
+}
+
+@keyframes hud-bomb-flash-glow {
+  0% {
+    opacity: 0;
+    transform: translate(var(--hud-bomb-icon-offset-x, 0px), var(--hud-bomb-icon-offset-y, -6px)) scale(0.82);
+  }
+
+  35% {
+    opacity: 1;
+    transform: translate(var(--hud-bomb-icon-offset-x, 0px), var(--hud-bomb-icon-offset-y, -6px)) scale(1.08);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--hud-bomb-icon-offset-x, 0px), var(--hud-bomb-icon-offset-y, -6px)) scale(0.88);
+  }
+}
+
 .hud__round-roster-team {
   position: absolute;
-  top: 48px;
+  top: var(--hud-round-roster-team-top, 8px);
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 60px;
-  transform: translateY(-50%);
+  z-index: 3;
 }
 
 .hud__round-roster-team--defenders {
@@ -243,16 +319,17 @@ canvas {
 
 .hud__round-roster-score {
   position: absolute;
-  top: 48px;
+  top: var(--hud-round-roster-score-top, 40px);
   left: 50%;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 70px;
-  padding: 4px 9px 5px;
+  padding: 3px 9px 4px;
   background: rgba(10, 10, 10, 0.52);
   border-radius: 4px;
-  transform: translate(-50%, -50%);
+  z-index: 4;
+  transform: translateX(-50%);
 }
 
 .hud__round-roster-score-value {
@@ -605,9 +682,149 @@ canvas {
   position: absolute;
   inset: 0;
   display: none;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 84px 32px 32px;
+  padding: 32px;
+}
+
+.hud__killfeed {
+  position: absolute;
+  top: var(--hud-killfeed-top, 22px);
+  right: var(--hud-killfeed-right, 22px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  width: auto;
+  max-width: min(var(--hud-killfeed-width, 440px), calc(100vw - 44px));
+}
+
+.hud__killfeed-entry {
+  display: inline-grid;
+  grid-template-columns: minmax(0, max-content) auto minmax(0, max-content);
+  align-items: center;
+  width: max-content;
+  min-width: var(--hud-killfeed-entry-min-width, 300px);
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: var(--hud-killfeed-padding-y, 8px) var(--hud-killfeed-padding-x, 14px);
+  border: var(--hud-killfeed-border-width, 1px) solid rgba(186, 24, 24, 0.9);
+  border-radius: var(--hud-killfeed-border-radius, 6px);
+  background: rgba(4, 4, 6, 0.92);
+}
+
+.hud__killfeed-entry:has(.hud__killfeed-weapon--single) {
+  gap: var(--hud-killfeed-body-item-gap, 0px);
+}
+
+.hud__killfeed-entry:has(.hud__killfeed-weapon--headshot) {
+  gap: var(--hud-killfeed-headshot-item-gap, 15px);
+}
+
+.hud__killfeed-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 var(--hud-killfeed-name-size, 18px)/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.8);
+  transform: translateY(var(--hud-killfeed-name-offset-y, 0px));
+}
+
+.hud__killfeed-name--attackers {
+  color: #e8c27a;
+}
+
+.hud__killfeed-name--defenders {
+  color: #8fc2ff;
+}
+
+.hud__killfeed-entry .hud__killfeed-name:first-child {
+  text-align: right;
+}
+
+.hud__killfeed-entry .hud__killfeed-name:last-child {
+  text-align: left;
+}
+
+.hud__killfeed-weapon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hud-killfeed-weapon-gap, 6px);
+  height: 28px;
+}
+
+.hud__killfeed-weapon--headshot {
+  width: auto;
+}
+
+.hud__killfeed-weapon--single {
+  width: auto;
+}
+
+.hud__killfeed-weapon--headshot.hud__killfeed-weapon--rifle {
+  width: var(--hud-killfeed-rifle-headshot-weapon-slot-width, 117px);
+}
+
+.hud__killfeed-weapon--headshot.hud__killfeed-weapon--pistol {
+  width: var(--hud-killfeed-pistol-headshot-weapon-slot-width, 107px);
+}
+
+.hud__killfeed-weapon-icon {
+  display: block;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+  filter:
+    brightness(0)
+    saturate(100%)
+    invert(99%)
+    sepia(4%)
+    saturate(128%)
+    hue-rotate(284deg)
+    brightness(118%)
+    contrast(96%);
+}
+
+.hud__killfeed-weapon-icon--rifle {
+  width: var(--hud-killfeed-rifle-body-weapon-icon-size, 113px);
+  height: var(--hud-killfeed-rifle-body-weapon-icon-size, 113px);
+  transform: translateY(var(--hud-killfeed-rifle-body-weapon-offset-y, 13px)) scaleX(-1);
+}
+
+.hud__killfeed-weapon--headshot .hud__killfeed-weapon-icon--rifle {
+  width: var(--hud-killfeed-rifle-headshot-weapon-icon-size, 113px);
+  height: var(--hud-killfeed-rifle-headshot-weapon-icon-size, 113px);
+  transform: translateY(var(--hud-killfeed-rifle-headshot-weapon-offset-y, 13px)) scaleX(-1);
+}
+
+.hud__killfeed-weapon-icon--pistol {
+  width: var(--hud-killfeed-pistol-body-weapon-icon-size, 100px);
+  height: var(--hud-killfeed-pistol-body-weapon-icon-size, 100px);
+  transform: translateY(var(--hud-killfeed-pistol-body-weapon-offset-y, 11px));
+}
+
+.hud__killfeed-weapon--headshot .hud__killfeed-weapon-icon--pistol {
+  width: var(--hud-killfeed-pistol-headshot-weapon-icon-size, 100px);
+  height: var(--hud-killfeed-pistol-headshot-weapon-icon-size, 100px);
+  transform: translateY(var(--hud-killfeed-pistol-headshot-weapon-offset-y, 11px));
+}
+
+.hud__killfeed-headshot-icon {
+  display: block;
+  width: var(--hud-killfeed-headshot-icon-size, 18px);
+  height: var(--hud-killfeed-headshot-icon-size, 18px);
+  object-fit: contain;
+  transform: translateY(var(--hud-killfeed-headshot-offset-y, 0px));
+  filter:
+    brightness(0)
+    saturate(100%)
+    invert(99%)
+    sepia(4%)
+    saturate(128%)
+    hue-rotate(284deg)
+    brightness(118%)
+    contrast(96%);
 }
 
 .hud__plant-progress {
@@ -778,6 +995,7 @@ canvas {
 
 .hud__scoreboard-panel {
   width: min(960px, calc(100vw - 64px));
+  transform: translateY(-5vh);
   border: 1px solid rgba(197, 160, 92, 0.48);
   background:
     linear-gradient(180deg, rgba(49, 43, 34, 0.68), rgba(19, 18, 16, 0.46)),
@@ -1121,46 +1339,156 @@ canvas {
 }
 
 .hud__pause-panel {
-  min-width: 280px;
-  padding: 24px;
-  border: 1px solid rgba(174, 211, 255, 0.18);
-  border-radius: 18px;
-  background: rgba(7, 12, 16, 0.82);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.34);
+  width: min(760px, calc(100vw - 40px));
+  max-height: min(860px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 28px;
+  border: 1px solid rgba(174, 211, 255, 0.16);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top, rgba(76, 118, 168, 0.14), transparent 42%),
+    linear-gradient(180deg, rgba(12, 18, 24, 0.96), rgba(6, 10, 14, 0.94));
+  box-shadow:
+    0 32px 90px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.hud__pause-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: start;
+}
+
+.hud__pause-kicker {
+  color: rgba(174, 211, 255, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .hud__pause-title {
-  margin-bottom: 16px;
-  font-size: 28px;
-  letter-spacing: 0.04em;
+  margin-top: 6px;
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 0.95;
+  letter-spacing: 0.03em;
+}
+
+.hud__pause-copy {
+  margin-top: 10px;
+  max-width: 42ch;
+  color: rgba(230, 237, 245, 0.72);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.hud__pause-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.hud__pause-summary-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(174, 211, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hud__pause-summary-label {
+  color: rgba(174, 211, 255, 0.74);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hud__pause-summary-value {
+  color: #f0f6ff;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.hud__pause-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.hud__pause-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.hud__pause-detail {
+  margin-top: 14px;
+  padding: 16px 18px 18px;
+  border: 1px solid rgba(174, 211, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hud__pause-panel-copy {
+  color: rgba(230, 237, 245, 0.7);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hud__pause-footer {
+  margin-top: 14px;
+  color: rgba(174, 211, 255, 0.66);
+  font-size: 12px;
+  letter-spacing: 0.05em;
 }
 
 .hud__pause-button {
-  display: block;
-  width: 100%;
-  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
   padding: 12px 14px;
   border: 1px solid rgba(174, 211, 255, 0.18);
   border-radius: 12px;
   background: rgba(176, 215, 255, 0.14);
   color: #e6edf5;
   font: inherit;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+
+.hud__pause-button--primary {
+  min-width: 180px;
+  background: linear-gradient(180deg, rgba(118, 168, 222, 0.42), rgba(42, 82, 118, 0.42));
+  border-color: rgba(174, 211, 255, 0.28);
 }
 
 .hud__pause-button--secondary {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.hud__pause-button--active,
 .hud__pause-button:hover {
   background: rgba(176, 215, 255, 0.22);
+  border-color: rgba(174, 211, 255, 0.3);
+  transform: translateY(-1px);
 }
 
 .hud__volume {
   display: block;
-  margin-top: 12px;
-  padding: 10px 0 2px;
+  margin-top: 0;
+  padding: 14px 14px 8px;
+  border: 1px solid rgba(174, 211, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .hud__volume-label {
@@ -1239,11 +1567,12 @@ canvas {
 
 @media (max-width: 900px) {
   .hud__scoreboard {
-    padding: 68px 16px 16px;
+    padding: 16px;
   }
 
   .hud__scoreboard-panel {
     width: min(960px, calc(100vw - 32px));
+    transform: translateY(-3vh);
   }
 
   .hud__scoreboard-teams {
@@ -1257,5 +1586,19 @@ canvas {
 
   .hud__team-select-options {
     grid-template-columns: 1fr;
+  }
+
+  .hud__pause-header,
+  .hud__pause-summary,
+  .hud__pause-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .hud__pause-button--primary {
+    width: 100%;
+  }
+
+  .hud__killfeed {
+    width: min(var(--hud-killfeed-width, 360px), calc(100vw - 32px));
   }
 }
