@@ -186,6 +186,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - a team-select overlay with player-name entry
   - a toggleable classic HUD mode inspired by Source
   - plant-progress and bomb-planted timer/state feedback
+  - a top-right killfeed with team-colored names, weapon icons, and headshot markers
+  - a HUD layout tuning workflow with draggable panels, live element outlines, and killfeed preview variants
 - Debug controls are now part of the active workflow:
   - `F8`: toggle `NETDEBUG`
     - includes a `Copy` button for exact clipboard export of the live panel
@@ -248,9 +250,18 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - remote players use a remote third-person presentation path with placeholder fallback
   - `RemotePlayerPresenter` now uses `public/models/players/newtest.glb` as the default remote baseline and `public/models/players/defender.glb` for defender-team visuals
   - the older `public/models/players/tester3.glb` path remains as a fallback if a requested remote model fails to load
-  - the active clean locomotion proof uses a standalone `public/models/players/newtest_run.fbx` clip for `run`
+  - the active authored remote locomotion set now includes:
+    - `newtest_walk.fbx`
+    - `newtest_walk_back.fbx`
+    - `newtest_run.fbx`
+    - `newtest_run_back.fbx`
+    - `newtest_strafe_left.fbx`
+    - `newtest_strafe_right.fbx`
+    - multiple `newtest_melee_*` clips for knife locomotion, crouch, idle, and jump
   - remote rifle presentation uses authored socket helpers and the current stable full-body locomotion path
   - remote locomotion playback now scales from actual replicated movement speed on both the visible client presenter and the authoritative server hitbox rig
+  - rifle and pistol now switch between authored walk and run clips from replicated movement speed
+  - knife now switches into its dedicated melee locomotion set instead of reusing the rifle/pistol baseline
   - standing fire uses the full-body `newtest_fire.fbx` clip
   - remote vertical-aim readability currently comes from weapon/socket pitch plus a narrow neck/head procedural layer
   - client prediction with replay/reconciliation
@@ -363,6 +374,14 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - runtime subclips from the long `Take 001` strip are usable for many motions, but loop quality was not good enough for locomotion
   - the first standalone Max-exported run clip, `public/models/players/newtest_run.fbx`, now plays cleanly in-engine and overrides the experimental `run` clip
   - current conclusion: standalone exported clips from the source DCC are the preferred path for locomotion quality, while the long-strip subclip path remains a temporary bridge
+  - additional animation FBXs now exist in `public/models/players/animations/`, including:
+    - `newtest_walk.fbx`
+    - `newtest_walk_back.fbx`
+    - multiple `newtest_melee_*` clips for knife locomotion/idle/jump/strafe
+  - those walk/melee clips are now wired into the active remote clip selection logic:
+    - rifle and pistol can now use authored forward/back walk clips before transitioning into run clips
+    - knife now uses a dedicated melee idle/walk/run/strafe/crouch/jump set
+    - the authoritative server hitbox rig mirrors the same selection rules so visible mesh and `F3` hitboxes stay aligned
   - later parity work aligned client/server root-motion stripping on `Bip01.position`, which removed the remaining locomotion and jump mismatch; see `docs/remote-hitbox-audit.md` for the full debugging record
   - later playback follow-up aligned client and authoritative hitbox locomotion speed scaling against the shared movement baselines, and excluded jump playback from that scaling on the server rig
   - shared skeleton resolution now explicitly includes both the current Bip-style names and common Mixamo-style names so a future rig swap is less invasive
@@ -468,7 +487,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - no lag compensation yet
   - no head/body hit zones
   - no ammo/reload authority
-  - no killfeed, spectate flow, or round authority yet
+  - no spectate flow yet
+- Round authority and killfeed are now active:
+  - freeze, live, planted, and round-end flow are authoritative
+  - bomb planting/countdown/explosion are authoritative
+  - killfeed UI renders replicated kills with weapon and headshot markers
 - Runtime nav generation still exists as a fallback and still runs on the main thread when used.
 - `RoundManager` and `UtilityManager` are no longer stubs, but they are still early gameplay systems with narrow rule coverage.
 - `PlayerState` still exists but remains unused.
@@ -580,10 +603,17 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - viewmodel tuning
     - remote body tuning
     - remote weapon tuning
+    - HUD layout tuning with draggable panels, live outlines, and killfeed preview toggles for weapon/headshot state
 - HUD / local settings:
   - the top-center round HUD now shows defender/attacker player icons plus a center-anchored round score
   - dead players in that strip now render greyscaled/faded
   - the top timer is now the primary round timer surface and swaps to a red C4 icon while the bomb is planted
+  - the planted bomb now also has a synced HUD pulse plus a replicated world beep from the planted position
+  - the top-right killfeed now uses SVG rifle/pistol icons and variant-specific tuning for:
+    - rifle body
+    - rifle headshot
+    - pistol body
+    - pistol headshot
   - directional 4-way damage indicators now render around the crosshair
   - pause-menu volume, sensitivity, and horizontal FOV now persist locally in browser storage
 - Movement tuning:
@@ -666,6 +696,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Current current-state notes:
   - the broader upper/lower-body layering experiment was rolled back because it produced unstable locomotion transitions and incompatible state combinations
   - standing fire now uses the full-body `newtest_fire.fbx` clip again instead of the old broken experimental overlay path
+  - rifle and pistol now use authored walk / walk-back clips before the authored run set when replicated speed falls into the slow-walk range
+  - knife now uses a dedicated authored melee locomotion set for idle, forward walk, back walk, run, strafe, crouch, and jump
   - current remote body aiming is intentionally modest:
     - neck/head-only procedural pitch remains active
     - crouch body aiming is disabled

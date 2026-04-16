@@ -96,7 +96,7 @@
 - Includes a centered round-win banner with win-reason subtitle and a simple winning-team MVP line
 - Includes a top-right killfeed with:
   - team-colored killer/victim names
-  - rifle and pistol weapon icons
+  - rifle and pistol SVG weapon icons
   - headshot marker support
   - content-width cards capped by a tunable max width
 - Includes 4-way directional damage indicators around the crosshair
@@ -106,8 +106,14 @@
 - Includes HUD layout tuning for:
   - top-center round roster offsets
   - planted bomb icon sizing/offsets/pulse scale
-  - killfeed position, border, spacing, and per-weapon icon tuning
+  - killfeed position, border, spacing, and per-variant icon tuning
   - dummy killfeed preview variants for rifle/pistol and headshot/bodyshot
+  - variant-specific killfeed tuning now follows the actual live branches:
+    - rifle body
+    - rifle headshot
+    - pistol body
+    - pistol headshot
+  - the panel now hides irrelevant rifle/pistol and body/headshot controls based on the current preview selection
 - Includes multiplayer diagnostics:
   - `F8` toggles `NETDEBUG`
     - live panel now includes a `Copy` button so the exact text can be pasted without screenshots

@@ -145,10 +145,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - shared skeleton resolution now supports both the current Bip-style names and common Mixamo-style names at the mapping layer
   - remote scoped weapon transform offsets currently reuse the hip socket-pose values until there is a real separate remote ADS animation/pose
   - visible remote locomotion playback now multiplies the authored clip speed by the replicated horizontal-speed ratio:
-    - standing baseline uses shared rifle walk speed `4.92`
-    - crouch baseline uses shared crouch speed `2.64`
+    - default rifle/pistol locomotion can now choose authored walk vs run clips from replicated horizontal speed
+    - standing/crouch playback baselines now come from shared weapon movement data instead of one fixed standing assumption
   - the authoritative server hitbox rig now mirrors that same locomotion-speed scaling so `F3` stays aligned with the visible remote mesh
   - jump playback on the authoritative rig no longer runs through the movement-speed scaling path, which resolved a small jump-ahead mismatch in `F3`
+  - knife now uses its dedicated authored melee locomotion set on both the visible client presenter and the authoritative server rig
   - remote pitch is now replicated
   - a new authored rifle upper-body base clip still exists for the experimental remote path:
     - `public/models/players/animations/newtest_rifle_upper_idle.fbx`
@@ -209,7 +210,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - newer server-authoritative segmented bone-driven hit volumes
   - no lag compensation yet
   - no ammo/reload state yet
-  - no full killfeed or spectate flow yet
+  - killfeed replication/UI exists, but spectate flow still does not
 - Local target dummies are now disabled by default for PvP testing unless explicitly re-enabled through `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`
 - The long-strip subclip path is still a temporary bridge for some motions, but it is no longer the preferred quality path for locomotion
 - Remote aim presentation is still under active iteration:

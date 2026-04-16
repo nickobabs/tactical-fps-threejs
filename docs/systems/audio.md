@@ -59,6 +59,7 @@
 - Remote weapon-fire sounds are now replicated from authoritative server state and played spatially on other clients
 - Remote footstep sounds are now replicated from authoritative server movement state and played spatially on other clients
 - Remote smoke bloom sounds are now replicated from authoritative utility state and played spatially on other clients
+- Planted bomb beeps are now replicated from authoritative bomb state, emitted from the planted world position, and follow the same cadence helper used by the HUD bomb pulse
 - `GameApp` now updates the Web Audio listener transform each frame from the active first-person player so remote sound direction follows live head/camera orientation
 - Footstep playback currently flattens emitter height toward the listener ear plane to avoid odd HRTF coloration from ground-level emitters
 - Footsteps currently use `HRTF` plus manual gameplay attenuation/cutoff as the live baseline, rather than a separate `equalpower` footstep mode

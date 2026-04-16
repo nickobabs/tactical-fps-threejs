@@ -115,13 +115,29 @@ Important current rules:
 - root-motion translation is stripped so actor transform remains authoritative
 - visible client playback and authoritative server playback must use the same clip set semantics
 - locomotion playback rate is scaled from actual replicated horizontal speed
-  - standing baseline uses shared walk speed `4.92`
-  - crouch baseline uses shared crouch speed `2.64`
+  - default standing clips now distinguish between slow-walk and full-speed locomotion where authored walk clips exist
+  - baseline speeds are derived from shared weapon movement data rather than one global playback assumption
+  - crouch baseline still uses shared crouch speed semantics
 - jump playback is not movement-speed scaled on the authoritative rig
+
+Important current active mapping details:
+
+- rifle and pistol currently use authored `walk`, `walk back`, `run`, `run back`, `strafe`, `crouch`, and `jump` clips
+- knife currently uses a separate melee clip set for:
+  - idle
+  - walk forward
+  - walk backward
+  - run forward
+  - strafe left/right
+  - crouch idle
+  - crouch walk
+  - jump
+- the client presenter and the authoritative server hitbox rig now share the same weapon-aware clip-selection rules, so visible pose and hitbox pose stay aligned
 
 That means any future rig swap must validate:
 
 - idle parity
+- walk parity
 - forward/back/strafe parity
 - crouch parity
 - jump parity

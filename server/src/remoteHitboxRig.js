@@ -8,18 +8,21 @@ import {
   REMOTE_CHARACTER_AIM_SETTINGS,
   REMOTE_CHARACTER_MODEL_SCALE,
   REMOTE_AIM_BONE_SIGN,
+  REMOTE_CLIPS,
   REMOTE_AIM_BONE_SPECS,
   REMOTE_AIM_CLIP_FACTORS,
   REMOTE_AIM_PITCH_MAX,
   REMOTE_AIM_PITCH_MIN,
   REMOTE_AIM_STATE_FACTORS,
   REMOTE_PRIMARY_CHARACTER_SKELETON,
+  getRemoteMovementClipBaselineSpeeds,
   getRemoteSocketPoseKey,
+  shouldUseRemoteWalkClip,
+  usesRemoteMeleeClipSet,
 } from '../../src/shared/remoteCharacterConfig.js';
 import {
   createRemoteHitboxPointCache,
 } from '../../src/shared/remoteHitboxes.js';
-import { PLAYER_MOVEMENT_DEFAULTS } from '../../src/shared/playerMovement.js';
 import {
   describeRemoteHitboxAudit,
   resolveRemoteHitBones,
@@ -42,21 +45,12 @@ const REMOTE_USE_LEFT_HAND_IK = false;
 const REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE = 0.55;
 const REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE = 1.45;
 
-const CLIPS = {
-  idle: 'idle',
-  runForward: 'run',
-  runBackward: 'run back',
-  strafeLeft: 'strafe left',
-  strafeRight: 'strafe right',
-  crouchIdle: 'crouch idle',
-  crouchWalk: 'crouch walk',
-  crouchBackward: 'crouch back',
-  jump: 'jump',
-  fire: 'fire',
-};
+const CLIPS = REMOTE_CLIPS;
 
 const CLIP_DEFS = {
   idle: { type: 'external', path: 'newtest_idle.fbx' },
+  walk: { type: 'external', path: 'newtest_walk.fbx', playbackSpeed: 1 },
+  'walk back': { type: 'external', path: 'newtest_walk_back.fbx', playbackSpeed: 1 },
   run: { type: 'external', path: 'newtest_run.fbx', playbackSpeed: 1.05 },
   'run back': { type: 'external', path: 'newtest_run_back.fbx', playbackSpeed: 1.9 },
   'strafe left': { type: 'external', path: 'newtest_strafe_left.fbx', playbackSpeed: 1.8 },
@@ -65,6 +59,15 @@ const CLIP_DEFS = {
   'crouch idle': { type: 'external', path: 'newtest_crouch_idle.fbx' },
   'crouch back': { type: 'external', path: 'newtest_crouch_walk.fbx', playbackSpeed: 1.55, reverse: true },
   jump: { type: 'external', path: 'newtest_jump.fbx' },
+  'melee idle': { type: 'external', path: 'newtest_melee_idle.fbx' },
+  'melee walk': { type: 'external', path: 'newtest_melee_walk.fbx', playbackSpeed: 1 },
+  'melee walk back': { type: 'external', path: 'newtest_melee_walk_back.fbx', playbackSpeed: 1 },
+  'melee run': { type: 'external', path: 'newtest_melee_run.fbx', playbackSpeed: 1 },
+  'melee strafe left': { type: 'external', path: 'newtest_melee_strafe_left.fbx', playbackSpeed: 1 },
+  'melee strafe right': { type: 'external', path: 'newtest_melee_strafe_right.fbx', playbackSpeed: 1 },
+  'melee crouch walk': { type: 'external', path: 'newtest_melee_crouch_walk.fbx', playbackSpeed: 1 },
+  'melee crouch idle': { type: 'external', path: 'newtest_melee_crouch_idle.fbx' },
+  'melee jump': { type: 'external', path: 'newtest_melee_jump.fbx' },
   fire: { type: 'external', path: 'newtest_fire.fbx' },
 };
 
@@ -394,19 +397,26 @@ function selectMovementClip(player) {
     return CLIPS.idle;
   }
 
-  if (presentationState === 'air') {
-    return CLIPS.jump;
-  }
-
   const velocity = player.motionState?.velocity ?? null;
   const isCrouched = Boolean(player.motionState?.isCrouched);
+  const weaponKey = String(player?.activeWeaponKey ?? 'rifle');
+  if (presentationState === 'air') {
+    return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeJump : CLIPS.jump;
+  }
   if (!velocity) {
-    return isCrouched ? CLIPS.crouchIdle : CLIPS.idle;
+    if (isCrouched) {
+      return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeCrouchIdle : CLIPS.crouchIdle;
+    }
+    return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeIdle : CLIPS.idle;
   }
 
   MOVE_VECTOR.set(Number(velocity.x ?? 0), 0, Number(velocity.z ?? 0));
-  if (MOVE_VECTOR.lengthSq() <= MOVEMENT_DIRECTION_EPSILON * MOVEMENT_DIRECTION_EPSILON) {
-    return isCrouched ? CLIPS.crouchIdle : CLIPS.idle;
+  const horizontalSpeed = MOVE_VECTOR.length();
+  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
+    if (isCrouched) {
+      return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeCrouchIdle : CLIPS.crouchIdle;
+    }
+    return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeIdle : CLIPS.idle;
   }
 
   const yaw = Number(player.motionState?.yaw ?? 0);
@@ -416,13 +426,31 @@ function selectMovementClip(player) {
   const strafeAmount = MOVE_VECTOR.dot(RIGHT);
 
   if (isCrouched) {
+    if (usesRemoteMeleeClipSet(weaponKey)) {
+      return CLIPS.meleeCrouchWalk;
+    }
     if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
       return forwardAmount >= 0 ? CLIPS.crouchWalk : CLIPS.crouchBackward;
     }
     return CLIPS.crouchWalk;
   }
 
+  if (usesRemoteMeleeClipSet(weaponKey)) {
+    if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
+      if (forwardAmount >= 0) {
+        return shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)
+          ? CLIPS.meleeWalkForward
+          : CLIPS.meleeRunForward;
+      }
+      return CLIPS.meleeWalkBackward;
+    }
+    return strafeAmount >= 0 ? CLIPS.meleeStrafeRight : CLIPS.meleeStrafeLeft;
+  }
+
   if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
+    if (shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)) {
+      return forwardAmount >= 0 ? CLIPS.walkForward : CLIPS.walkBackward;
+    }
     return forwardAmount >= 0 ? CLIPS.runForward : CLIPS.runBackward;
   }
 
@@ -430,7 +458,15 @@ function selectMovementClip(player) {
 }
 
 function getRigMovementPlaybackScale(player, targetClip) {
-  if (targetClip === CLIPS.jump || targetClip === CLIPS.fire || targetClip === CLIPS.idle || targetClip === CLIPS.crouchIdle) {
+  if (
+    targetClip === CLIPS.jump
+    || targetClip === CLIPS.meleeJump
+    || targetClip === CLIPS.fire
+    || targetClip === CLIPS.idle
+    || targetClip === CLIPS.meleeIdle
+    || targetClip === CLIPS.crouchIdle
+    || targetClip === CLIPS.meleeCrouchIdle
+  ) {
     return 1;
   }
 
@@ -447,10 +483,22 @@ function getRigMovementPlaybackScale(player, targetClip) {
     return 1;
   }
 
-  const crouchClip = targetClip === CLIPS.crouchWalk || targetClip === CLIPS.crouchBackward;
+  const weaponKey = String(player?.activeWeaponKey ?? 'rifle');
+  const baselineSpeeds = getRemoteMovementClipBaselineSpeeds(weaponKey);
+  const crouchClip = [
+    CLIPS.crouchWalk,
+    CLIPS.crouchBackward,
+    CLIPS.meleeCrouchWalk,
+  ].includes(targetClip);
+  const walkClip = [
+    CLIPS.walkForward,
+    CLIPS.walkBackward,
+    CLIPS.meleeWalkForward,
+    CLIPS.meleeWalkBackward,
+  ].includes(targetClip);
   const baselineSpeed = crouchClip
-    ? PLAYER_MOVEMENT_DEFAULTS.crouchSpeed
-    : PLAYER_MOVEMENT_DEFAULTS.walkSpeed;
+    ? baselineSpeeds.crouchSpeed
+    : (walkClip ? baselineSpeeds.walkSpeed : baselineSpeeds.fullSpeed);
   if (!Number.isFinite(baselineSpeed) || baselineSpeed <= 0) {
     return 1;
   }

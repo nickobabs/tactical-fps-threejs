@@ -14,7 +14,7 @@ export const HUD_LAYOUT_TUNING = {
   killfeedTop: 89,
   killfeedRight: 87,
   killfeedWidth: 528,
-  killfeedEntryMinWidth: 226,
+  killfeedEntryMinWidth: 5,
   killfeedPaddingX: 14,
   killfeedPaddingY: 4,
   killfeedBodyItemGap: 0,
@@ -132,7 +132,7 @@ export function resetHudLayoutTuning() {
   HUD_LAYOUT_TUNING.killfeedTop = 89;
   HUD_LAYOUT_TUNING.killfeedRight = 87;
   HUD_LAYOUT_TUNING.killfeedWidth = 528;
-  HUD_LAYOUT_TUNING.killfeedEntryMinWidth = 226;
+  HUD_LAYOUT_TUNING.killfeedEntryMinWidth = 5;
   HUD_LAYOUT_TUNING.killfeedPaddingX = 14;
   HUD_LAYOUT_TUNING.killfeedPaddingY = 4;
   HUD_LAYOUT_TUNING.killfeedBodyItemGap = 0;

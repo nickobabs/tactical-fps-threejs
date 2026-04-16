@@ -23,9 +23,11 @@ import {
   REMOTE_AIM_PITCH_MIN,
   REMOTE_AIM_STATE_FACTORS,
   REMOTE_CLIPS,
+  getRemoteMovementClipBaselineSpeeds,
   getRemoteSocketPoseKey,
+  shouldUseRemoteWalkClip,
+  usesRemoteMeleeClipSet,
 } from '../../shared/remoteCharacterConfig.js';
-import { PLAYER_MOVEMENT_DEFAULTS } from '../../shared/playerMovement.js';
 import {
   getDefaultRemoteCharacterDefinition,
   getFallbackRemoteCharacterDefinition,
@@ -1700,8 +1702,13 @@ function selectMovementClip(authoritativeState, presentationState) {
   }
 
   REMOTE_MOVE_VECTOR.set(Number(velocity.x ?? 0), 0, Number(velocity.z ?? 0));
-  if (REMOTE_MOVE_VECTOR.lengthSq() <= MOVEMENT_DIRECTION_EPSILON * MOVEMENT_DIRECTION_EPSILON) {
-    return isCrouched ? REMOTE_CLIPS.crouchIdle : REMOTE_CLIPS.idle;
+  const horizontalSpeed = REMOTE_MOVE_VECTOR.length();
+  const weaponKey = String(authoritativeState?.activeWeaponKey ?? 'rifle');
+  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
+    if (isCrouched) {
+      return usesRemoteMeleeClipSet(weaponKey) ? REMOTE_CLIPS.meleeCrouchIdle : REMOTE_CLIPS.crouchIdle;
+    }
+    return usesRemoteMeleeClipSet(weaponKey) ? REMOTE_CLIPS.meleeIdle : REMOTE_CLIPS.idle;
   }
 
   const yaw = Number(authoritativeState?.yaw ?? 0);
@@ -1712,6 +1719,9 @@ function selectMovementClip(authoritativeState, presentationState) {
   const strafeAmount = REMOTE_MOVE_VECTOR.dot(REMOTE_RIGHT);
 
   if (isCrouched) {
+    if (usesRemoteMeleeClipSet(weaponKey)) {
+      return REMOTE_CLIPS.meleeCrouchWalk;
+    }
     if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
       return forwardAmount >= 0 ? REMOTE_CLIPS.crouchWalk : REMOTE_CLIPS.crouchBackward;
     }
@@ -1719,7 +1729,23 @@ function selectMovementClip(authoritativeState, presentationState) {
     return REMOTE_CLIPS.crouchWalk;
   }
 
+  if (usesRemoteMeleeClipSet(weaponKey)) {
+    if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
+      if (forwardAmount >= 0) {
+        return shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)
+          ? REMOTE_CLIPS.meleeWalkForward
+          : REMOTE_CLIPS.meleeRunForward;
+      }
+      return REMOTE_CLIPS.meleeWalkBackward;
+    }
+
+    return strafeAmount >= 0 ? REMOTE_CLIPS.meleeStrafeRight : REMOTE_CLIPS.meleeStrafeLeft;
+  }
+
   if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
+    if (shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)) {
+      return forwardAmount >= 0 ? REMOTE_CLIPS.walkForward : REMOTE_CLIPS.walkBackward;
+    }
     return forwardAmount >= 0 ? REMOTE_CLIPS.runForward : REMOTE_CLIPS.runBackward;
   }
 
@@ -1754,8 +1780,9 @@ function getSocketWeaponPose(weaponKey, isScoped) {
 }
 
 function selectTargetClip(authoritativeState, presentationState) {
+  const weaponKey = String(authoritativeState?.activeWeaponKey ?? 'rifle');
   return presentationState === 'air'
-    ? REMOTE_CLIPS.jump
+    ? (usesRemoteMeleeClipSet(weaponKey) ? REMOTE_CLIPS.meleeJump : REMOTE_CLIPS.jump)
     : selectMovementClip(authoritativeState, presentationState);
 }
 
@@ -1773,10 +1800,22 @@ function getRemoteMovementPlaybackScale(authoritativeState, targetClip) {
     return 1;
   }
 
-  const crouchClip = targetClip === REMOTE_CLIPS.crouchWalk || targetClip === REMOTE_CLIPS.crouchBackward;
+  const weaponKey = String(authoritativeState?.activeWeaponKey ?? 'rifle');
+  const baselineSpeeds = getRemoteMovementClipBaselineSpeeds(weaponKey);
+  const crouchClip = [
+    REMOTE_CLIPS.crouchWalk,
+    REMOTE_CLIPS.crouchBackward,
+    REMOTE_CLIPS.meleeCrouchWalk,
+  ].includes(targetClip);
+  const walkClip = [
+    REMOTE_CLIPS.walkForward,
+    REMOTE_CLIPS.walkBackward,
+    REMOTE_CLIPS.meleeWalkForward,
+    REMOTE_CLIPS.meleeWalkBackward,
+  ].includes(targetClip);
   const baselineSpeed = crouchClip
-    ? PLAYER_MOVEMENT_DEFAULTS.crouchSpeed
-    : PLAYER_MOVEMENT_DEFAULTS.walkSpeed;
+    ? baselineSpeeds.crouchSpeed
+    : (walkClip ? baselineSpeeds.walkSpeed : baselineSpeeds.fullSpeed);
   if (!Number.isFinite(baselineSpeed) || baselineSpeed <= 0) {
     return 1;
   }

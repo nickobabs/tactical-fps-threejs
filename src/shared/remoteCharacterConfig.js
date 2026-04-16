@@ -1,5 +1,10 @@
+import { PLAYER_MOVEMENT_DEFAULTS } from './playerMovement.js';
+import { getSharedWeaponData } from './weaponData.js';
+
 export const REMOTE_CLIPS = {
   idle: 'idle',
+  walkForward: 'walk',
+  walkBackward: 'walk back',
   runForward: 'run',
   runBackward: 'run back',
   strafeLeft: 'strafe left',
@@ -7,6 +12,15 @@ export const REMOTE_CLIPS = {
   crouchIdle: 'crouch idle',
   crouchWalk: 'crouch walk',
   crouchBackward: 'crouch back',
+  meleeIdle: 'melee idle',
+  meleeWalkForward: 'melee walk',
+  meleeWalkBackward: 'melee walk back',
+  meleeRunForward: 'melee run',
+  meleeStrafeLeft: 'melee strafe left',
+  meleeStrafeRight: 'melee strafe right',
+  meleeCrouchIdle: 'melee crouch idle',
+  meleeCrouchWalk: 'melee crouch walk',
+  meleeJump: 'melee jump',
   jump: 'jump',
   fire: 'fire',
   dieForward: 'die forward',
@@ -87,6 +101,40 @@ export function getRemoteSocketPoseKey(weaponKey, isScoped) {
   return 'rifleHip';
 }
 
+export function usesRemoteMeleeClipSet(weaponKey) {
+  return String(weaponKey ?? 'rifle') === 'knife';
+}
+
+export function supportsRemoteWalkClips(weaponKey) {
+  const normalizedWeaponKey = String(weaponKey ?? 'rifle');
+  return normalizedWeaponKey === 'rifle' || normalizedWeaponKey === 'pistol' || normalizedWeaponKey === 'knife';
+}
+
+export function getRemoteMovementClipBaselineSpeeds(weaponKey) {
+  const weaponData = getSharedWeaponData(weaponKey);
+  const movementSpeedMultiplier = Math.max(0.01, Number(weaponData?.movementSpeedMultiplier ?? 1));
+  const walkSpeedFactor = Math.max(0.1, Number(weaponData?.walkSpeedFactor ?? 0.5));
+  const fullSpeed = PLAYER_MOVEMENT_DEFAULTS.walkSpeed * movementSpeedMultiplier;
+  return {
+    fullSpeed,
+    walkSpeed: fullSpeed * walkSpeedFactor,
+    crouchSpeed: PLAYER_MOVEMENT_DEFAULTS.crouchSpeed * movementSpeedMultiplier,
+  };
+}
+
+export function shouldUseRemoteWalkClip(weaponKey, horizontalSpeed) {
+  if (!supportsRemoteWalkClips(weaponKey) || !Number.isFinite(horizontalSpeed)) {
+    return false;
+  }
+
+  const { fullSpeed, walkSpeed } = getRemoteMovementClipBaselineSpeeds(weaponKey);
+  if (!Number.isFinite(fullSpeed) || !Number.isFinite(walkSpeed) || fullSpeed <= walkSpeed) {
+    return false;
+  }
+
+  return horizontalSpeed <= (fullSpeed + walkSpeed) * 0.5;
+}
+
 export const REMOTE_AIM_PITCH_MIN = -0.9;
 export const REMOTE_AIM_PITCH_MAX = 0.7;
 export const REMOTE_AIM_BONE_SIGN = -1;
@@ -118,6 +166,8 @@ export const REMOTE_AIM_BONE_SPECS = [
 
 export const REMOTE_AIM_CLIP_FACTORS = {
   [REMOTE_CLIPS.idle]: 1,
+  [REMOTE_CLIPS.walkForward]: 0.7,
+  [REMOTE_CLIPS.walkBackward]: 0.7,
   [REMOTE_CLIPS.runForward]: 0.7,
   [REMOTE_CLIPS.runBackward]: 0.7,
   [REMOTE_CLIPS.strafeLeft]: 0.5,
@@ -125,6 +175,15 @@ export const REMOTE_AIM_CLIP_FACTORS = {
   [REMOTE_CLIPS.crouchIdle]: 0,
   [REMOTE_CLIPS.crouchWalk]: 0,
   [REMOTE_CLIPS.crouchBackward]: 0,
+  [REMOTE_CLIPS.meleeIdle]: 1,
+  [REMOTE_CLIPS.meleeWalkForward]: 0.7,
+  [REMOTE_CLIPS.meleeWalkBackward]: 0.7,
+  [REMOTE_CLIPS.meleeRunForward]: 0.7,
+  [REMOTE_CLIPS.meleeStrafeLeft]: 0.5,
+  [REMOTE_CLIPS.meleeStrafeRight]: 0.5,
+  [REMOTE_CLIPS.meleeCrouchIdle]: 0,
+  [REMOTE_CLIPS.meleeCrouchWalk]: 0,
+  [REMOTE_CLIPS.meleeJump]: 0,
   [REMOTE_CLIPS.jump]: 0,
   [REMOTE_CLIPS.fire]: 1,
   [REMOTE_CLIPS.dieForward]: 0,

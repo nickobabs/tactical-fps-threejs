@@ -11,7 +11,7 @@ The project is aiming for a Counter-Strike-like feel:
 - visible remote players backed by authoritative hit validation
 - round-based attacker/defender play with a first bomb-objective slice
 
-This repo should be read as a playable game-tech prototype, not just a rendering demo.
+This repo should be read as a playable multiplayer game-tech prototype, not just a rendering demo.
 
 ## Current State
 
@@ -22,9 +22,9 @@ The current build is a real multiplayer-capable tactical FPS foundation with:
 - grounded accel/decel/reversal tuning in shared movement
 - imported maps with separate visual and collision assets
 - baked navmesh support
-- first-person weapons and damage feedback
+- first-person rifle, pistol, knife, sniper, smoke, and bomb gameplay slices
 - shared transient effects for weapon impacts, smoke, and bomb explosion presentation
-- remote third-person player presentation
+- remote third-person player presentation with authored skinned-character locomotion
 - server-authoritative PvP hit validation
 - server-authoritative segmented remote hit volumes
 - server-authoritative round state and first bomb-objective flow
@@ -87,6 +87,8 @@ It already supports real play loops:
 - Defender-team remote visuals now use `public/models/players/defender.glb`
 - Legacy fallback path still available if the requested model path fails
 - Full-body locomotion clips with imported FBX overrides
+- Rifle and pistol now use authored `walk` / `walk back` clips before transitioning into the faster run clips
+- Knife now uses its dedicated authored melee locomotion set for idle, walk, run, strafe, crouch, and jump
 - Remote weapon attachment through authored sockets/helpers
 - Remote pitch readability through weapon/socket pitch plus narrow neck/head aiming
 - Server-authoritative segmented hit volumes for head, torso, pelvis, arms, hands, and legs
@@ -240,12 +242,13 @@ It is responsible for:
 
 - loading the remote character asset
 - selecting locomotion clips
+- switching between default and melee locomotion sets from replicated weapon/speed state
 - applying remote pitch readability
 - attaching the remote weapon
 - handling remote fire/hit/death presentation
 - drawing authoritative/local hitbox debug views
 
-Remote locomotion playback now scales from actual replicated movement speed, and the authoritative server hitbox rig mirrors that same locomotion-speed scaling so visible mesh and hit validation stay aligned.
+Remote locomotion playback now scales from actual replicated movement speed, and the authoritative server hitbox rig mirrors that same weapon-aware locomotion-speed scaling so visible mesh and hit validation stay aligned.
 
 ### Authoritative Remote Hitboxes
 
@@ -272,12 +275,20 @@ The active remote model/animation path is the former experimental branch, now ef
 - active attacker/default character: `public/models/players/newtest.glb`
 - active defender visual character: `public/models/players/defender.glb`
 - active rifle asset: `public/models/weapons/newak.glb`
-- active locomotion proof clip: `public/models/players/newtest_run.fbx`
+- active authored locomotion set includes:
+  - `public/models/players/animations/newtest_walk.fbx`
+  - `public/models/players/animations/newtest_walk_back.fbx`
+  - `public/models/players/animations/newtest_run.fbx`
+  - `public/models/players/animations/newtest_run_back.fbx`
+  - `public/models/players/animations/newtest_strafe_left.fbx`
+  - `public/models/players/animations/newtest_strafe_right.fbx`
+  - `public/models/players/animations/newtest_melee_*.fbx`
 
 Important current notes:
 
 - scoped remote weapon transform offsets currently reuse hip socket-pose values
 - visible locomotion scales from actual movement speed
+- visible locomotion now also switches between authored walk/run states for rifle and pistol, and a dedicated melee set for knife
 - authoritative hitbox locomotion uses the same speed scaling
 - jump playback on the authoritative rig is explicitly excluded from movement-speed scaling to keep `F3` aligned
 - left-hand IK is still not part of the authoritative hitbox rig
