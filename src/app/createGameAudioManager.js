@@ -23,7 +23,7 @@ const GAME_AUDIO_REGISTRATIONS = [
   ['rifle-fire', '/audio/guns/m4a1_silencer_01.mp3', { playback: 'interrupt' }],
   ['rifle-equip', '/audio/guns/rifleequip.mp3', { playback: 'interrupt' }],
   ['sniper-fire', '/audio/guns/awp-shoot-sound-effect-cs_go.mp3', { playback: 'interrupt' }],
-  ['knife-draw', '/audio/guns/knifedraw.mp3', { playback: 'interrupt', baseVolume: 0.72 }],
+  ['knife-draw', '/audio/guns/knifedraw.mp3', { playback: 'interrupt', baseVolume: 0.4 }],
   [
     'sniper-zoom',
     '/audio/guns/awp-zoom-sound-effect-cs-go.mp3',
