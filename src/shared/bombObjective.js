@@ -46,6 +46,8 @@ export function createBombObjectiveSnapshot() {
     bombCarrierPlayerId: null,
     bombState: 'idle',
     bombTimeRemaining: 0,
+    droppedPosition: null,
+    droppedMapId: null,
     plantedZoneName: null,
     plantedPosition: null,
     plantedMapId: null,

@@ -9,6 +9,26 @@ import {
 
 const HUD_LAYOUT_ELEMENTS = [
   {
+    key: 'roundWin',
+    label: 'Round Win',
+    description: 'Tune the round win banner block and its internal spacing.',
+    selector: '.hud__round-win',
+    controls: [
+      ['roundWinTop', 'Top', -200, 480, 1],
+      ['roundWinGap', 'Gap', -80, 160, 1],
+    ],
+  },
+  {
+    key: 'matchRestart',
+    label: 'Transition Banner',
+    description: 'Tune the match restart / side swap / overtime banner positions.',
+    selector: '.hud__match-restart',
+    controls: [
+      ['matchRestartTop', 'Match End Top', -200, 640, 1],
+      ['matchRestartTransitionTop', 'Transition Top', -200, 900, 1],
+    ],
+  },
+  {
     key: 'roundRoster',
     label: 'Round Roster',
     description: 'Tune the top-center roster block and planted-bomb icon.',
@@ -233,6 +253,31 @@ export function createHudLayoutTuningPanel() {
   previewHeadshotText.textContent = 'Headshot';
   previewHeadshotRow.appendChild(previewHeadshotText);
 
+  const transitionPreviewLabel = document.createElement('label');
+  transitionPreviewLabel.style.display = 'none';
+  transitionPreviewLabel.style.marginBottom = '8px';
+  previewHost.appendChild(transitionPreviewLabel);
+
+  const transitionPreviewHeader = document.createElement('div');
+  transitionPreviewHeader.textContent = 'Preview Mode';
+  transitionPreviewHeader.style.marginBottom = '4px';
+  transitionPreviewLabel.appendChild(transitionPreviewHeader);
+
+  const transitionPreviewSelect = document.createElement('select');
+  transitionPreviewSelect.style.width = '100%';
+  transitionPreviewSelect.style.padding = '6px 8px';
+  transitionPreviewSelect.style.background = 'rgba(255,255,255,0.06)';
+  transitionPreviewSelect.style.color = '#eef5ff';
+  transitionPreviewSelect.style.border = '1px solid rgba(174, 211, 255, 0.22)';
+  transitionPreviewSelect.style.borderRadius = '6px';
+  for (const [value, label] of [['transition', 'Side Swap / OT'], ['match-end', 'Match End']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    transitionPreviewSelect.appendChild(option);
+  }
+  transitionPreviewLabel.appendChild(transitionPreviewSelect);
+
   const controlsHost = document.createElement('div');
   overlay.appendChild(controlsHost);
 
@@ -278,15 +323,22 @@ export function createHudLayoutTuningPanel() {
       delete document.documentElement.dataset.hudDebugElement;
       delete document.documentElement.dataset.hudDebugKillfeedWeapon;
       delete document.documentElement.dataset.hudDebugKillfeedHeadshot;
+      delete document.documentElement.dataset.hudDebugTransitionBannerMode;
       return;
     }
     document.documentElement.dataset.hudDebugElement = selectedElementKey;
     if (selectedElementKey === 'killfeed') {
       document.documentElement.dataset.hudDebugKillfeedWeapon = previewWeaponSelect.value;
       document.documentElement.dataset.hudDebugKillfeedHeadshot = String(previewHeadshotCheckbox.checked);
+      delete document.documentElement.dataset.hudDebugTransitionBannerMode;
+    } else if (selectedElementKey === 'matchRestart') {
+      document.documentElement.dataset.hudDebugTransitionBannerMode = transitionPreviewSelect.value;
+      delete document.documentElement.dataset.hudDebugKillfeedWeapon;
+      delete document.documentElement.dataset.hudDebugKillfeedHeadshot;
     } else {
       delete document.documentElement.dataset.hudDebugKillfeedWeapon;
       delete document.documentElement.dataset.hudDebugKillfeedHeadshot;
+      delete document.documentElement.dataset.hudDebugTransitionBannerMode;
     }
   };
 
@@ -366,7 +418,11 @@ export function createHudLayoutTuningPanel() {
     const definition = getElementDefinition(selectedElementKey);
     elementSelect.value = definition.key;
     elementHelp.textContent = definition.description;
-    previewHost.style.display = selectedElementKey === 'killfeed' ? 'block' : 'none';
+    previewHost.style.display = (selectedElementKey === 'killfeed' || selectedElementKey === 'matchRestart') ? 'block' : 'none';
+    previewTitle.textContent = selectedElementKey === 'matchRestart' ? 'Transition Banner Preview' : 'Killfeed Preview';
+    previewWeaponLabel.style.display = selectedElementKey === 'killfeed' ? 'block' : 'none';
+    previewHeadshotRow.style.display = selectedElementKey === 'killfeed' ? 'flex' : 'none';
+    transitionPreviewLabel.style.display = selectedElementKey === 'matchRestart' ? 'block' : 'none';
     const previewWeapon = previewWeaponSelect.value;
     const previewHeadshot = previewHeadshotCheckbox.checked;
     for (const [entryKey, labelText, min, max, step] of definition.controls) {
@@ -445,6 +501,10 @@ export function createHudLayoutTuningPanel() {
     updateDebugSelection();
   });
 
+  transitionPreviewSelect.addEventListener('input', () => {
+    updateDebugSelection();
+  });
+
   const handleToggle = () => {
     const nextVisible = overlay.style.display === 'none';
     overlay.style.display = nextVisible ? 'block' : 'none';
@@ -475,6 +535,7 @@ export function createHudLayoutTuningPanel() {
       delete document.documentElement.dataset.hudDebugElement;
       delete document.documentElement.dataset.hudDebugKillfeedWeapon;
       delete document.documentElement.dataset.hudDebugKillfeedHeadshot;
+      delete document.documentElement.dataset.hudDebugTransitionBannerMode;
       window.removeEventListener(DEBUG_MENU_EVENT_TOGGLE_HUD_LAYOUT_TUNING, handleToggle);
       dragController.destroy();
       highlightBox.remove();

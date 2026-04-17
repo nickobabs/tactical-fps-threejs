@@ -53,11 +53,14 @@ export function createHud({
   onSelectTeam,
   onToggleHudMode,
   onSelectMap,
+  onSelectGamemode,
   onSensitivityChange,
   onFovChange,
   onVolumeChange,
   maps = [],
+  gamemodes = [],
   getSelectedMapId,
+  getSelectedGamemodeId,
   getSelectedTeam,
   getSelectedPlayerName,
   getHudMode,
@@ -89,6 +92,7 @@ export function createHud({
       </div>
       <div class="hud__round-win-footer"></div>
     </div>
+    <div class="hud__match-restart"></div>
     <div class="hud__top">
       <div class="hud__round"></div>
       <div class="hud__fps"></div>
@@ -218,6 +222,8 @@ export function createHud({
     onResume,
     onSelectMap,
     maps,
+    onSelectGamemode,
+    gamemodes,
     onSelectSkybox,
     skyboxes,
     onSensitivityChange,
@@ -226,6 +232,9 @@ export function createHud({
     getMasterVolume,
     getMouseSensitivity,
     getHorizontalFov,
+    isGamemodeEnabled: (gamemodeId, mapId) => (
+      gamemodeId !== 'competitive' || mapId === 'dust2-map-test'
+    ),
   });
   const teamSelectOverlay = createTeamSelectOverlay({
     parent: hud,
@@ -244,6 +253,7 @@ export function createHud({
   const roundWinSubtitleEl = hud.querySelector('.hud__round-win-subtitle');
   const roundWinMvpCopyEl = hud.querySelector('.hud__round-win-mvp-copy');
   const roundWinFooterEl = hud.querySelector('.hud__round-win-footer');
+  const matchRestartEl = hud.querySelector('.hud__match-restart');
   const weaponEl = hud.querySelector('.hud__weapon');
   const healthEl = hud.querySelector('.hud__health');
   const utilityEl = hud.querySelector('.hud__utility');
@@ -308,6 +318,8 @@ export function createHud({
   let lastRoundWinSubtitle = '';
   let lastRoundWinMvp = '';
   let lastRoundWinFooter = '';
+  let lastMatchRestartVisible = null;
+  let lastMatchRestartText = '';
   let lastRoundRosterDefendersHtml = '';
   let lastRoundRosterAttackersHtml = '';
   let lastRoundRosterTimerHtml = '';
@@ -411,6 +423,20 @@ export function createHud({
 
   function isKillfeedDebugPreviewEnabled() {
     return document?.documentElement?.dataset?.hudDebugElement === 'killfeed';
+  }
+
+  function isRoundWinDebugPreviewEnabled() {
+    return document?.documentElement?.dataset?.hudDebugElement === 'roundWin';
+  }
+
+  function isTransitionBannerDebugPreviewEnabled() {
+    return document?.documentElement?.dataset?.hudDebugElement === 'matchRestart';
+  }
+
+  function getTransitionBannerDebugPreviewMode() {
+    return document?.documentElement?.dataset?.hudDebugTransitionBannerMode === 'match-end'
+      ? 'match-end'
+      : 'transition';
   }
 
   function getKillfeedDebugPreviewEntry() {
@@ -577,9 +603,11 @@ export function createHud({
       const utilityHudState = utilityManager?.getHudState?.() ?? null;
       const objectiveState = networkClient?.getObjectiveState?.() ?? null;
       const roundText = roundManager
-        ? roundManager.roundEnded && roundManager.winnerTeam
-          ? `Round ${roundManager.roundNumber} - ${roundManager.winnerTeam} win (${roundManager.winReason}) - reset ${Math.ceil(roundManager.roundEndCountdown)}s`
-          : `Round ${roundManager.roundNumber} - ${roundManager.phase}`
+        ? roundManager.phase === 'intermission'
+          ? `Round ${roundManager.roundNumber} - ${roundManager.intermissionReason ?? 'intermission'} - ${Math.ceil(roundManager.roundEndCountdown)}s`
+          : roundManager.roundEnded && roundManager.winnerTeam
+            ? `Round ${roundManager.roundNumber} - ${roundManager.winnerTeam} win (${roundManager.winReason}) - reset ${Math.ceil(roundManager.roundEndCountdown)}s`
+            : `Round ${roundManager.roundNumber} - ${roundManager.phase}`
         : 'Round --';
       const fpsText = `FPS: ${getFps?.() ?? '--'}`;
       const localPlayerState = networkClient?.getLocalPlayerState?.() ?? null;
@@ -612,11 +640,15 @@ export function createHud({
         : input.pointerLocked
           ? 'Pointer locked'
           : 'Click to capture mouse';
-      const scoreboardVisible = showScoreboard && !paused;
+      const forcedScoreboard = Boolean(roundManager?.matchEnded || roundManager?.phase === 'intermission');
+      const scoreboardVisible = (showScoreboard || forcedScoreboard) && !paused;
       const killfeedEntries = getKillfeedEntries?.() ?? [];
       const hudMode = getHudMode?.() ?? 'debug';
       const classicVisible = hudMode === 'classic' && !paused;
-      const roundWinVisible = Boolean(!paused && roundManager?.roundEnded && roundManager?.winnerTeam);
+      const roundWinDebugPreview = isRoundWinDebugPreviewEnabled();
+      const transitionBannerDebugPreview = isTransitionBannerDebugPreviewEnabled();
+      const transitionBannerDebugPreviewMode = getTransitionBannerDebugPreviewMode();
+      const roundWinVisible = Boolean(!paused && ((roundManager?.roundEnded && roundManager?.winnerTeam) || roundWinDebugPreview));
       const phaseDuration = roundManager
         ? (
           roundManager.phase === 'freeze'
@@ -653,10 +685,32 @@ export function createHud({
         bombPulseCountdown = null;
       }
       lastBombPlanted = bombPlanted;
-      const roundWinTitle = roundWinVisible ? getRoundWinTitle(roundManager?.winnerTeam) : '';
-      const roundWinSubtitle = roundWinVisible ? formatWinReason(roundManager?.winReason) : '';
-      const roundWinMvp = roundWinVisible ? getRoundWinMvpText(roundManager, scoreboardState) : '';
-      const roundWinFooter = roundWinVisible ? getRoundWinFooter() : '';
+      const roundWinTitle = roundWinDebugPreview
+        ? 'ATTACKERS WIN'
+        : (roundWinVisible ? getRoundWinTitle(roundManager?.winnerTeam) : '');
+      const roundWinSubtitle = roundWinDebugPreview
+        ? 'BOMB EXPLODED'
+        : (roundWinVisible ? formatWinReason(roundManager?.winReason) : '');
+      const roundWinMvp = roundWinDebugPreview
+        ? 'MVP: storste mand for most kills'
+        : (roundWinVisible ? getRoundWinMvpText(roundManager, scoreboardState) : '');
+      const roundWinFooter = roundWinDebugPreview
+        ? 'Round win preview'
+        : (roundWinVisible ? getRoundWinFooter() : '');
+      const intermissionVisible = Boolean(!paused && (roundManager?.matchEnded || roundManager?.phase === 'intermission' || transitionBannerDebugPreview));
+      const intermissionText = transitionBannerDebugPreview
+        ? (
+          transitionBannerDebugPreviewMode === 'match-end'
+            ? 'Restarting match in 15 seconds'
+            : 'Swapping sides... 10 seconds'
+        )
+        : roundManager?.matchEnded
+        ? `Restarting match in ${Math.ceil(Math.max(0, Number(roundManager?.roundEndCountdown ?? 0)))} seconds`
+        : roundManager?.intermissionReason === 'side-swap'
+          ? `Swapping sides... ${Math.ceil(Math.max(0, Number(roundManager?.roundEndCountdown ?? 0)))} seconds`
+          : roundManager?.intermissionReason === 'overtime'
+            ? `Overtime commencing... ${Math.ceil(Math.max(0, Number(roundManager?.roundEndCountdown ?? 0)))} seconds`
+            : '';
       scoreboardController.update({
         visible: scoreboardVisible,
         subtitle: `Players: ${scoreboardState.playerCount}`,
@@ -694,6 +748,25 @@ export function createHud({
         roundWinFooterEl.textContent = roundWinFooter;
         roundWinFooterEl.classList.toggle('hud__round-win-footer--active', Boolean(roundWinFooter));
         lastRoundWinFooter = roundWinFooter;
+      }
+      if (intermissionVisible !== lastMatchRestartVisible) {
+        matchRestartEl.classList.toggle('hud__match-restart--active', intermissionVisible);
+        lastMatchRestartVisible = intermissionVisible;
+      }
+      matchRestartEl.classList.toggle(
+        'hud__match-restart--match-end',
+        Boolean(roundManager?.matchEnded || (transitionBannerDebugPreview && transitionBannerDebugPreviewMode === 'match-end')),
+      );
+      matchRestartEl.classList.toggle(
+        'hud__match-restart--transition',
+        Boolean(
+          (transitionBannerDebugPreview && transitionBannerDebugPreviewMode !== 'match-end')
+          || (!roundManager?.matchEnded && roundManager?.phase === 'intermission'),
+        ),
+      );
+      if (intermissionText !== lastMatchRestartText) {
+        matchRestartEl.textContent = intermissionText;
+        lastMatchRestartText = intermissionText;
       }
       debugPanelsController.updateDebugText({
         roundText,
@@ -841,6 +914,7 @@ export function createHud({
 
       pauseMenu.updateSelections({
         selectedMapId: getSelectedMapId?.(),
+        selectedGamemodeId: getSelectedGamemodeId?.(),
         selectedSkyboxId: getSelectedSkyboxId?.(),
       });
       teamSelectOverlay.updateSelection(getSelectedTeam?.() ?? null);

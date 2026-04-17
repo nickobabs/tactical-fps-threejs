@@ -66,6 +66,14 @@ export function createPlayerStatusMessage(state) {
   };
 }
 
+export function createGamemodeChangeMessage(state) {
+  return {
+    gamemode: String(state?.gamemode ?? 'debug'),
+    mapId: String(state?.mapId ?? 'training-ground'),
+    resetMatch: Boolean(state?.resetMatch ?? false),
+  };
+}
+
 export function createBombPlantMessage(state) {
   return {
     zoneName: String(state?.zoneName ?? '').trim(),
@@ -74,6 +82,16 @@ export function createBombPlantMessage(state) {
       y: Number(state?.position?.y ?? 0),
       z: Number(state?.position?.z ?? 0),
     },
+  };
+}
+
+export function createBombDropMessage() {
+  return {};
+}
+
+export function createDebugRoundControlMessage(state) {
+  return {
+    action: String(state?.action ?? '').trim(),
   };
 }
 

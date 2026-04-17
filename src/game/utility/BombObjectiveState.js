@@ -24,6 +24,7 @@ export class BombObjectiveState {
     this.plantProgress = 0;
     this.bombState = 'idle';
     this.bombTimeRemaining = 0;
+    this.droppedPosition = null;
     this.plantedZoneName = null;
     this.defuserPlayerId = null;
     this.statusText = '';
@@ -39,6 +40,7 @@ export class BombObjectiveState {
     this.plantProgress = 0;
     this.bombState = 'idle';
     this.bombTimeRemaining = 0;
+    this.droppedPosition = null;
     this.plantedZoneName = null;
     this.defuserPlayerId = null;
     this.statusText = '';
@@ -112,6 +114,13 @@ export class BombObjectiveState {
     });
     this.bombState = String(objectiveState?.bombState ?? 'idle');
     this.bombTimeRemaining = Math.max(0, Number(objectiveState?.bombTimeRemaining ?? 0));
+    this.droppedPosition = objectiveState?.droppedPosition
+      ? {
+        x: Number(objectiveState.droppedPosition.x ?? 0),
+        y: Number(objectiveState.droppedPosition.y ?? 0),
+        z: Number(objectiveState.droppedPosition.z ?? 0),
+      }
+      : null;
     this.plantedZoneName = objectiveState?.plantedZoneName ?? null;
     this.defuserPlayerId = objectiveState?.defuserPlayerId ?? null;
   }

@@ -15,6 +15,8 @@ import {
 import {
   createPlayerInputMessage,
   createPlayerFireMessage,
+  createDebugRoundControlMessage,
+  createGamemodeChangeMessage,
   createPlayerReadyMessage,
   createSmokeThrowMessage,
   createPlayerStatusMessage,
@@ -27,12 +29,14 @@ import {
   getImportedPlantZoneNamesFromEntryAsync,
   getPlantZoneNamesFromEntry,
 } from '../../../src/shared/maps/mapPlantZones.js';
+import { getImportedTeamSpawnPointsFromEntryAsync } from '../../../src/shared/maps/mapTeamSpawns.js';
 import {
   createBombObjectiveSnapshot,
   DEFAULT_BOMB_DURATION,
   getBombPulseIntervalSeconds,
   selectBombCarrierPlayerId,
 } from '../../../src/shared/bombObjective.js';
+import { GAMEMODES, isCompetitiveGamemode, sanitizeGamemodeForMap } from '../../../src/shared/gamemodes.js';
 import {
   getSharedWeaponData,
   PLAYER_MAX_HEALTH,
@@ -96,9 +100,36 @@ const MAX_DISPLAY_NAME_LENGTH = 24;
 const SERVER_OBJECTIVE_STEP = 1 / NETCODE_SIMULATION_RATE;
 const BOMB_DEFUSE_MAX_DISTANCE = 2.4;
 const BOMB_DEFUSE_AIM_DOT_THRESHOLD = 0.96;
+const BOMB_DROP_FORWARD_DISTANCE = 0.85;
+const BOMB_DROP_HEIGHT_OFFSET = 0.08;
+const BOMB_PICKUP_RADIUS = 1.1;
+const BOMB_DROPPER_PICKUP_LOCK_MS = 750;
 const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
 const SMOKE_BLOOM_MAX_VALIDATE_DISTANCE = 32;
 const SMOKE_THROW_MAX_VALIDATE_DISTANCE = 3;
+
+function getFreezeLockedInput(input) {
+  return {
+    ...input,
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    sprint: false,
+    walk: false,
+    crouch: false,
+    jump: false,
+  };
+}
+
+function shuffleArray(values) {
+  const nextValues = Array.isArray(values) ? [...values] : [];
+  for (let index = nextValues.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [nextValues[index], nextValues[swapIndex]] = [nextValues[swapIndex], nextValues[index]];
+  }
+  return nextValues;
+}
 
 async function appendRemoteHitboxAudit(entry) {
   await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
@@ -495,6 +526,41 @@ export class TacticalRoom extends Room {
     }
   }
 
+  getTeamSpawnPointsForMap(mapId, teamKey) {
+    return this.teamSpawnPointsByMap.get(mapId)?.[teamKey] ?? [];
+  }
+
+  async ensureTeamSpawnPointsForMap(mapId) {
+    const resolvedMapId = mapId ?? 'training-ground';
+    if (this.teamSpawnPointsByMap.has(resolvedMapId)) {
+      return this.teamSpawnPointsByMap.get(resolvedMapId);
+    }
+
+    if (this.teamSpawnPromises.has(resolvedMapId)) {
+      return this.teamSpawnPromises.get(resolvedMapId);
+    }
+
+    const entry = getMapManifestEntry(resolvedMapId);
+    const loadPromise = (async () => {
+      if (!entry) {
+        this.teamSpawnPointsByMap.set(resolvedMapId, null);
+        return null;
+      }
+
+      const importedTeamSpawns = await getImportedTeamSpawnPointsFromEntryAsync(entry);
+      this.teamSpawnPointsByMap.set(resolvedMapId, importedTeamSpawns);
+      return importedTeamSpawns;
+    })();
+
+    this.teamSpawnPromises.set(resolvedMapId, loadPromise);
+
+    try {
+      return await loadPromise;
+    } finally {
+      this.teamSpawnPromises.delete(resolvedMapId);
+    }
+  }
+
   getReadyPlayers() {
     return Object.values(this.players).filter((player) => player.isReady);
   }
@@ -509,6 +575,16 @@ export class TacticalRoom extends Room {
       .filter((player) => player.team === TEAMS.ATTACKERS)
       .map((player) => player.playerId)
       .sort();
+  }
+
+  swapReadyPlayerSides() {
+    for (const player of Object.values(this.players)) {
+      if (!player?.isReady) {
+        continue;
+      }
+
+      player.team = player.team === TEAMS.DEFENDERS ? TEAMS.ATTACKERS : TEAMS.DEFENDERS;
+    }
   }
 
   hashSelectionSeed(value) {
@@ -526,6 +602,9 @@ export class TacticalRoom extends Room {
       roundNumber: this.roundManager.roundNumber,
       attackerPlayerIds: this.collectAttackerPlayerIds(),
     });
+    this.objectiveState.bombState = 'idle';
+    this.objectiveState.droppedPosition = null;
+    this.objectiveState.droppedMapId = null;
   }
 
   resetObjectiveState() {
@@ -540,6 +619,156 @@ export class TacticalRoom extends Room {
     this.roundManager.beginFreeze();
     this.resetObjectiveState();
     return true;
+  }
+
+  forceDebugSideSwap(player = null) {
+    const activeMapId = player?.mapId ?? this.getActiveMatchMapId();
+    if (
+      !isCompetitiveGamemode(this.roundManager.gamemode)
+      || this.roundManager.matchEnded
+      || !activeMapId
+    ) {
+      return false;
+    }
+
+    this.roundManager.startDebugSideSwapIntermission();
+    this.swapReadyPlayerSides();
+    this.resetObjectiveState();
+    this.requestStateBroadcast();
+    return true;
+  }
+
+  getActiveMatchMapId() {
+    const readyPlayer = Object.values(this.players).find((player) => player?.isReady && player?.mapId);
+    if (readyPlayer?.mapId) {
+      return readyPlayer.mapId;
+    }
+
+    const anyPlayer = Object.values(this.players).find((player) => player?.mapId);
+    return anyPlayer?.mapId ?? 'training-ground';
+  }
+
+  resetMatchState(gamemode, mapId) {
+    const nextGamemode = sanitizeGamemodeForMap(gamemode, mapId);
+    this.roundManager.resetMatch(nextGamemode);
+    this.resetObjectiveState();
+
+    for (const player of Object.values(this.players)) {
+      if (!player?.isReady) {
+        continue;
+      }
+
+      player.kills = 0;
+      player.deaths = 0;
+      player.activeWeaponKey = 'rifle';
+      player.isScoped = false;
+      this.respawnPlayer(player, { broadcastEvent: false });
+    }
+
+    this.requestStateBroadcast();
+    return nextGamemode;
+  }
+
+  resetPlayersForNextRound() {
+    const spawnPoolsByMapTeam = new Map();
+
+    for (const player of Object.values(this.players)) {
+      if (!player?.isReady) {
+        continue;
+      }
+
+      const spawnPoolKey = `${String(player.mapId ?? 'training-ground')}::${String(player.team ?? TEAMS.ATTACKERS)}`;
+      if (!spawnPoolsByMapTeam.has(spawnPoolKey)) {
+        spawnPoolsByMapTeam.set(
+          spawnPoolKey,
+          shuffleArray(this.getTeamSpawnPointsForMap(player.mapId, player.team)),
+        );
+      }
+
+      const teamSpawns = spawnPoolsByMapTeam.get(spawnPoolKey) ?? [];
+      if (Array.isArray(teamSpawns) && teamSpawns.length > 0) {
+        const selectedSpawn = teamSpawns.shift();
+        const collisionWorld = this.getCollisionWorldForMap(player.mapId);
+        const fallbackY = Number(selectedSpawn?.position?.y ?? player.spawnState?.position?.y ?? 0);
+        const groundedY = collisionWorld?.getGroundHeightAt(
+          Number(selectedSpawn?.position?.x ?? 0),
+          Number(selectedSpawn?.position?.z ?? 0),
+          fallbackY + 0.5,
+          2,
+          8,
+        ) ?? fallbackY;
+        player.spawnState = {
+          ...player.spawnState,
+          position: {
+            x: Number(selectedSpawn?.position?.x ?? 0),
+            y: Number(groundedY),
+            z: Number(selectedSpawn?.position?.z ?? 0),
+          },
+          yaw: Number(selectedSpawn?.yaw ?? 0),
+        };
+      } else {
+        const fallbackTeamSpawns = this.getTeamSpawnPointsForMap(player.mapId, player.team);
+        if (Array.isArray(fallbackTeamSpawns) && fallbackTeamSpawns.length > 0) {
+          const selectedSpawn = fallbackTeamSpawns[Math.floor(Math.random() * fallbackTeamSpawns.length)];
+          const collisionWorld = this.getCollisionWorldForMap(player.mapId);
+          const fallbackY = Number(selectedSpawn?.position?.y ?? player.spawnState?.position?.y ?? 0);
+          const groundedY = collisionWorld?.getGroundHeightAt(
+            Number(selectedSpawn?.position?.x ?? 0),
+            Number(selectedSpawn?.position?.z ?? 0),
+            fallbackY + 0.5,
+            2,
+            8,
+          ) ?? fallbackY;
+          player.spawnState = {
+            ...player.spawnState,
+            position: {
+              x: Number(selectedSpawn?.position?.x ?? 0),
+              y: Number(groundedY),
+              z: Number(selectedSpawn?.position?.z ?? 0),
+            },
+            yaw: Number(selectedSpawn?.yaw ?? 0),
+          };
+        }
+      }
+
+      player.activeWeaponKey = 'rifle';
+      player.isScoped = false;
+      this.respawnPlayer(player, { broadcastEvent: false });
+    }
+  }
+
+  getAliveReadyPlayersForTeam(teamKey, mapId = null) {
+    return Object.values(this.players).filter((player) => (
+      player?.isReady
+      && player?.isAlive
+      && player?.team === teamKey
+      && (!mapId || player?.mapId === mapId)
+    ));
+  }
+
+  evaluateCompetitiveEliminationWin(mapId = null) {
+    if (
+      !isCompetitiveGamemode(this.roundManager.gamemode)
+      || this.roundManager.phase !== 'live'
+      || this.roundManager.roundEnded
+    ) {
+      return false;
+    }
+
+    const attackersAlive = this.getAliveReadyPlayersForTeam(TEAMS.ATTACKERS, mapId).length;
+    const defendersAlive = this.getAliveReadyPlayersForTeam(TEAMS.DEFENDERS, mapId).length;
+    const bombPlantedOnMap = this.objectiveState?.bombState === 'planted'
+      && (!mapId || this.objectiveState?.plantedMapId === mapId);
+
+    if (defendersAlive === 0) {
+      return this.roundManager.endRound(TEAMS.ATTACKERS, 'defenders-eliminated');
+    }
+
+    if (attackersAlive === 0 && !bombPlantedOnMap) {
+      return this.roundManager.endRound(TEAMS.DEFENDERS, 'attackers-eliminated');
+    }
+
+    return false;
   }
 
   updateRoundState(delta) {
@@ -561,12 +790,26 @@ export class TacticalRoom extends Room {
       return;
     }
 
+    if (event?.type === 'intermission-started') {
+      if (event.sideSwap) {
+        this.swapReadyPlayerSides();
+      }
+      this.requestStateBroadcast();
+      return;
+    }
+
     if (event?.type === 'phase-changed' && event.phase === 'freeze') {
       this.resetObjectiveState();
+      this.resetPlayersForNextRound();
       if (!this.areAllConnectedPlayersReady()) {
         this.roundManager.startWaiting();
       }
       this.requestStateBroadcast();
+      return;
+    }
+
+    if (event?.type === 'match-ended') {
+      this.resetMatchState(this.roundManager.gamemode, this.getActiveMatchMapId());
       return;
     }
 
@@ -604,6 +847,96 @@ export class TacticalRoom extends Room {
     }
   }
 
+  getBombDropPositionForPlayer(player) {
+    const yaw = Number(player?.motionState?.yaw ?? 0);
+    const collisionWorld = this.getCollisionWorldForMap(player?.mapId);
+    const baseX = Number(player?.motionState?.position?.x ?? 0) - Math.sin(yaw) * BOMB_DROP_FORWARD_DISTANCE;
+    const baseZ = Number(player?.motionState?.position?.z ?? 0) - Math.cos(yaw) * BOMB_DROP_FORWARD_DISTANCE;
+    const baseY = Number(player?.motionState?.position?.y ?? 0);
+    const groundedY = collisionWorld?.getGroundHeightAt(
+      baseX,
+      baseZ,
+      baseY + 0.5,
+      2,
+      8,
+    ) ?? baseY;
+
+    return {
+      x: baseX,
+      y: groundedY + BOMB_DROP_HEIGHT_OFFSET,
+      z: baseZ,
+    };
+  }
+
+  clearDroppedBombState() {
+    this.objectiveState.droppedPosition = null;
+    this.objectiveState.droppedMapId = null;
+    this.objectiveState.droppedByPlayerId = null;
+    this.objectiveState.droppedPickupBlockedUntil = 0;
+  }
+
+  dropBombForPlayer(player) {
+    if (
+      !player
+      || this.objectiveState.bombState === 'planted'
+      || this.objectiveState.bombCarrierPlayerId !== player.playerId
+    ) {
+      return false;
+    }
+
+    this.objectiveState.bombCarrierPlayerId = null;
+    this.objectiveState.bombState = 'dropped';
+    this.objectiveState.droppedMapId = player.mapId ?? null;
+    this.objectiveState.droppedPosition = this.getBombDropPositionForPlayer(player);
+    this.objectiveState.droppedByPlayerId = player.playerId;
+    this.objectiveState.droppedPickupBlockedUntil = Date.now() + BOMB_DROPPER_PICKUP_LOCK_MS;
+    this.requestStateBroadcast();
+    return true;
+  }
+
+  tryPickupDroppedBomb() {
+    if (
+      this.objectiveState.bombState !== 'dropped'
+      || !this.objectiveState.droppedPosition
+    ) {
+      return false;
+    }
+
+    const pickupMapId = this.objectiveState.droppedMapId ?? null;
+    const blockedPlayerId = this.objectiveState.droppedByPlayerId ?? null;
+    const blockedUntil = Number(this.objectiveState.droppedPickupBlockedUntil ?? 0);
+    const now = Date.now();
+    let bestCandidate = null;
+    let bestDistance = Infinity;
+    for (const player of this.getAliveReadyPlayersForTeam(TEAMS.ATTACKERS, pickupMapId)) {
+      if (player.playerId === blockedPlayerId && now < blockedUntil) {
+        continue;
+      }
+
+      const distance = Math.hypot(
+        Number(player.motionState?.position?.x ?? 0) - Number(this.objectiveState.droppedPosition.x ?? 0),
+        Number(player.motionState?.position?.y ?? 0) - Number(this.objectiveState.droppedPosition.y ?? 0),
+        Number(player.motionState?.position?.z ?? 0) - Number(this.objectiveState.droppedPosition.z ?? 0),
+      );
+      if (distance > BOMB_PICKUP_RADIUS || distance >= bestDistance) {
+        continue;
+      }
+
+      bestCandidate = player;
+      bestDistance = distance;
+    }
+
+    if (!bestCandidate) {
+      return false;
+    }
+
+    this.objectiveState.bombCarrierPlayerId = bestCandidate.playerId;
+    this.objectiveState.bombState = 'idle';
+    this.clearDroppedBombState();
+    this.requestStateBroadcast();
+    return true;
+  }
+
   handleBombPlant(player, message) {
     if (
       !player.isReady
@@ -625,6 +958,7 @@ export class TacticalRoom extends Room {
 
     this.objectiveState.bombCarrierPlayerId = null;
     this.objectiveState.bombState = 'planted';
+    this.clearDroppedBombState();
     this.objectiveState.bombTimeRemaining = DEFAULT_BOMB_DURATION;
     this.objectiveState.plantedZoneName = zoneName || 'plant-site';
     this.objectiveState.defuserPlayerId = null;
@@ -700,6 +1034,7 @@ export class TacticalRoom extends Room {
     this.objectiveState.defuserPlayerId = player.playerId;
     this.objectiveState.bombState = 'idle';
     this.objectiveState.bombTimeRemaining = 0;
+    this.clearDroppedBombState();
     this.objectiveState.plantedZoneName = null;
     this.objectiveState.plantedMapId = null;
     this.objectiveState.bombBeepCountdown = 0;
@@ -713,6 +1048,14 @@ export class TacticalRoom extends Room {
       bombCarrierPlayerId: this.objectiveState.bombCarrierPlayerId,
       bombState: this.objectiveState.bombState,
       bombTimeRemaining: Number(this.objectiveState.bombTimeRemaining ?? 0),
+      droppedMapId: this.objectiveState.droppedMapId,
+      droppedPosition: this.objectiveState.droppedPosition
+        ? {
+          x: Number(this.objectiveState.droppedPosition.x ?? 0),
+          y: Number(this.objectiveState.droppedPosition.y ?? 0),
+          z: Number(this.objectiveState.droppedPosition.z ?? 0),
+        }
+        : null,
       plantedZoneName: this.objectiveState.plantedZoneName,
       defuserPlayerId: this.objectiveState.defuserPlayerId,
       plantedPosition: this.objectiveState.plantedPosition
@@ -733,10 +1076,13 @@ export class TacticalRoom extends Room {
     this.collisionWorldPromises = new Map();
     this.plantZoneNamesByMap = new Map();
     this.plantZonePromises = new Map();
+    this.teamSpawnPointsByMap = new Map();
+    this.teamSpawnPromises = new Map();
     this.stateDirty = true;
     this.roundManager = new RoundManager();
     this.roundManager.startWaiting();
     this.objectiveState = this.createObjectiveState();
+    this.roundManager.setGamemode(GAMEMODES.DEBUG);
     void createRemoteHitboxRig().catch((error) => {
       console.warn('[TacticalRoom] Failed to preload remote hitbox rig.', error);
     });
@@ -749,7 +1095,11 @@ export class TacticalRoom extends Room {
         const collisionWorld = this.getCollisionWorldForMap(player.mapId);
 
         if (!player.isAlive) {
-          if (player.respawnAt > 0 && Date.now() >= player.respawnAt) {
+          if (
+            !isCompetitiveGamemode(this.roundManager.gamemode)
+            && player.respawnAt > 0
+            && Date.now() >= player.respawnAt
+          ) {
             this.respawnPlayer(player);
             movementStateChanged = true;
           }
@@ -828,6 +1178,10 @@ export class TacticalRoom extends Room {
         this.requestStateBroadcast();
       }
 
+      if (this.tryPickupDroppedBomb()) {
+        movementStateChanged = true;
+      }
+
       this.flushStateBroadcast();
     }, 1000 / NETCODE_SIMULATION_RATE);
 
@@ -855,7 +1209,11 @@ export class TacticalRoom extends Room {
         yaw: Number(message?.yaw ?? player.motionState.yaw),
         pitch: Number(message?.pitch ?? player.pitch ?? 0),
       }, sequence, inputTimestamp);
-      player.pendingInputs.push(normalizedInput);
+      player.pendingInputs.push(
+        isCompetitiveGamemode(this.roundManager.gamemode) && this.roundManager.phase === 'freeze'
+          ? getFreezeLockedInput(normalizedInput)
+          : normalizedInput,
+      );
       player.lastQueuedSequence = sequence;
       player.lastQueuedTimestamp = inputTimestamp;
     });
@@ -918,6 +1276,7 @@ export class TacticalRoom extends Room {
         this.requestStateBroadcast();
         await this.ensureCollisionWorldForMap(readyState.mapId);
         await this.ensurePlantZonesForMap(readyState.mapId);
+        await this.ensureTeamSpawnPointsForMap(readyState.mapId);
         player.isReady = true;
         player.health = player.maxHealth;
         player.isAlive = true;
@@ -939,7 +1298,11 @@ export class TacticalRoom extends Room {
 
     this.onMessage('player-fire', (client, message) => {
       const player = this.players[client.sessionId];
-      if (!player || !player.isAlive) {
+      if (
+        !player
+        || !player.isAlive
+        || (isCompetitiveGamemode(this.roundManager.gamemode) && this.roundManager.phase !== 'live')
+      ) {
         return;
       }
 
@@ -967,12 +1330,40 @@ export class TacticalRoom extends Room {
       this.requestStateBroadcast();
     });
 
+    this.onMessage('set-gamemode', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player?.isReady) {
+        return;
+      }
+
+      const gamemodeChange = createGamemodeChangeMessage(message);
+      const nextGamemode = sanitizeGamemodeForMap(gamemodeChange.gamemode, gamemodeChange.mapId || player.mapId);
+      if (!gamemodeChange.resetMatch && nextGamemode === this.roundManager.gamemode) {
+        return;
+      }
+
+      this.resetMatchState(nextGamemode, gamemodeChange.mapId || player.mapId);
+    });
+
+    this.onMessage('debug-round-control', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player?.isReady) {
+        return;
+      }
+
+      const control = createDebugRoundControlMessage(message);
+      if (control.action === 'force-side-swap') {
+        this.forceDebugSideSwap(player);
+      }
+    });
+
     this.onMessage('smoke-throw', (client, message) => {
       const player = this.players[client.sessionId];
       if (
         !player
         || !player.isReady
         || !player.isAlive
+        || (isCompetitiveGamemode(this.roundManager.gamemode) && this.roundManager.phase !== 'live')
         || this.roundManager.phase === 'waiting'
         || this.roundManager.roundEnded
       ) {
@@ -1007,6 +1398,22 @@ export class TacticalRoom extends Room {
       }
 
       this.handleBombPlant(player, message);
+    });
+
+    this.onMessage('bomb-drop', (client) => {
+      const player = this.players[client.sessionId];
+      if (
+        !player
+        || !player.isReady
+        || !player.isAlive
+        || player.team !== TEAMS.ATTACKERS
+        || this.roundManager.phase !== 'live'
+        || this.roundManager.roundEnded
+      ) {
+        return;
+      }
+
+      this.dropBombForPlayer(player);
     });
 
     this.onMessage('bomb-defuse', (client, message) => {
@@ -1138,10 +1545,13 @@ export class TacticalRoom extends Room {
   }
 
   onLeave(client) {
+    const departingPlayer = this.players[client.sessionId] ?? null;
     delete this.players[client.sessionId];
 
     if (this.objectiveState.bombCarrierPlayerId === client.sessionId) {
-      this.objectiveState.bombCarrierPlayerId = null;
+      if (!this.dropBombForPlayer(departingPlayer)) {
+        this.objectiveState.bombCarrierPlayerId = null;
+      }
     }
 
     if (Object.keys(this.players).length === 0) {
@@ -1156,6 +1566,9 @@ export class TacticalRoom extends Room {
       playerId: client.sessionId,
       sessionId: client.sessionId,
     });
+    if (departingPlayer?.isReady) {
+      this.evaluateCompetitiveEliminationWin(departingPlayer.mapId ?? null);
+    }
     this.requestStateBroadcast();
 
     console.log(
@@ -1166,12 +1579,14 @@ export class TacticalRoom extends Room {
   onDispose() {
     this.collisionWorldPromises.clear();
     this.plantZonePromises.clear();
+    this.teamSpawnPromises.clear();
     for (const collisionWorld of this.collisionWorlds.values()) {
       collisionWorld.collisionGeometry?.dispose?.();
     }
 
     this.collisionWorlds.clear();
     this.plantZoneNamesByMap.clear();
+    this.teamSpawnPointsByMap.clear();
   }
 
   getSerializablePlayers() {
@@ -1246,7 +1661,7 @@ export class TacticalRoom extends Room {
     }
   }
 
-  respawnPlayer(player) {
+  respawnPlayer(player, { broadcastEvent = true } = {}) {
     player.health = player.maxHealth;
     player.isAlive = true;
     player.respawnAt = 0;
@@ -1265,10 +1680,12 @@ export class TacticalRoom extends Room {
     });
     player.pitch = Number(player.spawnState?.pitch ?? 0);
     player.presentationState = this.getPresentationStateForPlayer(player);
-    this.broadcast('combat-event', {
-      type: 'player-respawned',
-      playerId: player.playerId,
-    });
+    if (broadcastEvent) {
+      this.broadcast('combat-event', {
+        type: 'player-respawned',
+        playerId: player.playerId,
+      });
+    }
     this.requestStateBroadcast();
   }
 
@@ -1553,11 +1970,15 @@ export class TacticalRoom extends Room {
       player.kills = Number(player.kills ?? 0) + 1;
       bestTarget.deaths = Number(bestTarget.deaths ?? 0) + 1;
       bestTarget.isAlive = false;
-      bestTarget.respawnAt = now + PLAYER_RESPAWN_DELAY_MS;
+      bestTarget.respawnAt = isCompetitiveGamemode(this.roundManager.gamemode)
+        ? 0
+        : now + PLAYER_RESPAWN_DELAY_MS;
       bestTarget.pendingInputs.length = 0;
       deathClip = getDeathClipForShot(bestTarget, SHOT_DIRECTION);
       bestTarget.deathClip = deathClip;
       bestTarget.presentationState = 'dead';
+      this.dropBombForPlayer(bestTarget);
+      this.evaluateCompetitiveEliminationWin(bestTarget.mapId ?? null);
     }
 
     player.presentationState = this.getPresentationStateForPlayer(player);

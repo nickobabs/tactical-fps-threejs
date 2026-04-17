@@ -38,13 +38,14 @@ canvas {
 
 .hud__round-win {
   position: absolute;
-  top: 120px;
+  top: var(--hud-round-win-top, 120px);
   left: 50%;
   display: none;
   min-width: min(460px, calc(100vw - 48px));
   transform: translateX(-50%);
   align-items: center;
-  gap: 10px;
+  gap: var(--hud-round-win-gap, 10px);
+  z-index: 7;
 }
 
 .hud__round-win--active {
@@ -136,6 +137,38 @@ canvas {
 
 .hud__round-win-footer--active {
   display: block;
+}
+
+.hud__match-restart {
+  position: absolute;
+  top: var(--hud-match-restart-top, 254px);
+  left: 50%;
+  display: none;
+  min-width: min(420px, calc(100vw - 56px));
+  padding: 10px 18px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(197, 160, 92, 0.42);
+  background: rgba(7, 7, 7, 0.78);
+  color: rgba(241, 224, 185, 0.96);
+  font: 700 15px/1.1 "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.82);
+  z-index: 7;
+}
+
+.hud__match-restart--active {
+  display: block;
+}
+
+.hud__match-restart--match-end {
+  z-index: 12;
+}
+
+.hud__match-restart--transition {
+  top: calc(50% + var(--hud-match-restart-transition-top, 280px));
+  transform: translateX(-50%);
 }
 
 .hud__top,
@@ -685,6 +718,7 @@ canvas {
   align-items: center;
   justify-content: center;
   padding: 32px;
+  z-index: 8;
 }
 
 .hud__killfeed {
@@ -1384,7 +1418,7 @@ canvas {
 
 .hud__pause-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-top: 22px;
 }
@@ -1532,6 +1566,7 @@ canvas {
 }
 
 .hud__maps,
+.hud__gamemodes,
 .hud__skyboxes {
   display: none;
   margin-top: 16px;
@@ -1540,11 +1575,13 @@ canvas {
 }
 
 .hud__maps--visible,
+.hud__gamemodes--visible,
 .hud__skyboxes--visible {
   display: block;
 }
 
 .hud__map-option,
+.hud__gamemode-option,
 .hud__skybox-option {
   display: block;
   width: 100%;
@@ -1560,9 +1597,15 @@ canvas {
 }
 
 .hud__map-option--active,
+.hud__gamemode-option--active,
 .hud__skybox-option--active {
   background: rgba(176, 215, 255, 0.18);
   border-color: rgba(176, 215, 255, 0.34);
+}
+
+.hud__gamemode-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 @media (max-width: 900px) {

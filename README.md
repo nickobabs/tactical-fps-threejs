@@ -34,13 +34,13 @@ The current build is a real multiplayer-capable tactical FPS foundation with:
 It already supports real play loops:
 
 - choose a team and player name
+- choose a gamemode
 - spawn into a map
 - move, walk, crouch, jump, and fight
 - switch weapons
 - equip and throw a smoke grenade
-- carry and plant the bomb
-- kill and respawn
-- play through freeze, live, planted, and round-end states
+- carry, drop, recover, and plant the bomb
+- play through freeze, live, planted, intermission, and match-restart states
 - inspect network/movement state live
 - validate remote pose/hitbox parity with debug overlays
 
@@ -60,8 +60,9 @@ It already supports real play loops:
 - Pistol semi-auto input buffering and tunable spread/recoil
 - World geometry shot blocking
 - Replicated damage, death, and respawn
-- Attacker/defender teams with first round-state flow
-- Bomb equip, carry, plant, countdown, and explosion baseline
+- Attacker/defender teams with `Debug` and `Competitive` gamemode scaffolding
+- Competitive mode currently scoped to `Dust2 Test`
+- Bomb equip, carry, drop, pickup, plant, countdown, defuse, and explosion baseline
 - First-pass bomb explosion visual at the planted position
 - Top-right killfeed with team-colored names, weapon icons, and headshot marker support
 
@@ -76,6 +77,7 @@ It already supports real play loops:
 - Server-authoritative fire requests and hit validation
 - Replicated health, alive state, respawn timing, pitch, stance, weapon, presentation state, team, and display name
 - Server-authoritative round/objective snapshots for HUD and gameplay flow
+- Competitive MR24, halftime side swap, overtime, and match restart flow
 - Server-authoritative remote audio events for weapon fire, smoke bloom, and audible footsteps
 - Shared movement now preserves takeoff speed while airborne, so weapon swaps or walk changes midair do not change velocity until landing
 - Landing now emits a single footstep on real air-to-ground transitions to close silent bunnyhop movement
@@ -118,6 +120,7 @@ It already supports real play loops:
 - Plant progress feedback
 - Utility HUD feedback for smoke availability and throw prompt
 - Pause menu for map, skybox, sensitivity, volume, and FOV
+- Pause menu gamemode selector
 - Top-right killfeed with rifle/pistol icon support and headshot marker
 - Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
 - Live `NETDEBUG` panel with clipboard copy support
@@ -136,6 +139,7 @@ It already supports real play loops:
 ### Tooling / Live Tuning
 
 - Backquote `` ` `` debug menu for grouped tuning/debug surfaces
+- Debug menu now groups tools into `Live Debugging` and `Gameplay Debugging`
 - `F3` authoritative remote hit-volume debug
 - `F4` first-person weapon/viewmodel tuning
 - `F6` remote body / aim / local hitbox tuning
@@ -171,10 +175,11 @@ It already supports real play loops:
 
 - multiple local tabs can join the same room
 - players choose teams and names before the round starts
+- players can choose `Debug` or `Competitive` from the pause menu
 - remote players render with weapon and posture state
 - server validates hits and replicates combat state
-- respawn loop is active
-- freeze, live, planted, and round-end baseline is active
+- `Debug` keeps the loose respawn/sandbox loop
+- `Competitive` on `Dust2 Test` now supports freeze, elimination, bomb rounds, halftime side swap, overtime, and match restart
 - Railway deployment is working as a one-service frontend plus multiplayer backend setup
 
 ## Architecture Overview
@@ -230,6 +235,7 @@ The active multiplayer baseline includes:
 - fire requests validated on the server
 - replicated damage, death, and respawn
 - replicated round, team, and objective state
+- replicated gamemode and match-flow state
 - replicated authoritative audio events for weapon fire, smoke bloom, and audible footsteps
 - replicated smoke throws now rebroadcast as shared combat events so remote clients spawn matching smoke projectiles/clouds
 - RTT ping probes for scoreboard/network diagnostics
@@ -354,6 +360,7 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 - Smoke is currently a visual gameplay marker only and does not yet block line of sight or traces.
 - Smoke visuals and smoke bloom audio now replicate through multiplayer, but bomb explosion presentation is still local-only.
 - The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.
+- Competitive does not yet have economy, buy time, or spectate flow.
 
 ## Repo Structure
 

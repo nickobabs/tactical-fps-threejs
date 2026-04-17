@@ -209,14 +209,31 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - player names are chosen during team select
   - team-based spawns are active
   - friendly fire is disabled
+- Pause-menu gamemode selection is active:
+  - `Debug`
+  - `Competitive`
+  - `Competitive` is currently only intended for `Dust2 Test`; other maps sanitize back to `Debug`
 - First bomb-objective slice is active:
   - attacker bomb carrier assigned after freeze
   - bomb is equipable with `5`
+  - bomb can now be dropped with `G`
+  - dropped bombs persist in the world and can be recovered by alive attackers
   - planting requires holding left click in a valid plant zone
   - planted bomb counts down 40 seconds
+  - defenders can defuse the planted bomb
   - explosion awards the round to attackers
   - imported maps can define sites with `plantable_*` markers
   - server-authoritative imported-map bomb-site validation is now implemented
+- Competitive Dust2 match flow is now materially built out:
+  - 10-second competitive freeze with real movement/combat lockout
+  - elimination win logic
+  - no mid-round respawns
+  - round-start respawn/reset for all ready players
+  - unique team-spawn assignment when enough markers exist
+  - MR24 regulation with halftime side swap
+  - infinite overtime in six-round sets with side swap after three rounds
+  - match end scoreboard force-open plus 15-second automatic restart
+  - side-swap / overtime intermissions with forced scoreboard and HUD messaging
 
 ## Current Gameplay Snapshot
 
@@ -489,11 +506,13 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - no ammo/reload authority
   - no spectate flow yet
 - Round authority and killfeed are now active:
-  - freeze, live, planted, and round-end flow are authoritative
+  - waiting, freeze, live, intermission, planted, and round-end flow are authoritative
   - bomb planting/countdown/explosion are authoritative
+  - bomb defuse, bomb drop, and bomb pickup are authoritative
   - killfeed UI renders replicated kills with weapon and headshot markers
 - Runtime nav generation still exists as a fallback and still runs on the main thread when used.
 - `RoundManager` and `UtilityManager` are no longer stubs, but they are still early gameplay systems with narrow rule coverage.
+- Competitive rules are now much broader than the first objective slice, but economy / spectate / buy flow are still missing.
 - `PlayerState` still exists but remains unused.
 
 ## Latest Multiplayer Investigation
@@ -597,7 +616,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - the active rifle and pistol defaults in `src/shared/weaponData.js` now reflect live-tuned values exported from the debug recoil panel
 - Debug surfaces:
   - backquote `` ` `` opens a general debug menu
-  - the menu can open:
+  - the menu is now grouped into:
+    - `Live Debugging`
+    - `Gameplay Debugging`
+  - current live round-control tooling includes:
+    - force side swap
+  - the menu can also open:
     - recoil tuning
     - movement tuning
     - viewmodel tuning

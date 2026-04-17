@@ -55,6 +55,10 @@
 - Current bomb flow:
   - a random attacker gets the bomb after freeze ends
   - the carrier can equip the bomb with `5`
+  - the carrier can press `G` to drop the bomb slightly in front of them
+  - if the bomb carrier dies or disconnects, the bomb drops into the world instead of disappearing
+  - alive attackers without the bomb can pick it up by running over it
+  - the dropper is blocked from instantly re-picking it up for a short window so manual drops actually leave the bomb in the world
   - planting currently requires:
     - attacker team
     - bomb equipped
@@ -68,6 +72,7 @@
     - keeping the crosshair aimed at the bomb
     - holding `E` for 6 seconds
   - successful defuse ends the round for defenders
+  - if all attackers die after plant, the defenders still need to complete the defuse to win
 - Current smoke flow:
   - `6` selects the smoke utility
   - left click throws the grenade when smoke is selected
@@ -80,6 +85,7 @@
   - the smoke cloud is now a heavier CS-style layered sprite effect with a dense center, softer edge, wide footprint, and a 14-second duration after bloom
   - smoke bloom audio is also emitted as a replicated positional audio event so other players can hear it
   - the current round baseline gives the player one smoke grenade and restores it on round reset/freeze
+  - competitive currently only allows smoke throws during the `live` round phase
 - Current bomb explosion presentation:
   - when a planted bomb explodes, `UtilityManager` now triggers a local first-pass blast effect at the planted world position
   - the effect currently uses a bright flash, expanding ground ring, and large debris/dust plume
@@ -90,8 +96,8 @@
 
 ## Limitations
 
-- No bomb drop/pickup flow yet
 - Smoke is currently a visual cloud only; it does not yet block line of sight or gameplay traces
 - Bomb explosion effect is currently local presentation only; it does not yet apply blast damage or other gameplay consequences beyond the round result
 - No broader grenade inventory system yet beyond the single smoke baseline
 - No dedicated first-person bomb animation set yet
+- No direct teammate-to-teammate bomb transfer action beyond drop-and-pickup

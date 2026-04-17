@@ -24,6 +24,7 @@ import { REMOTE_AUDIO_TUNING } from '../game/audio/remoteAudioTuning.js';
 import { createHudLayoutTuningPanel } from '../game/ui/createHudLayoutTuningPanel.js';
 import { HUD_LAYOUT_TUNING, applyHudLayoutTuningToRoot, loadHudLayoutTuning } from '../game/ui/hudLayoutTuning.js';
 import { TEAMS } from '../shared/constants.js';
+import { GAMEMODE_OPTIONS, GAMEMODES, isCompetitiveGamemode, sanitizeGamemodeForMap } from '../shared/gamemodes.js';
 import { VIEWMODEL_LAYER } from '../game/weapons/viewModels.js';
 
 const DEFAULT_HORIZONTAL_FOV = 103;
@@ -197,10 +198,13 @@ export class GameApp {
     this.killfeedEntries = [];
     this.selectedTeam = null;
     this.selectedPlayerName = loadStoredPlayerName();
+    this.selectedGamemode = GAMEMODES.DEBUG;
     this.hudMode = loadStoredHudMode();
     this.lastLocalPlayerAlive = true;
     this.lastObjectiveBombState = null;
     this.lastRoundWinReason = null;
+    this.lastFreezeCountdownCue = null;
+    this.lastFreezeTimeLeft = null;
     this.audioDebugState = {
       lastFootstep: null,
       lastWeapon: null,
@@ -236,6 +240,7 @@ export class GameApp {
     this.debugMenu = createDebugMenu({
       container: this.root,
       onToggleHudMode: () => this.toggleHudMode(),
+      onForceSideSwap: () => this.forceDebugSideSwap(),
     });
     applyHudLayoutTuningToRoot();
     this.hudLayoutTuningPanel = createHudLayoutTuningPanel();
@@ -348,11 +353,14 @@ export class GameApp {
       onSelectTeam: (team, playerName) => void this.selectTeam(team, playerName),
       onToggleHudMode: () => this.toggleHudMode(),
       onSelectMap: (mapId) => this.loadMap(mapId),
+      onSelectGamemode: (gamemodeId) => this.selectGamemode(gamemodeId),
       onSensitivityChange: (value) => this.setMouseSensitivity(value),
       onFovChange: (value) => this.setHorizontalFov(value),
       onVolumeChange: (volume) => this.setMasterVolume(volume),
       maps: MAP_OPTIONS,
+      gamemodes: GAMEMODE_OPTIONS,
       getSelectedMapId: () => this.selectedMapId,
+      getSelectedGamemodeId: () => this.getActiveGamemode(),
       getSelectedTeam: () => this.selectedTeam,
       getSelectedPlayerName: () => this.selectedPlayerName,
       getHudMode: () => this.hudMode,
@@ -397,6 +405,34 @@ export class GameApp {
       });
     }
     this.lastRoundWinReason = nextWinReason;
+  }
+
+  updateFreezeCountdownAudioCues() {
+    const roundState = this.networkClient.getRoundState?.() ?? this.runtime?.roundManager ?? null;
+    if (!roundState || !isCompetitiveGamemode(roundState.gamemode) || roundState.phase !== 'freeze') {
+      this.lastFreezeCountdownCue = null;
+      this.lastFreezeTimeLeft = null;
+      return;
+    }
+
+    const timeLeft = Math.max(0, Number(roundState.freezeDuration ?? 0) - Number(roundState.phaseTime ?? 0));
+    const previousTimeLeft = Number(this.lastFreezeTimeLeft ?? (timeLeft + 1));
+    let cueSecond = 0;
+    for (const [displaySecond, threshold] of [[3, 4], [2, 3], [1, 2]]) {
+      if (previousTimeLeft > threshold && timeLeft <= threshold) {
+        cueSecond = displaySecond;
+        break;
+      }
+    }
+    this.lastFreezeTimeLeft = timeLeft;
+    if (cueSecond < 1 || this.lastFreezeCountdownCue === cueSecond) {
+      return;
+    }
+
+    this.lastFreezeCountdownCue = cueSecond;
+    void this.audioManager.play('round-freeze-clock', {
+      baseVolume: 0.72,
+    });
   }
 
   playReplicatedAudioEvents() {
@@ -530,6 +566,44 @@ export class GameApp {
     this.rebuildHud();
   }
 
+  getActiveGamemode() {
+    return this.networkClient.getRoundState?.()?.gamemode ?? this.selectedGamemode;
+  }
+
+  syncGamemodeSelection({ resetMatch = false } = {}) {
+    const nextGamemode = sanitizeGamemodeForMap(this.selectedGamemode, this.selectedMapId);
+    this.selectedGamemode = nextGamemode;
+
+    if (!this.runtime?.playerController) {
+      return false;
+    }
+
+    if (this.getGameplaySyncEnabled()) {
+      return this.networkClient.sendGamemodeChange({
+        gamemode: nextGamemode,
+        mapId: this.selectedMapId,
+        resetMatch,
+      });
+    }
+
+    this.runtime.roundManager.resetMatch(nextGamemode);
+    this.runtime.utilityManager?.resetRoundState?.();
+    this.runtime.weaponManager?.refillAllAmmo?.();
+    if (this.selectedTeam) {
+      this.runtime.playerController.spawnAt(this.runtime.getSpawnStateForTeam(this.selectedTeam));
+    }
+    this.networkJumpQueued = false;
+    this.localSimulationLoop.accumulator = 0;
+    this.rebuildHud();
+    return true;
+  }
+
+  selectGamemode(gamemodeId) {
+    this.selectedGamemode = sanitizeGamemodeForMap(gamemodeId, this.selectedMapId);
+    this.syncGamemodeSelection({ resetMatch: true });
+    this.rebuildHud();
+  }
+
   toggleFlyMode() {
     if (!this.runtime?.playerController) {
       return;
@@ -588,6 +662,7 @@ export class GameApp {
   async loadMap(mapId) {
     this.networkJumpQueued = false;
     this.selectedTeam = null;
+    this.selectedGamemode = sanitizeGamemodeForMap(this.selectedGamemode, mapId);
     await this.sessionController.loadMap(mapId, {
       mouseSensitivity: this.mouseSensitivity,
       localSimulationLoop: this.localSimulationLoop,
@@ -747,6 +822,22 @@ export class GameApp {
     });
   }
 
+  forceDebugSideSwap() {
+    if (!this.runtime?.roundManager) {
+      return false;
+    }
+
+    if (this.getGameplaySyncEnabled()) {
+      return this.networkClient.sendDebugRoundControl({
+        action: 'force-side-swap',
+      });
+    }
+
+    this.runtime.roundManager.startDebugSideSwapIntermission();
+    this.rebuildHud();
+    return true;
+  }
+
   syncCombatNetworkingMode() {
     this.gameplayNetworking.syncCombatNetworkingMode({
       authoritativeNetworkingEnabled: this.authoritativeNetworkingEnabled,
@@ -759,6 +850,20 @@ export class GameApp {
     if (frameInput.justPressed.has('Space')) {
       this.networkJumpQueued = true;
     }
+  }
+
+  getFreezeLockedMovementInput(movementInput) {
+    return {
+      ...movementInput,
+      forward: false,
+      backward: false,
+      left: false,
+      right: false,
+      sprint: false,
+      walk: false,
+      crouch: false,
+      jump: false,
+    };
   }
 
   runLocalSimulation(delta, frameInput, localPlayerAlive) {
@@ -777,9 +882,14 @@ export class GameApp {
     }
 
     this.localSimulationLoop.advance(delta, (simulationStep) => {
-      const movementInput = this.runtime.playerController.getMovementInputSnapshot({
+      const rawMovementInput = this.runtime.playerController.getMovementInputSnapshot({
         jumpPressed: this.networkJumpQueued,
       });
+      const freezeLocked = isCompetitiveGamemode(this.runtime.roundManager?.gamemode)
+        && this.runtime.roundManager?.phase === 'freeze';
+      const movementInput = freezeLocked
+        ? this.getFreezeLockedMovementInput(rawMovementInput)
+        : rawMovementInput;
       const speedMultiplier = this.runtime.playerController.getCurrentSpeedMultiplier();
 
       this.runtime.playerController.stepSimulation(simulationStep, movementInput, speedMultiplier);
@@ -826,6 +936,7 @@ export class GameApp {
       selectedTeam: this.selectedTeam,
       weaponManager: this.runtime.weaponManager,
     });
+    this.updateFreezeCountdownAudioCues();
     this.updateObjectiveAudioCues();
     this.updateRoundResultAudioCues();
   }
@@ -981,6 +1092,10 @@ export class GameApp {
 
   updateGameplayFrame(delta, frameInput) {
     const localCombatState = this.networkClient.getLocalPlayerState?.();
+    const authoritativeLocalTeam = localCombatState?.team;
+    if (authoritativeLocalTeam === TEAMS.ATTACKERS || authoritativeLocalTeam === TEAMS.DEFENDERS) {
+      this.selectedTeam = authoritativeLocalTeam;
+    }
     const localPlayerAlive = localCombatState?.isAlive !== false;
     if (!this.lastLocalPlayerAlive && localPlayerAlive) {
       this.runtime?.weaponManager?.refillAllAmmo?.();
@@ -1171,6 +1286,7 @@ export class GameApp {
         playerController: this.runtime.playerController,
         weaponManager: this.runtime.weaponManager,
       });
+      this.syncGamemodeSelection({ resetMatch: false });
     } else {
       this.networkClient.suspendGameplaySync();
     }

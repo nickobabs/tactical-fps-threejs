@@ -3,6 +3,7 @@ import { PAUSE_MENU_BINDINGS } from './pauseMenuBindings.js';
 const PANEL_KEYS = {
   bindings: 'bindings',
   maps: 'maps',
+  gamemodes: 'gamemodes',
   skyboxes: 'skyboxes',
 };
 
@@ -15,6 +16,8 @@ export function createPauseMenu({
   onResume,
   onSelectMap,
   maps = [],
+  onSelectGamemode,
+  gamemodes = [],
   onSelectSkybox,
   skyboxes = [],
   onSensitivityChange,
@@ -23,8 +26,10 @@ export function createPauseMenu({
   getMasterVolume,
   getMouseSensitivity,
   getHorizontalFov,
+  isGamemodeEnabled = null,
 }) {
   let lastSelectedMapId = null;
+  let lastSelectedGamemodeId = null;
   let lastSelectedSkyboxId = null;
   let lastVolume = null;
   let lastSensitivity = null;
@@ -49,6 +54,10 @@ export function createPauseMenu({
         <div class="hud__pause-summary-card">
           <span class="hud__pause-summary-label">Map</span>
           <span class="hud__pause-summary-value" data-role="selected-map">${findLabelById(maps, maps[0]?.id ?? null)}</span>
+        </div>
+        <div class="hud__pause-summary-card">
+          <span class="hud__pause-summary-label">Mode</span>
+          <span class="hud__pause-summary-value" data-role="selected-gamemode">${findLabelById(gamemodes, gamemodes[0]?.id ?? null)}</span>
         </div>
         <div class="hud__pause-summary-card">
           <span class="hud__pause-summary-label">Skybox</span>
@@ -85,6 +94,7 @@ export function createPauseMenu({
       <div class="hud__pause-tabs">
         <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="bindings">Key Bindings</button>
         <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="maps">Maps</button>
+        <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="gamemodes">Gamemode</button>
         <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="skyboxes">Skyboxes</button>
       </div>
       <div class="hud__pause-detail">
@@ -99,6 +109,15 @@ export function createPauseMenu({
               type="button"
               data-map-id="${map.id}"
             >${map.label}</button>
+          `).join('')}
+        </div>
+        <div class="hud__gamemodes">
+          ${gamemodes.map((gamemode) => `
+            <button
+              class="hud__gamemode-option"
+              type="button"
+              data-gamemode-id="${gamemode.id}"
+            >${gamemode.label}</button>
           `).join('')}
         </div>
         <div class="hud__skyboxes">
@@ -119,9 +138,11 @@ export function createPauseMenu({
 
   const bindingsEl = pause.querySelector('.hud__bindings');
   const mapsEl = pause.querySelector('.hud__maps');
+  const gamemodesEl = pause.querySelector('.hud__gamemodes');
   const skyboxesEl = pause.querySelector('.hud__skyboxes');
   const pauseDetailCopyEl = pause.querySelector('.hud__pause-panel-copy');
   const selectedMapValueEl = pause.querySelector('[data-role="selected-map"]');
+  const selectedGamemodeValueEl = pause.querySelector('[data-role="selected-gamemode"]');
   const selectedSkyboxValueEl = pause.querySelector('[data-role="selected-skybox"]');
   const currentSensitivityValueEl = pause.querySelector('[data-role="current-sensitivity"]');
   const resumeButton = pause.querySelector('[data-action="resume"]');
@@ -133,23 +154,29 @@ export function createPauseMenu({
   const fovValueEl = pause.querySelector('.hud__fov-value');
   const bindingsButton = pause.querySelector('[data-action="bindings"]');
   const mapsButton = pause.querySelector('[data-action="maps"]');
+  const gamemodesButton = pause.querySelector('[data-action="gamemodes"]');
   const skyboxesButton = pause.querySelector('[data-action="skyboxes"]');
   const mapButtons = [...pause.querySelectorAll('[data-map-id]')];
+  const gamemodeButtons = [...pause.querySelectorAll('[data-gamemode-id]')];
   const skyboxButtons = [...pause.querySelectorAll('[data-skybox-id]')];
 
   function setActivePanel(nextPanel) {
     activePanel = activePanel === nextPanel ? null : nextPanel;
     bindingsEl.classList.toggle('hud__bindings--visible', activePanel === PANEL_KEYS.bindings);
     mapsEl.classList.toggle('hud__maps--visible', activePanel === PANEL_KEYS.maps);
+    gamemodesEl.classList.toggle('hud__gamemodes--visible', activePanel === PANEL_KEYS.gamemodes);
     skyboxesEl.classList.toggle('hud__skyboxes--visible', activePanel === PANEL_KEYS.skyboxes);
     bindingsButton.classList.toggle('hud__pause-button--active', activePanel === PANEL_KEYS.bindings);
     mapsButton.classList.toggle('hud__pause-button--active', activePanel === PANEL_KEYS.maps);
+    gamemodesButton.classList.toggle('hud__pause-button--active', activePanel === PANEL_KEYS.gamemodes);
     skyboxesButton.classList.toggle('hud__pause-button--active', activePanel === PANEL_KEYS.skyboxes);
 
     const panelCopy = activePanel === PANEL_KEYS.bindings
       ? 'Current controls and debug toggles.'
       : activePanel === PANEL_KEYS.maps
         ? 'Switch the active playspace runtime.'
+        : activePanel === PANEL_KEYS.gamemodes
+          ? 'Switch the current round ruleset. Competitive is available on Dust2 Test only.'
         : activePanel === PANEL_KEYS.skyboxes
           ? 'Swap the environment lighting preset.'
           : 'Open a panel for controls or environment options.';
@@ -177,12 +204,16 @@ export function createPauseMenu({
   };
   const handleBindings = () => setActivePanel(PANEL_KEYS.bindings);
   const handleMaps = () => setActivePanel(PANEL_KEYS.maps);
+  const handleGamemodes = () => setActivePanel(PANEL_KEYS.gamemodes);
   const handleSkyboxes = () => setActivePanel(PANEL_KEYS.skyboxes);
   const handleMapSelect = (event) => {
     onSelectMap?.(event.currentTarget.dataset.mapId);
   };
   const handleSkyboxSelect = (event) => {
     onSelectSkybox?.(event.currentTarget.dataset.skyboxId);
+  };
+  const handleGamemodeSelect = (event) => {
+    onSelectGamemode?.(event.currentTarget.dataset.gamemodeId);
   };
 
   resumeButton.addEventListener('click', handleResume);
@@ -191,8 +222,10 @@ export function createPauseMenu({
   fovSlider.addEventListener('input', handleFov);
   bindingsButton.addEventListener('click', handleBindings);
   mapsButton.addEventListener('click', handleMaps);
+  gamemodesButton.addEventListener('click', handleGamemodes);
   skyboxesButton.addEventListener('click', handleSkyboxes);
   mapButtons.forEach((button) => button.addEventListener('click', handleMapSelect));
+  gamemodeButtons.forEach((button) => button.addEventListener('click', handleGamemodeSelect));
   skyboxButtons.forEach((button) => button.addEventListener('click', handleSkyboxSelect));
 
   return {
@@ -203,8 +236,10 @@ export function createPauseMenu({
       fovSlider.removeEventListener('input', handleFov);
       bindingsButton.removeEventListener('click', handleBindings);
       mapsButton.removeEventListener('click', handleMaps);
+      gamemodesButton.removeEventListener('click', handleGamemodes);
       skyboxesButton.removeEventListener('click', handleSkyboxes);
       mapButtons.forEach((button) => button.removeEventListener('click', handleMapSelect));
+      gamemodeButtons.forEach((button) => button.removeEventListener('click', handleGamemodeSelect));
       skyboxButtons.forEach((button) => button.removeEventListener('click', handleSkyboxSelect));
       pause.remove();
     },
@@ -214,7 +249,7 @@ export function createPauseMenu({
         setActivePanel(null);
       }
     },
-    updateSelections({ selectedMapId, selectedSkyboxId }) {
+    updateSelections({ selectedMapId, selectedGamemodeId, selectedSkyboxId }) {
       if (selectedMapId !== lastSelectedMapId) {
         mapButtons.forEach((button) => {
           button.classList.toggle('hud__map-option--active', button.dataset.mapId === selectedMapId);
@@ -222,6 +257,19 @@ export function createPauseMenu({
         selectedMapValueEl.textContent = findLabelById(maps, selectedMapId);
         lastSelectedMapId = selectedMapId;
       }
+
+      if (selectedGamemodeId !== lastSelectedGamemodeId) {
+        gamemodeButtons.forEach((button) => {
+          button.classList.toggle('hud__gamemode-option--active', button.dataset.gamemodeId === selectedGamemodeId);
+        });
+        selectedGamemodeValueEl.textContent = findLabelById(gamemodes, selectedGamemodeId);
+        lastSelectedGamemodeId = selectedGamemodeId;
+      }
+
+      gamemodeButtons.forEach((button) => {
+        const enabled = isGamemodeEnabled ? isGamemodeEnabled(button.dataset.gamemodeId, selectedMapId) : true;
+        button.disabled = !enabled;
+      });
 
       if (selectedSkyboxId !== lastSelectedSkyboxId) {
         skyboxButtons.forEach((button) => {

@@ -3,6 +3,7 @@ import { PlantedBombVisual } from './PlantedBombVisual.js';
 import { BombObjectiveState } from './BombObjectiveState.js';
 import { SmokeGrenadeManager } from './SmokeGrenadeManager.js';
 import { TEAMS } from '../../shared/constants.js';
+import { isCompetitiveGamemode } from '../../shared/gamemodes.js';
 import {
   BOMB_UTILITY_KEY,
   SMOKE_UTILITY_KEY,
@@ -87,6 +88,7 @@ export class UtilityManager {
     this.smokeViewModel = null;
     this.smokeCharges = DEFAULT_SMOKE_GRENADES;
     this.equippedUtilityKey = null;
+    this.lastNonBombWeaponKey = 'rifle';
     this.lastRoundNumber = 0;
     this.lastRoundPhase = null;
     this.lastKnownBombPosition = null;
@@ -141,8 +143,9 @@ export class UtilityManager {
     this.state.resetRoundState();
     this.smokeCharges = DEFAULT_SMOKE_GRENADES;
     this.equippedUtilityKey = null;
+    this.lastNonBombWeaponKey = 'rifle';
     this.lastKnownBombPosition = null;
-    this.updatePlantedBombVisual(null);
+    this.updateBombVisual(null);
   }
 
   syncFrameInput(frameInput) {
@@ -164,8 +167,8 @@ export class UtilityManager {
     }
   }
 
-  updatePlantedBombVisual(position) {
-    if (position) {
+  updateBombVisual(position, { trackExplosionAnchor = false } = {}) {
+    if (position && trackExplosionAnchor) {
       this.lastKnownBombPosition = new THREE.Vector3(
         Number(position.x ?? 0),
         Number(position.y ?? 0),
@@ -183,7 +186,7 @@ export class UtilityManager {
     this.smokeGrenadeManager?.effectsManager?.addBombExplosion?.(this.lastKnownBombPosition);
     this.lastBombExplosionRound = roundManager?.roundNumber ?? this.lastBombExplosionRound;
     this.lastKnownBombPosition = null;
-    this.updatePlantedBombVisual(null);
+    this.updateBombVisual(null);
   }
 
   canAttemptDefuse(playerController, plantedPosition) {
@@ -216,17 +219,18 @@ export class UtilityManager {
       && this.smokeCharges > 0
       && localPlayerAlive
       && !roundManager?.roundEnded
-      && roundManager?.phase !== 'waiting';
+      && roundManager?.phase === 'live';
   }
 
   getWeaponInputBlockState({ roundManager, localPlayerAlive } = {}) {
+    const competitiveActionLocked = isCompetitiveGamemode(roundManager?.gamemode) && roundManager?.phase !== 'live';
     const smokeEquipped = this.equippedUtilityKey === SMOKE_UTILITY_KEY
       && localPlayerAlive
       && !roundManager?.roundEnded
-      && roundManager?.phase !== 'waiting';
+      && roundManager?.phase === 'live';
     return {
-      blockPrimaryAction: smokeEquipped,
-      blockSecondaryAction: smokeEquipped,
+      blockPrimaryAction: smokeEquipped || competitiveActionLocked,
+      blockSecondaryAction: smokeEquipped || competitiveActionLocked,
       hideViewModel: smokeEquipped,
     };
   }
@@ -340,6 +344,24 @@ export class UtilityManager {
     });
   }
 
+  tryDropBomb(frameInput, roundManager, networkClient, selectedTeam, weaponManager) {
+    if (
+      !frameInput?.justPressed?.has?.('KeyG')
+      || selectedTeam !== TEAMS.ATTACKERS
+      || roundManager?.phase !== 'live'
+      || roundManager?.roundEnded
+      || !this.state.localPlayerHasBomb
+    ) {
+      return false;
+    }
+
+    networkClient?.sendBombDrop?.();
+    if (weaponManager?.activeWeaponKey === BOMB_UTILITY_KEY) {
+      weaponManager.equipWeapon(this.lastNonBombWeaponKey || 'rifle');
+    }
+    return true;
+  }
+
   update(delta, {
     input,
     frameInput,
@@ -365,6 +387,9 @@ export class UtilityManager {
     const objectiveState = networkClient?.getObjectiveState?.() ?? null;
     const authoritativeObjective = Boolean(objectiveState);
     const localPlayerAlive = networkClient?.getLocalPlayerState?.()?.isAlive !== false;
+    if (weaponManager?.activeWeaponKey && weaponManager.activeWeaponKey !== BOMB_UTILITY_KEY) {
+      this.lastNonBombWeaponKey = weaponManager.activeWeaponKey;
+    }
     this.state.handleRoundTransition({
       roundManager,
       authoritativeObjective,
@@ -389,9 +414,12 @@ export class UtilityManager {
         networkClient,
         selectedTeam,
       });
-      this.updatePlantedBombVisual(
-        this.state.bombState === 'planted' ? objectiveState?.plantedPosition ?? null : null,
-      );
+      const worldBombPosition = this.state.bombState === 'planted'
+        ? objectiveState?.plantedPosition ?? null
+        : (this.state.bombState === 'dropped' ? objectiveState?.droppedPosition ?? null : null);
+      this.updateBombVisual(worldBombPosition, {
+        trackExplosionAnchor: this.state.bombState === 'planted',
+      });
     }
 
     if (!this.state.localPlayerHasBomb && weaponManager?.activeWeaponKey === BOMB_UTILITY_KEY) {
@@ -511,7 +539,20 @@ export class UtilityManager {
     if (smokeThrown) {
       this.handleSmokeThrown(weaponManager);
     }
+    this.tryDropBomb(frameInput, roundManager, networkClient, selectedTeam, weaponManager);
     this.updateSmokeViewModelVisibility({ roundManager, localPlayerAlive });
+
+    if (this.state.bombState === 'dropped') {
+      this.state.plantProgress = 0;
+      this.state.pendingPlantRequest = false;
+      this.state.defuseProgress = 0;
+      this.state.pendingDefuseRequest = false;
+      this.state.statusText = selectedTeam === TEAMS.ATTACKERS ? 'Bomb dropped' : '';
+      this.state.interactionText = selectedTeam === TEAMS.ATTACKERS
+        ? 'Move over C4 to pick up'
+        : '';
+      return;
+    }
 
     const bombEquipped = weaponManager?.activeWeaponKey === BOMB_UTILITY_KEY;
     if (!this.state.localPlayerHasBomb || !bombEquipped || selectedTeam !== TEAMS.ATTACKERS || roundManager.phase !== 'live') {
@@ -572,7 +613,7 @@ export class UtilityManager {
         this.state.bombState = 'planted';
         this.state.bombTimeRemaining = this.state.bombDuration;
         this.state.plantedZoneName = plantZone.name;
-        this.updatePlantedBombVisual(playerController?.position ?? null);
+        this.updateBombVisual(playerController?.position ?? null, { trackExplosionAnchor: true });
         this.state.plantProgress = 0;
         this.state.statusText = `Bomb planted - ${formatBombSeconds(this.state.bombTimeRemaining)}s`;
       }

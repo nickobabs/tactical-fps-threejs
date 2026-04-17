@@ -5,8 +5,11 @@ import {
   NETCODE_SIMULATION_STEP,
 } from '../../shared/netcode.js';
 import {
+  createBombDropMessage,
   createBombDefuseMessage,
   createBombPlantMessage,
+  createDebugRoundControlMessage,
+  createGamemodeChangeMessage,
   createPlayerFireMessage,
   createPlayerInputMessage,
   createPlayerReadyMessage,
@@ -549,12 +552,30 @@ export class NetworkClient {
     return true;
   }
 
+  sendGamemodeChange(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('set-gamemode', createGamemodeChangeMessage(state));
+    return true;
+  }
+
   sendBombPlant(state) {
     if (!this.room || !state) {
       return false;
     }
 
     this.room.send('bomb-plant', createBombPlantMessage(state));
+    return true;
+  }
+
+  sendBombDrop() {
+    if (!this.room) {
+      return false;
+    }
+
+    this.room.send('bomb-drop', createBombDropMessage());
     return true;
   }
 
@@ -582,6 +603,15 @@ export class NetworkClient {
     }
 
     this.room.send('smoke-throw', createSmokeThrowMessage(state));
+    return true;
+  }
+
+  sendDebugRoundControl(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('debug-round-control', createDebugRoundControlMessage(state));
     return true;
   }
 

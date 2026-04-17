@@ -1,6 +1,10 @@
 export const HUD_LAYOUT_TUNING_STORAGE_KEY = 'tactical-fps-threejs-hud-layout-tuning';
 
 export const HUD_LAYOUT_TUNING = {
+  roundWinTop: 120,
+  roundWinGap: 10,
+  matchRestartTop: 124,
+  matchRestartTransitionTop: 201,
   roundRosterTop: 21,
   roundRosterHeight: 72,
   roundRosterCenterTop: 7,
@@ -14,7 +18,7 @@ export const HUD_LAYOUT_TUNING = {
   killfeedTop: 89,
   killfeedRight: 87,
   killfeedWidth: 528,
-  killfeedEntryMinWidth: 5,
+  killfeedEntryMinWidth: 13,
   killfeedPaddingX: 14,
   killfeedPaddingY: 4,
   killfeedBodyItemGap: 0,
@@ -56,6 +60,10 @@ export function loadHudLayoutTuning() {
 
     const parsed = JSON.parse(raw);
     return {
+      roundWinTop: parseStoredValue(parsed, 'roundWinTop', HUD_LAYOUT_TUNING.roundWinTop),
+      roundWinGap: parseStoredValue(parsed, 'roundWinGap', HUD_LAYOUT_TUNING.roundWinGap),
+      matchRestartTop: parseStoredValue(parsed, 'matchRestartTop', HUD_LAYOUT_TUNING.matchRestartTop),
+      matchRestartTransitionTop: parseStoredValue(parsed, 'matchRestartTransitionTop', HUD_LAYOUT_TUNING.matchRestartTransitionTop),
       roundRosterTop: parseStoredValue(parsed, 'roundRosterTop', HUD_LAYOUT_TUNING.roundRosterTop),
       roundRosterHeight: parseStoredValue(parsed, 'roundRosterHeight', HUD_LAYOUT_TUNING.roundRosterHeight),
       roundRosterCenterTop: parseStoredValue(parsed, 'roundRosterCenterTop', HUD_LAYOUT_TUNING.roundRosterCenterTop),
@@ -119,6 +127,10 @@ export function setHudLayoutTuningValue(key, value) {
 }
 
 export function resetHudLayoutTuning() {
+  HUD_LAYOUT_TUNING.roundWinTop = 120;
+  HUD_LAYOUT_TUNING.roundWinGap = 10;
+  HUD_LAYOUT_TUNING.matchRestartTop = 124;
+  HUD_LAYOUT_TUNING.matchRestartTransitionTop = 201;
   HUD_LAYOUT_TUNING.roundRosterTop = 21;
   HUD_LAYOUT_TUNING.roundRosterHeight = 72;
   HUD_LAYOUT_TUNING.roundRosterCenterTop = 7;
@@ -132,7 +144,7 @@ export function resetHudLayoutTuning() {
   HUD_LAYOUT_TUNING.killfeedTop = 89;
   HUD_LAYOUT_TUNING.killfeedRight = 87;
   HUD_LAYOUT_TUNING.killfeedWidth = 528;
-  HUD_LAYOUT_TUNING.killfeedEntryMinWidth = 5;
+  HUD_LAYOUT_TUNING.killfeedEntryMinWidth = 13;
   HUD_LAYOUT_TUNING.killfeedPaddingX = 14;
   HUD_LAYOUT_TUNING.killfeedPaddingY = 4;
   HUD_LAYOUT_TUNING.killfeedBodyItemGap = 0;
@@ -162,6 +174,10 @@ export function applyHudLayoutTuningToRoot(root = document?.documentElement) {
     return;
   }
 
+  root.style.setProperty('--hud-round-win-top', `${HUD_LAYOUT_TUNING.roundWinTop}px`);
+  root.style.setProperty('--hud-round-win-gap', `${HUD_LAYOUT_TUNING.roundWinGap}px`);
+  root.style.setProperty('--hud-match-restart-top', `${HUD_LAYOUT_TUNING.matchRestartTop}px`);
+  root.style.setProperty('--hud-match-restart-transition-top', `${HUD_LAYOUT_TUNING.matchRestartTransitionTop}px`);
   root.style.setProperty('--hud-round-roster-top', `${HUD_LAYOUT_TUNING.roundRosterTop}px`);
   root.style.setProperty('--hud-round-roster-height', `${HUD_LAYOUT_TUNING.roundRosterHeight}px`);
   root.style.setProperty('--hud-round-roster-center-top', `${HUD_LAYOUT_TUNING.roundRosterCenterTop}px`);
