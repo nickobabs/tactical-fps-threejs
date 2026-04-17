@@ -26,6 +26,7 @@ The current networking slice supports:
 - Remote-player placeholder rendering now also uses replicated crouch / current-height state plus lightweight remote fire events for readability
 - Remote locomotion playback on both the visible client presenter and the authoritative server hitbox rig now scales against shared movement-speed baselines instead of only fixed clip constants
 - A server-authoritative remote-hitbox snapshot path now exists for PvP debug and hit validation work
+- Server-side lag-compensated PvP hit validation now rewinds target hitboxes against recent authoritative history instead of always validating against the latest live pose
 
 Multiplayer is still optional. If no Colyseus server is reachable, the game continues to run fully in single-player mode.
 
@@ -83,6 +84,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - local weapon presentation stays immediate
   - the server owns PvP hit validation, damage, death, and respawn timing
   - the client consumes replicated combat state and feedback events
+- Remote players are intentionally rendered slightly behind live authority for smoother interpolation, while PvP hit validation now compensates for that timeline gap on the server:
+  - current remote interpolation delay is `67 ms`
+  - the room keeps a short recent history of authoritative target hitboxes
+  - on `player-fire`, hit validation rewinds against the shooter's estimated one-way latency plus that interpolation delay
+  - this rewind affects hit validation only; it does not rewind or snap victim movement
 - Round timing and the first bomb-objective slice are now server-authoritative:
   - room starts in `waiting`
   - freeze only begins once all connected players have chosen a team and sent `player-ready`
@@ -164,7 +170,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Server-authoritative smoke throw validation and rebroadcast are active
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests
-  - the server validates hits against authoritative player state
+  - the server validates hits against lag-compensated authoritative player hitboxes
   - rifle damage can now vary by hit zone
   - player health / death / respawn are replicated
   - remote placeholders now reflect alive vs dead state
@@ -208,7 +214,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - player hit detection is currently split between:
     - older coarse fallback volumes
     - newer server-authoritative segmented bone-driven hit volumes
-  - no lag compensation yet
+  - first server-side lag compensation now exists for player-hit validation
+  - current rewind uses recent authoritative hitbox history plus shooter RTT estimate, not full clock-synced rollback
   - no ammo/reload state yet
   - killfeed replication/UI exists, but spectate flow still does not
 - Local target dummies are now disabled by default for PvP testing unless explicitly re-enabled through `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`
@@ -231,6 +238,10 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 ## Investigation Notes
 
 - Input-authoritative movement, replay-based reconciliation, remote interpolation, shared map collision primitives, and weapon speed-multiplier sync are all in place.
+- The earlier "shoot ahead of strafing targets" PvP failure mode was traced to timeline mismatch:
+  - remote targets were rendered from delayed snapshots on the client
+  - the server validated shots against the latest live hitboxes on arrival
+  - current fix is server-side lag compensation for hit validation, not victim movement rollback
 - Instrumentation showed that the worst earlier issue, constant server correction on every authoritative update, was real and was substantially reduced after syncing weapon speed multipliers through the protocol.
 - Later instrumentation showed the remaining choppy feel was still tied to frequent tiny local corrections rather than render frametime or major drift.
 - Current `NETDEBUG` captures indicate that local flat-ground movement no longer suffers from severe network backlog or large authoritative drift. Typical values have shown:
@@ -314,6 +325,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - visible remote locomotion now scales with actual replicated horizontal speed, so knife and slower weapons no longer animate at rifle-like travel cadence
   - the authoritative hitbox rig now uses the same scaling
   - jump playback on the authoritative rig was explicitly exempted from that scaling so hitboxes do not run ahead during jumps
+- Later PvP hitreg follow-up:
+  - remote interpolation delay was reduced from `100 ms` to `67 ms`
+  - the room now stores a short rolling history of authoritative hitbox snapshots per player
+  - player-hit validation now rewinds targets against that history using the shooter's reported RTT estimate plus the interpolation delay
+  - this keeps remote presentation smoothing while removing the need to lead visible strafing targets as aggressively
 
 ## Current Conclusion
 

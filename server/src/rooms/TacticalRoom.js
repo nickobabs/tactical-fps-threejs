@@ -9,8 +9,11 @@ import {
   simulatePlayerMovement,
 } from '../../../src/shared/playerMovement.js';
 import {
+  NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
   NETCODE_SIMULATION_RATE,
   NETCODE_SIMULATION_STEP,
+  NETCODE_REMOTE_INTERPOLATION_DELAY_MS,
+  NETCODE_SERVER_HITBOX_HISTORY_MS,
 } from '../../../src/shared/netcode.js';
 import {
   createPlayerInputMessage,
@@ -107,6 +110,7 @@ const BOMB_DROPPER_PICKUP_LOCK_MS = 750;
 const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
 const SMOKE_BLOOM_MAX_VALIDATE_DISTANCE = 32;
 const SMOKE_THROW_MAX_VALIDATE_DISTANCE = 3;
+const MIN_ONE_WAY_NETWORK_MS = 0;
 
 function getFreezeLockedInput(input) {
   return {
@@ -177,6 +181,133 @@ function buildAuthoritativeHitboxes(player) {
     legRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.legRadius,
     legLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.legLengthPadding,
   }, player.authoritativeHitboxes ?? createRemoteHitboxSnapshot());
+}
+
+function clonePoint(point) {
+  if (!point) {
+    return null;
+  }
+
+  return {
+    x: Number(point.x ?? 0),
+    y: Number(point.y ?? 0),
+    z: Number(point.z ?? 0),
+  };
+}
+
+function cloneVector(vector) {
+  if (!vector) {
+    return null;
+  }
+
+  return {
+    x: Number(vector.x ?? 0),
+    y: Number(vector.y ?? 0),
+    z: Number(vector.z ?? 0),
+  };
+}
+
+function cloneSegment(segment) {
+  if (!segment?.start || !segment?.end) {
+    return null;
+  }
+
+  return {
+    start: clonePoint(segment.start),
+    end: clonePoint(segment.end),
+    radius: Number(segment.radius ?? 0),
+  };
+}
+
+function cloneSphere(sphere) {
+  if (!sphere?.center) {
+    return null;
+  }
+
+  return {
+    center: clonePoint(sphere.center),
+    radius: Number(sphere.radius ?? 0),
+  };
+}
+
+function cloneHead(head) {
+  if (!head?.center) {
+    return null;
+  }
+
+  return {
+    center: clonePoint(head.center),
+    radius: Number(head.radius ?? 0),
+    size: cloneVector(head.size),
+    right: cloneVector(head.right),
+    up: cloneVector(head.up),
+    forward: cloneVector(head.forward),
+  };
+}
+
+function cloneHitboxSnapshot(hitboxes) {
+  if (!hitboxes?.head || !hitboxes?.torso || !hitboxes?.pelvis) {
+    return null;
+  }
+
+  return {
+    head: cloneHead(hitboxes.head),
+    torso: cloneSegment(hitboxes.torso),
+    pelvis: cloneSegment(hitboxes.pelvis),
+    arms: Array.isArray(hitboxes.arms) ? hitboxes.arms.map(cloneSegment).filter(Boolean) : [],
+    hands: Array.isArray(hitboxes.hands) ? hitboxes.hands.map(cloneSphere).filter(Boolean) : [],
+    legs: Array.isArray(hitboxes.legs) ? hitboxes.legs.map(cloneSegment).filter(Boolean) : [],
+  };
+}
+
+function recordPlayerHitboxHistory(player, now) {
+  if (!player?.authoritativeHitboxes) {
+    return;
+  }
+
+  const snapshot = cloneHitboxSnapshot(player.authoritativeHitboxes);
+  if (!snapshot) {
+    return;
+  }
+
+  const history = player.hitboxHistory ?? (player.hitboxHistory = []);
+  history.push({
+    recordedAt: Number(now ?? Date.now()),
+    hitboxes: snapshot,
+  });
+
+  const cutoff = Number(now ?? Date.now()) - NETCODE_SERVER_HITBOX_HISTORY_MS;
+  while (history.length > 0 && Number(history[0]?.recordedAt ?? 0) < cutoff) {
+    history.shift();
+  }
+}
+
+function getLagCompensatedHitboxes(target, rewindTimestamp) {
+  const history = target?.hitboxHistory ?? null;
+  if (!Array.isArray(history) || history.length === 0) {
+    return target?.authoritativeHitboxes ?? null;
+  }
+
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const snapshot = history[index];
+    if (Number(snapshot?.recordedAt ?? 0) <= rewindTimestamp) {
+      return snapshot.hitboxes ?? target?.authoritativeHitboxes ?? null;
+    }
+  }
+
+  return history[0]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
+}
+
+function getLagCompensationRewindMs(shooter) {
+  const reportedRoundTripMs = Math.max(0, Number(shooter?.pingMs ?? 0));
+  const estimatedOneWayMs = Math.max(MIN_ONE_WAY_NETWORK_MS, reportedRoundTripMs * 0.5);
+  return Math.max(
+    0,
+    Math.min(
+      NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
+      NETCODE_REMOTE_INTERPOLATION_DELAY_MS + estimatedOneWayMs,
+    ),
+  );
 }
 
 function getRayDistanceAlong(ray, point) {
@@ -1089,6 +1220,7 @@ export class TacticalRoom extends Room {
     this.setSimulationInterval(() => {
       this.updateObjectiveState(SERVER_OBJECTIVE_STEP);
       this.updateRoundState(SERVER_OBJECTIVE_STEP);
+      const tickNow = Date.now();
       let movementStateChanged = false;
 
       for (const player of Object.values(this.players)) {
@@ -1098,7 +1230,7 @@ export class TacticalRoom extends Room {
           if (
             !isCompetitiveGamemode(this.roundManager.gamemode)
             && player.respawnAt > 0
-            && Date.now() >= player.respawnAt
+            && tickNow >= player.respawnAt
           ) {
             this.respawnPlayer(player);
             movementStateChanged = true;
@@ -1111,6 +1243,7 @@ export class TacticalRoom extends Room {
             updateRemoteHitboxRig(player.hitboxRig, player, NETCODE_SIMULATION_STEP);
           }
           player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
+          recordPlayerHitboxHistory(player, tickNow);
           continue;
         }
 
@@ -1119,6 +1252,7 @@ export class TacticalRoom extends Room {
             updateRemoteHitboxRig(player.hitboxRig, player, NETCODE_SIMULATION_STEP);
           }
           player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
+          recordPlayerHitboxHistory(player, tickNow);
           continue;
         }
 
@@ -1172,6 +1306,7 @@ export class TacticalRoom extends Room {
           updateRemoteHitboxRig(player.hitboxRig, player, NETCODE_SIMULATION_STEP);
         }
         player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
+        recordPlayerHitboxHistory(player, tickNow);
       }
 
       if (movementStateChanged) {
@@ -1516,6 +1651,7 @@ export class TacticalRoom extends Room {
       deathClip: null,
       hitboxRig: null,
       authoritativeHitboxes: null,
+      hitboxHistory: [],
       missingHitboxBonesLogged: false,
     };
     this.nextPlayerNumber += 1;
@@ -1528,6 +1664,7 @@ export class TacticalRoom extends Room {
         player.hitboxRig = rig;
         updateRemoteHitboxRig(player.hitboxRig, player, 0);
         player.authoritativeHitboxes = buildAuthoritativeHitboxes(player);
+        recordPlayerHitboxHistory(player, Date.now());
       })
       .catch((error) => {
         console.warn(`[TacticalRoom] Failed to create hitbox rig for ${client.sessionId}.`, error);
@@ -1680,6 +1817,7 @@ export class TacticalRoom extends Room {
     });
     player.pitch = Number(player.spawnState?.pitch ?? 0);
     player.presentationState = this.getPresentationStateForPlayer(player);
+    player.hitboxHistory.length = 0;
     if (broadcastEvent) {
       this.broadcast('combat-event', {
         type: 'player-respawned',
@@ -1920,6 +2058,8 @@ export class TacticalRoom extends Room {
     SHOT_RAY.origin.copy(SHOT_ORIGIN);
     SHOT_RAY.direction.copy(SHOT_DIRECTION);
     this.emitWeaponAudioEvent(player, player.activeWeaponKey, SHOT_ORIGIN);
+    const rewindMs = getLagCompensationRewindMs(player);
+    const rewindTimestamp = now - rewindMs;
 
     const maxDistance = weapon.meleeRange ?? 512;
     const collisionWorld = this.getCollisionWorldForMap(player.mapId);
@@ -1940,9 +2080,10 @@ export class TacticalRoom extends Room {
         continue;
       }
 
+      const lagCompensatedHitboxes = getLagCompensatedHitboxes(target, rewindTimestamp);
       const authoritativeHitResult = getAuthoritativeHitboxSnapshotResult(
         SHOT_RAY,
-        target.authoritativeHitboxes,
+        lagCompensatedHitboxes,
         maxDistance,
         bestDistance,
       );

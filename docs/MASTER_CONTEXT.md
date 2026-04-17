@@ -175,7 +175,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - current RTT-based ping readings against Railway EU West (Amsterdam) have tested in a believable `15-20 ms` range from Copenhagen
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests to the server
-  - the server validates simple player hits from authoritative state
+  - the server now validates player hits against lag-compensated authoritative hitbox history instead of only the latest live pose
   - health, death, and respawn replicate back to clients
   - world geometry can block shots
   - HUD feedback now covers local health, damage taken/dealt, and respawn countdown
@@ -507,7 +507,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - server-side authoritative movement now uses the imported collision glTF, but broader gameplay authority is still incomplete
   - export workflow is manual
 - The current PvP combat slice is intentionally thin:
-  - no lag compensation yet
+  - first server-side lag compensation now exists for player-hit validation
+  - current rewind uses recent authoritative hitbox history plus shooter RTT estimate, not full clock-synced rollback
   - no head/body hit zones
   - no ammo/reload authority
   - no spectate flow yet
@@ -596,6 +597,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - replay/reconciliation
   - remote interpolation
   - shared movement logic
+- Current remote smoothing / hitreg baseline:
+  - remote interpolation delay is now `67 ms`, down from `100 ms`
+  - the server now keeps a short rolling history of authoritative hitboxes
+  - PvP hit validation rewinds against that history using interpolation delay plus estimated one-way network latency
+  - this rewind is hit-validation-only and does not rewind victim movement
 - Active design target remains:
   - local camera should feel immediate like single-player
   - predicted gameplay state should remain deterministic/replayable
@@ -707,7 +713,6 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - public networking target: the Railway `PORT` shown in logs, currently `8080`
 - Next likely multiplayer expansions are:
   - better combat feedback polish
-  - better player hit validation
   - round-state / respawn-rule authority
   - better remote player presentation, staged as:
       - maintain placeholder fallback
