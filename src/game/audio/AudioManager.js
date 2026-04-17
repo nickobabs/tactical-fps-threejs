@@ -6,6 +6,10 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
 
+function clampMin0(value) {
+  return Math.max(0, Number(value) || 0);
+}
+
 function getDistance(a, b) {
   if (!a || !b) {
     return Infinity;
@@ -62,6 +66,7 @@ export class AudioManager {
       path,
       playback: options.playback ?? 'interrupt',
       minIntervalMs: options.minIntervalMs ?? 0,
+      baseVolume: Number.isFinite(options.baseVolume) ? Math.max(0, Number(options.baseVolume)) : 1,
       buffer: null,
       bufferPromise: null,
       activeSource: null,
@@ -149,7 +154,7 @@ export class AudioManager {
     attenuationCutoffExponent = null,
   } = {}) {
     if (!listenerPosition || !emitterPosition) {
-      return clamp01(baseVolume);
+      return clampMin0(baseVolume);
     }
 
     const distance = getDistance(listenerPosition, emitterPosition);
@@ -157,7 +162,7 @@ export class AudioManager {
       return 0;
     }
     if (distance <= minDistance) {
-      return clamp01(baseVolume);
+      return clampMin0(baseVolume);
     }
     if (distance >= maxDistance) {
       return 0;
@@ -184,7 +189,7 @@ export class AudioManager {
       attenuation *= Math.pow(1 - clamp01(tailAlpha), cutoffExponent);
     }
 
-    return clamp01(baseVolume * attenuation);
+    return clampMin0(baseVolume * attenuation);
   }
 
   getStereoPan({
@@ -259,7 +264,7 @@ export class AudioManager {
     }
 
     const {
-      baseVolume = 1,
+      baseVolume = sound.baseVolume,
       pitchMin = 1,
       pitchMax = 1,
       duration = null,
@@ -301,7 +306,7 @@ export class AudioManager {
     }
 
     const gainNode = this.context.createGain();
-    gainNode.gain.value = clamp01(baseVolume);
+    gainNode.gain.value = clampMin0(baseVolume);
     const spatialPanner = options.emitterPosition && this.supportsSpatialPanner()
       ? this.context.createPanner()
       : null;

@@ -23,7 +23,7 @@ const GAME_AUDIO_REGISTRATIONS = [
   ['rifle-fire', '/audio/guns/m4a1_silencer_01.mp3', { playback: 'interrupt' }],
   ['rifle-equip', '/audio/guns/rifleequip.mp3', { playback: 'interrupt' }],
   ['sniper-fire', '/audio/guns/awp-shoot-sound-effect-cs_go.mp3', { playback: 'interrupt' }],
-  ['knife-draw', '/audio/guns/knifedraw.mp3', { playback: 'interrupt', baseVolume: 0.4 }],
+  ['knife-draw', '/audio/guns/knifedraw.mp3', { playback: 'interrupt', baseVolume: 0.3 }],
   [
     'sniper-zoom',
     '/audio/guns/awp-zoom-sound-effect-cs-go.mp3',
@@ -37,7 +37,7 @@ const GAME_AUDIO_REGISTRATIONS = [
   ['defuse-start', '/audio/game/defuse.mp3', { playback: 'interrupt', minIntervalMs: 120, baseVolume: 1.7 }],
   ['round-freeze-clock', '/audio/game/clock.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ['player-hit-taken', '/audio/players/beinghit.mp3', { playback: 'interrupt', minIntervalMs: 40, baseVolume: 0.9 }],
-  ['headshot-kill', '/audio/players/headshotv2.mp3', { playback: 'interrupt', minIntervalMs: 60, baseVolume: 1.64 }],
+  ['headshot-kill', '/audio/players/headshotv2.mp3', { playback: 'interrupt', minIntervalMs: 60, baseVolume: 2.13 }],
   ...FLOOR_FOOTSTEP_FILES.map((fileName, index) => {
     const sampleNumber = String(index + 1).padStart(3, '0');
     return [
