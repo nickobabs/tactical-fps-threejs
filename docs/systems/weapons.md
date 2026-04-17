@@ -45,7 +45,7 @@
   - `EffectsManager` now owns transient tracers and impact markers used by weapon fire
 - The rifle is automatic and supports ADS with a centered sight picture
 - The pistol is a semi-auto sidearm with a lighter ADS profile than the rifle
-- The sniper is semi-auto and supports scoped zoom with a full overlay
+- The sniper is semi-auto, uses a full scope overlay, and now cycles through an instant 3-stage scope toggle instead of a smooth zoom transition
 - The knife is a faster-movement melee slot with a simple forward thrust attack and short-range center-screen hit test
 - Recoil is now split into two layers:
   - viewmodel / visual recoil for camera and weapon feel
@@ -64,11 +64,13 @@
   - live tuning for `hipfireSpread`
   - export of current weapon recoil JSON
 - Borrowed animated viewmodel weapons are now prevented from firing until their equip animation has completed
+- The sniper now preserves its true fire cadence across quickswitches instead of letting re-equip reset the cooldown
+- Scoped sniper accuracy now has a short settle window after zooming in, and the HUD scope overlay reflects that live inaccuracy state
 
 ## Current Status
 
 - Implemented and active
-- Includes `Rifle`, `Pistol`, `Knife`, and `Sniper` slots, weapon swapping on number keys, scoped FOV transitions, sniper hipfire spread, per-weapon damage values, weapon-dependent movement speed, and a basic knife thrust attack with dedicated audio
+- Includes `Rifle`, `Pistol`, `Knife`, and `Sniper` slots, weapon swapping on number keys, sniper scope-stage toggling, per-weapon damage values, weapon-dependent movement speed, and a basic knife thrust attack with dedicated audio
 - Rifle damage is now hit-zone aware in the authoritative PvP path:
   - head shots are lethal
   - body shots use the main baseline damage
@@ -76,10 +78,19 @@
 - Rifle and pistol now both expose recoil tuning through the debug recoil panel
 - Rifle currently uses both visual recoil and actual gameplay spray recoil
 - Pistol currently exposes `hipfireSpread`, `visualRecoil`, and `sprayRecoil` for live tuning
+- Rifle and pistol now both lose accuracy while airborne
 - Rifle, pistol, and knife now play imported equip / hold / fire clips from the borrowed prototype viewmodel pack
 - Knife equip now uses the authored full draw animation instead of only the earlier procedural stab-style presentation
 - Rifle, pistol, and knife now respect equip completion before they can fire
 - Semi-auto weapons now use edge-triggered fire plus a short input buffer so fast pistol clicks do not feel randomly dropped near the cooldown limit
+- Sniper specifics in the current build:
+  - `100` damage to body, head, arms, and legs
+  - movement-based inaccuracy above `1.5 m/s`
+  - a stronger moving spread penalty than the original baseline
+  - no scoping allowed until the weapon is actually ready to fire
+  - a `0.35s` post-scope accuracy grace so instant quickscopes are still inaccurate
+  - instant unscope on the shot frame so tracer/impact feedback is not seen once in-scope and then again after unscope
+  - procedural equip raise remains shorter than the full sniper cadence, but firing still cannot exceed the real `1.25s` rate
 - The manager itself is now significantly smaller and is primarily responsible for owned mutable weapon state plus update sequencing
 
 ## Limitations
@@ -87,4 +98,5 @@
 - No authoritative ammo/reload rules yet
 - Only the rifle currently has explicit hit-zone damage overrides in shared weapon data
 - The current rifle/pistol/knife animation baseline is still explicitly a prototype content path using borrowed assets, not a final production asset pipeline
+- The sniper still uses the older procedural fallback viewmodel path rather than the borrowed animated pack
 - Knife melee is still intentionally lightweight on the gameplay side: there is no separate swing trace, combo chain, or deeper melee state machine

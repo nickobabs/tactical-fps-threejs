@@ -45,6 +45,28 @@ export function applyMovementSpread(weapon, horizontalSpeed = 0, target = SHOT_O
   return target;
 }
 
+export function applyAirborneSpread(weapon, isGrounded = true, target = SHOT_OFFSET) {
+  const airborneSpread = Math.max(0, Number(weapon?.airborneSpread ?? 0));
+  if (airborneSpread <= 0 || isGrounded) {
+    return target;
+  }
+
+  target.x += (Math.random() * 2 - 1) * airborneSpread;
+  target.y += (Math.random() * 2 - 1) * airborneSpread;
+  return target;
+}
+
+export function applyAdditionalSpread(spread = 0, target = SHOT_OFFSET) {
+  const safeSpread = Math.max(0, Number(spread ?? 0));
+  if (safeSpread <= 0) {
+    return target;
+  }
+
+  target.x += (Math.random() * 2 - 1) * safeSpread;
+  target.y += (Math.random() * 2 - 1) * safeSpread;
+  return target;
+}
+
 export function applySprayRecoil(weapon, sprayShotCount = 1, target = SPRAY_CURVE_OFFSET) {
   target.set(0, 0);
 
@@ -116,9 +138,13 @@ export function fireHitscan({
   applyDamage = true,
   sprayShotCount = 1,
   horizontalSpeed = 0,
+  isGrounded = true,
+  additionalSpread = 0,
 }) {
   const shotOffset = applyHipfireSpread(weapon, isScoped);
   applyMovementSpread(weapon, horizontalSpeed, shotOffset);
+  applyAirborneSpread(weapon, isGrounded, shotOffset);
+  applyAdditionalSpread(additionalSpread, shotOffset);
   shotOffset.add(applySprayRecoil(weapon, sprayShotCount));
   raycaster.layers.set(0);
   raycaster.setFromCamera(shotOffset, camera);

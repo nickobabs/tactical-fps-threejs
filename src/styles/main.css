@@ -646,6 +646,8 @@ canvas {
   display: none;
   align-items: center;
   justify-content: center;
+  --hud-scope-line-blur: 0px;
+  --hud-scope-line-opacity: 0.92;
 }
 
 .hud__scope--active {
@@ -685,7 +687,8 @@ canvas {
 }
 
 .hud__scope-line {
-  background: rgba(0, 0, 0, 0.92);
+  background: rgba(0, 0, 0, var(--hud-scope-line-opacity));
+  filter: blur(var(--hud-scope-line-blur));
   transform: translate(-50%, -50%);
 }
 

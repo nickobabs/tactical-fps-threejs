@@ -30,6 +30,7 @@ export class WeaponManager {
     this.isScoped = false;
     this.showScopeOverlay = false;
     this.showAdsReticle = false;
+    this.scopeStage = 0;
     this.activeWeaponKey = null;
     this.activeWeapon = '';
     this.currentWeapon = null;
@@ -46,6 +47,7 @@ export class WeaponManager {
     this.weaponAmmoStates = new Map();
     this.reloadTimeRemaining = 0;
     this.queuedSemiAutoShotTime = 0;
+    this.timeSinceScopeActivated = Infinity;
 
     this.raycaster = new THREE.Raycaster();
     this.viewModels = createWeaponViewModels();
@@ -133,6 +135,7 @@ export class WeaponManager {
       isReloading: this.reloadTimeRemaining > 0,
       reloadTimeRemaining: this.reloadTimeRemaining,
       infiniteAmmo: this.debugInfiniteAmmo,
+      scopedAccuracyPenalty: this.getSniperAccuracyPenaltyRatio(),
     };
   }
 
@@ -161,6 +164,7 @@ export class WeaponManager {
     this.isScoped = false;
     this.showScopeOverlay = false;
     this.showAdsReticle = false;
+    this.scopeStage = 0;
     this.wasScoped = false;
     this.viewModelController?.playReload?.();
     return true;
@@ -189,6 +193,8 @@ export class WeaponManager {
       return;
     }
 
+    const previousWeaponKey = this.activeWeaponKey;
+    const preservedCooldown = Number(this.cooldown ?? 0);
     const nextSelectionState = getWeaponSelectionState(this.activeWeaponKey, weaponKey);
     if (!nextSelectionState) {
       return;
@@ -198,7 +204,9 @@ export class WeaponManager {
     this.timeSinceLastShot = Infinity;
     this.reloadTimeRemaining = 0;
     this.queuedSemiAutoShotTime = 0;
+    this.timeSinceScopeActivated = Infinity;
     Object.assign(this, nextSelectionState);
+    this.scopeStage = 0;
     Object.assign(this, applyActiveViewModelSelection({
       currentViewModel: this.viewModel,
       currentViewModelController: this.viewModelController,
@@ -210,6 +218,9 @@ export class WeaponManager {
     this.recoilTuningPanel?.sync?.();
     this.viewModelTuningPanel?.setForceAdsPreview?.(this.debugForceAdsPreview);
     this.viewModelTuningPanel?.setShowMuzzlePreview?.(this.debugShowMuzzlePreview);
+    if (previousWeaponKey === 'sniper' || weaponKey === 'sniper') {
+      this.cooldown = Math.max(0, preservedCooldown);
+    }
     this.onWeaponChanged?.(weaponKey);
   }
 
@@ -218,15 +229,21 @@ export class WeaponManager {
       return false;
     }
 
+    const preservedCooldown = Number(this.cooldown ?? 0);
     this.shotCount = 0;
     this.timeSinceLastShot = Infinity;
     this.reloadTimeRemaining = 0;
     this.queuedSemiAutoShotTime = 0;
     this.cooldown = 0;
+    this.timeSinceScopeActivated = Infinity;
     this.isScoped = false;
     this.showScopeOverlay = false;
     this.showAdsReticle = false;
+    this.scopeStage = 0;
     this.wasScoped = false;
+    if (this.activeWeaponKey === 'sniper') {
+      this.cooldown = Math.max(0, preservedCooldown);
+    }
     this.viewModelController?.onSelected?.();
     return true;
   }
@@ -236,7 +253,10 @@ export class WeaponManager {
     const blockSecondaryAction = Boolean(options.blockSecondaryAction);
     const hideViewModel = Boolean(options.hideViewModel);
     this.handleWeaponSwap(frameInput.justPressed);
-    this.handleScope(blockSecondaryAction ? new Set() : frameInput.mouseButtons);
+    this.handleScope(
+      blockSecondaryAction ? new Set() : frameInput.mouseButtons,
+      blockSecondaryAction ? new Set() : frameInput.mouseButtonsJustPressed,
+    );
 
     this.cooldown = Math.max(0, this.cooldown - delta);
     const previousReloadTimeRemaining = this.reloadTimeRemaining;
@@ -248,14 +268,20 @@ export class WeaponManager {
     this.recoil = THREE.MathUtils.damp(this.recoil, 0, 16, delta);
     this.knifeAttackTime = Math.max(0, this.knifeAttackTime - delta);
     this.timeSinceLastShot += delta;
+    this.timeSinceScopeActivated += delta;
     this.queuedSemiAutoShotTime = Math.max(0, this.queuedSemiAutoShotTime - delta);
     this.updateSprayState();
-    this.zoomFov = THREE.MathUtils.damp(
-      this.zoomFov,
-      this.isScoped ? this.currentWeapon.zoomFov : this.baseFov,
-      14,
-      delta,
-    );
+    const targetZoomFov = this.getTargetZoomFov();
+    if (this.activeWeaponKey === 'sniper') {
+      this.zoomFov = targetZoomFov;
+    } else {
+      this.zoomFov = THREE.MathUtils.damp(
+        this.zoomFov,
+        targetZoomFov,
+        14,
+        delta,
+      );
+    }
     this.camera.fov = this.zoomFov;
     this.camera.updateProjectionMatrix();
 
@@ -311,18 +337,52 @@ export class WeaponManager {
     }
   }
 
-  handleScope(mouseButtons) {
+  handleScope(mouseButtons, mouseButtonsJustPressed = new Set()) {
+    const canViewModelFire = this.viewModelController?.canFire?.() ?? true;
+    const sniperReadyForScope = this.activeWeaponKey !== 'sniper'
+      || (this.cooldown === 0 && this.reloadTimeRemaining <= 0 && canViewModelFire);
+    const previousScopeStage = this.scopeStage;
     const scopeState = getScopeState(this.currentWeapon, mouseButtons, this.debugForceAdsPreview);
-    this.isScoped = scopeState.isScoped;
-    this.showScopeOverlay = scopeState.showScopeOverlay;
-    this.showAdsReticle = scopeState.showAdsReticle;
 
-    if (shouldPlayScopeSound({
-      activeWeaponKey: this.activeWeaponKey,
-      isScoped: this.isScoped,
-      wasScoped: this.wasScoped,
-      currentWeapon: this.currentWeapon,
-    })) {
+    if (this.activeWeaponKey === 'sniper') {
+      if (!sniperReadyForScope) {
+        this.scopeStage = 0;
+      } else if (this.debugForceAdsPreview) {
+        this.scopeStage = 1;
+      } else if (mouseButtonsJustPressed?.has?.(2)) {
+        this.scopeStage = (this.scopeStage + 1) % 3;
+      }
+
+      this.isScoped = this.scopeStage > 0;
+      this.showScopeOverlay = this.isScoped;
+      this.showAdsReticle = false;
+    } else {
+      const nextScoped = sniperReadyForScope ? scopeState.isScoped : false;
+      this.scopeStage = nextScoped ? 1 : 0;
+      this.isScoped = nextScoped;
+      this.showScopeOverlay = scopeState.showScopeOverlay;
+      this.showAdsReticle = scopeState.showAdsReticle;
+      if (!this.isScoped) {
+        this.showScopeOverlay = false;
+        this.showAdsReticle = false;
+      }
+    }
+
+    if (this.isScoped && previousScopeStage === 0) {
+      this.timeSinceScopeActivated = 0;
+    } else if (!this.isScoped) {
+      this.timeSinceScopeActivated = Infinity;
+    }
+
+    const playSniperScopeSound = this.activeWeaponKey === 'sniper'
+      ? previousScopeStage !== this.scopeStage && Boolean(this.currentWeapon?.zoomSound)
+      : shouldPlayScopeSound({
+        activeWeaponKey: this.activeWeaponKey,
+        isScoped: this.isScoped,
+        wasScoped: this.wasScoped,
+        currentWeapon: this.currentWeapon,
+      });
+    if (playSniperScopeSound) {
       this.audioManager?.play(this.currentWeapon.zoomSound, {
         baseVolume: 0.45,
         pitchMin: 0.995,
@@ -354,6 +414,18 @@ export class WeaponManager {
     }
     this.shotCount = sprayShotCount;
     this.timeSinceLastShot = 0;
+    const shotWasScoped = this.isScoped;
+    if (this.activeWeaponKey === 'sniper') {
+      this.scopeStage = 0;
+      this.isScoped = false;
+      this.showScopeOverlay = false;
+      this.showAdsReticle = false;
+      this.timeSinceScopeActivated = Infinity;
+      this.wasScoped = false;
+      this.zoomFov = this.baseFov;
+      this.camera.fov = this.baseFov;
+      this.camera.updateProjectionMatrix();
+    }
     executeWeaponShot({
       activeWeaponKey: this.activeWeaponKey,
       currentWeapon: this.currentWeapon,
@@ -364,7 +436,7 @@ export class WeaponManager {
       effectsManager: this.effectsManager,
       muzzleWorld: MUZZLE_WORLD,
       muzzle: this.muzzle,
-      isScoped: this.isScoped,
+      isScoped: shotWasScoped,
       authoritativeCombatEnabled: this.authoritativeCombatEnabled,
       onFireRequest: this.onFireRequest,
       viewModelController: this.viewModelController,
@@ -373,7 +445,75 @@ export class WeaponManager {
         Number(this.playerController?.velocity?.x ?? 0),
         Number(this.playerController?.velocity?.z ?? 0),
       ),
+      isGrounded: Boolean(this.playerController?.isGrounded),
+      additionalSpread: this.getScopedAccuracyPenaltySpread(),
     });
+  }
+
+  getScopedAccuracyPenaltySpread() {
+    if (this.activeWeaponKey !== 'sniper' || !this.isScoped) {
+      return 0;
+    }
+
+    const graceDuration = Math.max(0, Number(this.currentWeapon?.scopeAccuracyGraceDuration ?? 0));
+    const maxSpread = Math.max(0, Number(this.currentWeapon?.scopeTransitionSpread ?? 0));
+    if (graceDuration <= 0 || maxSpread <= 0) {
+      return 0;
+    }
+
+    const progress = THREE.MathUtils.clamp(
+      Number(this.timeSinceScopeActivated ?? Infinity) / graceDuration,
+      0,
+      1,
+    );
+    return maxSpread * (1 - progress);
+  }
+
+  getMovingAccuracyPenaltyRatio() {
+    if (this.activeWeaponKey !== 'sniper') {
+      return 0;
+    }
+
+    const movingSpread = Math.max(0, Number(this.currentWeapon?.movingSpread ?? 0));
+    const speedThreshold = Math.max(0, Number(this.currentWeapon?.movingSpreadSpeedThreshold ?? Infinity));
+    const horizontalSpeed = Math.hypot(
+      Number(this.playerController?.velocity?.x ?? 0),
+      Number(this.playerController?.velocity?.z ?? 0),
+    );
+    if (movingSpread <= 0 || !Number.isFinite(horizontalSpeed) || horizontalSpeed <= speedThreshold) {
+      return 0;
+    }
+
+    return 1;
+  }
+
+  getSniperAccuracyPenaltyRatio() {
+    if (this.activeWeaponKey !== 'sniper') {
+      return 0;
+    }
+
+    const scopedPenaltySpread = this.getScopedAccuracyPenaltySpread();
+    const maxScopedPenaltySpread = Math.max(0, Number(this.currentWeapon?.scopeTransitionSpread ?? 0));
+    const scopedPenaltyRatio = maxScopedPenaltySpread > 0
+      ? THREE.MathUtils.clamp(scopedPenaltySpread / maxScopedPenaltySpread, 0, 1)
+      : 0;
+    return Math.max(scopedPenaltyRatio, this.getMovingAccuracyPenaltyRatio());
+  }
+
+  getTargetZoomFov() {
+    if (!this.isScoped) {
+      return this.baseFov;
+    }
+
+    if (this.activeWeaponKey === 'sniper') {
+      const zoomLevels = Array.isArray(this.currentWeapon?.zoomFovLevels)
+        ? this.currentWeapon.zoomFovLevels
+        : [this.currentWeapon?.zoomFov];
+      const scopedIndex = Math.max(0, Math.min(zoomLevels.length - 1, this.scopeStage - 1));
+      return Math.max(1, Number(zoomLevels[scopedIndex] ?? this.currentWeapon?.zoomFov ?? this.baseFov));
+    }
+
+    return Math.max(1, Number(this.currentWeapon?.zoomFov ?? this.baseFov));
   }
 
   getSemiAutoInputBuffer() {

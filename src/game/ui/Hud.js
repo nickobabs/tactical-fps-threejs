@@ -1,4 +1,5 @@
 import { createPauseMenu } from './createPauseMenu.js';
+import * as THREE from 'three';
 import { createHudDebugPanelsController } from './hudDebugPanels.js';
 import { createTeamSelectOverlay } from './createTeamSelectOverlay.js';
 import { createHudClassicController } from './hudClassic.js';
@@ -15,7 +16,7 @@ const KILLFEED_WEAPON_ICONS = {
 };
 const KILLFEED_HEADSHOT_ICON = '/icons/headshot.png';
 
-function formatClock(seconds, { ceil = false } = {}) {
+function formatClock(seconds, { ceil = true } = {}) {
   const safeSeconds = Math.max(0, Number(seconds ?? 0));
   const wholeSeconds = ceil ? Math.ceil(safeSeconds) : Math.floor(safeSeconds);
   const minutes = Math.floor(wholeSeconds / 60);
@@ -666,7 +667,7 @@ export function createHud({
       const bombPlanted = objectiveState?.bombState === 'planted';
       const roundRosterTimerHtml = bombPlanted
         ? `<span class="hud__round-roster-bomb-shell"><img class="hud__round-roster-timer-icon hud__round-roster-timer-icon--bomb" src="${C4_ROSTER_ICON}" alt="" /></span>`
-        : formatClock(timeLeft, { ceil: Boolean(roundManager?.roundEnded) });
+        : formatClock(timeLeft, { ceil: true });
       let triggerBombFlash = false;
       let bombFlashDuration = 0.16;
       if (bombPlanted) {
@@ -890,6 +891,13 @@ export function createHud({
         scopeEl.classList.toggle('hud__scope--active', scopeActive);
         lastScopeOverlay = scopeActive;
       }
+      const scopedAccuracyPenalty = THREE.MathUtils.clamp(
+        Number(weaponHudState?.scopedAccuracyPenalty ?? 0),
+        0,
+        1,
+      );
+      scopeEl.style.setProperty('--hud-scope-line-blur', `${(scopedAccuracyPenalty * 3.5).toFixed(2)}px`);
+      scopeEl.style.setProperty('--hud-scope-line-opacity', `${(0.92 - (scopedAccuracyPenalty * 0.34)).toFixed(3)}`);
 
       const isLoading = Boolean(getIsLoading?.());
       if (isLoading !== lastLoading) {

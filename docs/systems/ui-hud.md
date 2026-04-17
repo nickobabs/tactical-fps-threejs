@@ -57,6 +57,7 @@
 - Team selection is also HUD-driven and currently blocks normal pause-menu resume flow on initial map load
 - Pause-menu option lists for maps and skyboxes are data-driven so new entries do not require hardcoded UI branches
 - The sniper scope overlay and rifle ADS reticle are distinct UI states
+- The sniper scope overlay now also acts as an accuracy readout by blurring/fading while sniper accuracy is degraded
 - Static pause-menu binding text is isolated from HUD runtime code so future menu changes do not require editing the whole HUD module
 - HUD text and toggle updates now only touch the DOM when displayed values actually change, rather than rewriting every element every frame
 - Multiplayer debug tooling is intentionally kept in the HUD path for now because it is the fastest way to compare local feel against network/correction state during active development
@@ -94,6 +95,7 @@
   - center-anchored round score
   - top round timer that swaps to a C4 icon while the bomb is planted
 - Includes a centered round-win banner with win-reason subtitle and a simple winning-team MVP line
+- Includes timed transition banners for side swap, overtime start, and match restart
 - Includes a top-right killfeed with:
   - team-colored killer/victim names
   - rifle and pistol SVG weapon icons
@@ -105,9 +107,12 @@
 - Includes draggable HUD tuning/debug panels so tuning workflows do not have to overlap the live HUD they are inspecting
 - Includes HUD layout tuning for:
   - top-center round roster offsets
+  - round-win banner position
+  - transition-banner position for side swap / overtime and match restart variants
   - planted bomb icon sizing/offsets/pulse scale
   - killfeed position, border, spacing, and per-variant icon tuning
   - dummy killfeed preview variants for rifle/pistol and headshot/bodyshot
+  - dummy round-win and transition-banner previews for HUD positioning
   - variant-specific killfeed tuning now follows the actual live branches:
     - rifle body
     - rifle headshot

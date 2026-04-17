@@ -244,8 +244,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `Dust2 Test`
 - Weapons:
   - `Rifle`: full auto, ADS, low damage hitscan
-  - `Pistol`: semi-auto sidearm, ADS, lighter recoil/spread profile than the sniper
-  - `Sniper`: semi-auto, scoped overlay, high damage hitscan, hipfire spread
+  - `Pistol`: semi-auto sidearm, ADS, lighter recoil/spread profile than the sniper, now inaccurate in air
+  - `Sniper`: semi-auto, instant 3-stage scope toggle, `100` damage to body/head/arms/legs, inaccurate above `1.5 m/s`, scope-settle grace after zoom, and scope-overlay blur feedback for current inaccuracy
   - `Knife`: fast movement, melee thrust
 - Bots:
   - wander on navmesh
@@ -516,6 +516,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - bomb planting/countdown/explosion are authoritative
   - bomb defuse, bomb drop, and bomb pickup are authoritative
   - killfeed UI renders replicated kills with weapon and headshot markers
+- Competitive weapon/utility restrictions now also include:
+  - real competitive freeze lockout
+  - no mid-round respawn
+  - intermission lockout for fire, smoke, and bomb actions while still allowing movement
 - Runtime nav generation still exists as a fallback and still runs on the main thread when used.
 - `RoundManager` and `UtilityManager` are no longer stubs, but they are still early gameplay systems with narrow rule coverage.
 - Competitive rules are now much broader than the first objective slice, but economy / spectate / buy flow are still missing.
@@ -639,12 +643,15 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - dead players in that strip now render greyscaled/faded
   - the top timer is now the primary round timer surface and swaps to a red C4 icon while the bomb is planted
   - the planted bomb now also has a synced HUD pulse plus a replicated world beep from the planted position
+  - side swap and overtime now force the scoreboard open and show a timed transition banner
+  - match win now force-opens the scoreboard and shows a timed restart banner
   - the top-right killfeed now uses SVG rifle/pistol icons and variant-specific tuning for:
     - rifle body
     - rifle headshot
     - pistol body
     - pistol headshot
   - directional 4-way damage indicators now render around the crosshair
+  - the sniper scope overlay now blurs/fades based on current sniper inaccuracy, including movement and post-scope settle
   - pause-menu volume, sensitivity, and horizontal FOV now persist locally in browser storage
 - Movement tuning:
   - a dedicated movement panel now controls footstep cadence, trim, pitch, bob attack/damp, bob axes, and movement pull-back

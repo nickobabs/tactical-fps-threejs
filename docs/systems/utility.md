@@ -85,7 +85,7 @@
   - the smoke cloud is now a heavier CS-style layered sprite effect with a dense center, softer edge, wide footprint, and a 14-second duration after bloom
   - smoke bloom audio is also emitted as a replicated positional audio event so other players can hear it
   - the current round baseline gives the player one smoke grenade and restores it on round reset/freeze
-  - competitive currently only allows smoke throws during the `live` round phase
+  - competitive currently only allows smoke throws during the `live` round phase, including post-plant
 - Current bomb explosion presentation:
   - when a planted bomb explodes, `UtilityManager` now triggers a local first-pass blast effect at the planted world position
   - the effect currently uses a bright flash, expanding ground ring, and large debris/dust plume

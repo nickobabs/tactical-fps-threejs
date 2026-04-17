@@ -16,11 +16,13 @@ export function executeWeaponShot({
   viewModelController,
   sprayShotCount = 1,
   horizontalSpeed = 0,
+  isGrounded = true,
+  additionalSpread = 0,
 }) {
   playWeaponAudio(audioManager, activeWeaponKey, currentWeapon);
 
   muzzle.getWorldPosition(muzzleWorld);
-  fireHitscan({
+  const hit = fireHitscan({
     camera,
     shootables,
     raycaster,
@@ -31,6 +33,8 @@ export function executeWeaponShot({
     applyDamage: !authoritativeCombatEnabled,
     sprayShotCount,
     horizontalSpeed,
+    isGrounded,
+    additionalSpread,
   });
   onFireRequest?.({
     weaponKey: activeWeaponKey,

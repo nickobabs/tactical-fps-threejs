@@ -1,6 +1,6 @@
 import { setTextIfChanged } from './hudText.js';
 
-function formatClock(seconds, { ceil = false } = {}) {
+function formatClock(seconds, { ceil = true } = {}) {
   const safeSeconds = Math.max(0, Number(seconds ?? 0));
   const wholeSeconds = ceil ? Math.ceil(safeSeconds) : Math.floor(safeSeconds);
   const minutes = Math.floor(wholeSeconds / 60);

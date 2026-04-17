@@ -452,6 +452,12 @@ export class UtilityManager {
       return;
     }
 
+    const smokeThrown = this.tryThrowSmoke(frameInput, playerController, roundManager, localPlayerAlive, networkClient);
+    if (smokeThrown) {
+      this.handleSmokeThrown(weaponManager);
+    }
+    this.updateSmokeViewModelVisibility({ roundManager, localPlayerAlive });
+
     if (this.state.bombState === 'planted') {
       const plantedPosition = objectiveState?.plantedPosition ?? null;
       const localDefuser = networkClient?.playerId && this.state.defuserPlayerId === networkClient.playerId;
@@ -533,11 +539,6 @@ export class UtilityManager {
       this.state.defuseProgress = 0;
       this.state.pendingDefuseRequest = false;
       return;
-    }
-
-    const smokeThrown = this.tryThrowSmoke(frameInput, playerController, roundManager, localPlayerAlive, networkClient);
-    if (smokeThrown) {
-      this.handleSmokeThrown(weaponManager);
     }
     this.tryDropBomb(frameInput, roundManager, networkClient, selectedTeam, weaponManager);
     this.updateSmokeViewModelVisibility({ roundManager, localPlayerAlive });

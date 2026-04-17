@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SHARED_WEAPON_DATA } from '../../shared/weaponData.js';
 
 export const VIEWMODEL_LAYER = 1;
 
@@ -400,12 +401,18 @@ function createBorrowedAnimatedViewModel({
 
 function createSniperViewModel() {
   const group = new THREE.Group();
+  const content = new THREE.Group();
   const materials = createCommonMaterials();
   const scopeMaterial = new THREE.MeshStandardMaterial({
     color: 0x111519,
     roughness: 0.58,
     metalness: 0.32,
   });
+  const equipDuration = Math.max(
+    0.01,
+    Number(SHARED_WEAPON_DATA.sniper?.equipDuration ?? SHARED_WEAPON_DATA.sniper?.fireInterval ?? 1.25),
+  );
+  let equipTimeRemaining = equipDuration;
 
   const body = createPart(
     new THREE.BoxGeometry(0.18, 0.16, 1.05),
@@ -451,18 +458,31 @@ function createSniperViewModel() {
   const muzzle = new THREE.Object3D();
   muzzle.position.set(0, 0, -1.93);
   const muzzleFlash = createMuzzleFlash(muzzle);
+  content.add(muzzle);
   muzzle.add(muzzleFlash);
 
-  group.add(body, stock, forearm, barrel, scopeBody, scopeFront, scopeRear);
-  group.add(muzzle);
+  content.add(body, stock, forearm, barrel, scopeBody, scopeFront, scopeRear);
+  group.add(content);
   setLayerRecursive(group, VIEWMODEL_LAYER);
 
   return {
     group,
     muzzle,
     muzzleFlash,
-    update() {},
-    onSelected() {},
+    update(delta) {
+      equipTimeRemaining = Math.max(0, equipTimeRemaining - Math.max(0, Number(delta ?? 0)));
+      const equipAlpha = 1 - (equipTimeRemaining / equipDuration);
+      const easedAlpha = 1 - Math.pow(1 - THREE.MathUtils.clamp(equipAlpha, 0, 1), 3);
+      content.position.y = THREE.MathUtils.lerp(-0.26, 0, easedAlpha);
+      content.position.z = THREE.MathUtils.lerp(0.18, 0, easedAlpha);
+      content.rotation.x = THREE.MathUtils.lerp(0.24, 0, easedAlpha);
+    },
+    onSelected() {
+      equipTimeRemaining = equipDuration;
+      content.position.y = -0.26;
+      content.position.z = 0.18;
+      content.rotation.x = 0.24;
+    },
     playFire() {},
     getMuzzleOffset() {
       return {
@@ -479,7 +499,7 @@ function createSniperViewModel() {
       );
     },
     canFire() {
-      return true;
+      return equipTimeRemaining <= 0;
     },
   };
 }

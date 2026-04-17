@@ -58,6 +58,11 @@ It already supports real play loops:
 - ADS / scoped state
 - Rifle visual recoil plus actual gameplay spray recoil
 - Pistol semi-auto input buffering and tunable spread/recoil
+- Rifle and pistol now lose accuracy while airborne
+- Sniper now does `100` damage to body, head, arms, and legs
+- Sniper now becomes inaccurate while moving above `1.5 m/s`
+- Sniper scope is now an instant 3-stage toggle: unscoped -> first zoom -> second zoom -> unscoped
+- Sniper now has a short post-scope accuracy-settle window and scope-overlay blur feedback that reflects both movement and scope-settle inaccuracy
 - World geometry shot blocking
 - Replicated damage, death, and respawn
 - Attacker/defender teams with `Debug` and `Competitive` gamemode scaffolding
@@ -115,12 +120,14 @@ It already supports real play loops:
 - Hold-`Tab` scoreboard with team panels, player names, kills, deaths, and ping
 - Team-select overlay with player-name entry
 - Scope overlay and ADS reticle handling
+- Sniper scope overlay now also blurs/fades to represent current sniper inaccuracy
 - Bomb-planted state and planted-bomb timer feedback
 - Planted-bomb HUD pulse synced to authoritative bomb beep cadence
 - Plant progress feedback
 - Utility HUD feedback for smoke availability and throw prompt
 - Pause menu for map, skybox, sensitivity, volume, and FOV
 - Pause menu gamemode selector
+- Forced-scoreboard match/intermission messaging for side swap, overtime, and match restart
 - Top-right killfeed with rifle/pistol icon support and headshot marker
 - Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
 - Live `NETDEBUG` panel with clipboard copy support
@@ -180,6 +187,7 @@ It already supports real play loops:
 - server validates hits and replicates combat state
 - `Debug` keeps the loose respawn/sandbox loop
 - `Competitive` on `Dust2 Test` now supports freeze, elimination, bomb rounds, halftime side swap, overtime, and match restart
+- competitive intermissions still allow movement but now lock fire, smoke, and bomb actions
 - Railway deployment is working as a one-service frontend plus multiplayer backend setup
 
 ## Architecture Overview
