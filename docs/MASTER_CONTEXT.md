@@ -193,7 +193,6 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - includes a `Copy` button for exact clipboard export of the live panel
   - `F9`: ignore local corrections
   - `F10`: toggle local movement-trace capture
-  - `F11`: toggle crouch-fatigue debug readout on the movement HUD line
   - `V`: toggle fly mode
   - `J`: log current position
   - `K`: save a debug marker
@@ -638,6 +637,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - `Gameplay Debugging`
   - current live round-control tooling includes:
     - force side swap
+    - crouch-fatigue debug toggle for the movement HUD line
   - the menu can also open:
     - recoil tuning
     - movement tuning
@@ -660,6 +660,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - directional 4-way damage indicators now render around the crosshair
   - the sniper scope overlay now blurs/fades based on current sniper inaccuracy, including movement and post-scope settle
   - pause-menu volume, sensitivity, and horizontal FOV now persist locally in browser storage
+  - the escape menu now also allows direct attacker/defender team switching
 - Movement tuning:
   - a dedicated movement panel now controls footstep cadence, trim, pitch, bob attack/damp, bob axes, and movement pull-back
   - local settings persist in browser storage until reset

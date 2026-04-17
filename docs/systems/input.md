@@ -58,4 +58,3 @@
   - `F8` net debug
   - `F9` correction toggle
   - `F10` movement trace capture
-  - `F11` crouch-fatigue HUD debug

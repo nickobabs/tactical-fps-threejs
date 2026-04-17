@@ -23,6 +23,7 @@ export function createDebugMenu({
   container,
   onToggleHudMode,
   onForceSideSwap,
+  onToggleCrouchFatigueDebug,
 }) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return null;
@@ -70,6 +71,11 @@ export function createDebugMenu({
           label: 'Force Side Swap',
           description: 'Trigger the competitive side-swap intermission immediately.',
           onClick: () => onForceSideSwap?.(),
+        },
+        {
+          label: 'Crouch Fatigue Debug',
+          description: 'Toggle crouch-fatigue values on the movement HUD line.',
+          onClick: () => onToggleCrouchFatigueDebug?.(),
         },
       ],
     },

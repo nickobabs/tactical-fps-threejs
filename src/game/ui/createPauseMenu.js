@@ -1,4 +1,5 @@
 import { PAUSE_MENU_BINDINGS } from './pauseMenuBindings.js';
+import { TEAMS } from '../../shared/constants.js';
 
 const PANEL_KEYS = {
   bindings: 'bindings',
@@ -23,9 +24,11 @@ export function createPauseMenu({
   onSensitivityChange,
   onFovChange,
   onVolumeChange,
+  onSelectTeam,
   getMasterVolume,
   getMouseSensitivity,
   getHorizontalFov,
+  getSelectedPlayerName,
   isGamemodeEnabled = null,
 }) {
   let lastSelectedMapId = null;
@@ -34,6 +37,7 @@ export function createPauseMenu({
   let lastVolume = null;
   let lastSensitivity = null;
   let lastFov = null;
+  let lastSelectedTeam = null;
   let activePanel = null;
   const pause = document.createElement('div');
   pause.className = 'hud__pause';
@@ -90,6 +94,10 @@ export function createPauseMenu({
           </span>
           <input class="hud__fov-slider" type="range" min="80" max="120" step="1" value="${currentFov()}" />
         </label>
+      </div>
+      <div class="hud__pause-tabs">
+        <button class="hud__pause-button hud__pause-button--secondary" type="button" data-team-id="${TEAMS.ATTACKERS}">Join Attackers</button>
+        <button class="hud__pause-button hud__pause-button--secondary" type="button" data-team-id="${TEAMS.DEFENDERS}">Join Defenders</button>
       </div>
       <div class="hud__pause-tabs">
         <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="bindings">Key Bindings</button>
@@ -159,6 +167,7 @@ export function createPauseMenu({
   const mapButtons = [...pause.querySelectorAll('[data-map-id]')];
   const gamemodeButtons = [...pause.querySelectorAll('[data-gamemode-id]')];
   const skyboxButtons = [...pause.querySelectorAll('[data-skybox-id]')];
+  const teamButtons = [...pause.querySelectorAll('[data-team-id]')];
 
   function setActivePanel(nextPanel) {
     activePanel = activePanel === nextPanel ? null : nextPanel;
@@ -215,6 +224,9 @@ export function createPauseMenu({
   const handleGamemodeSelect = (event) => {
     onSelectGamemode?.(event.currentTarget.dataset.gamemodeId);
   };
+  const handleTeamSelect = (event) => {
+    onSelectTeam?.(event.currentTarget.dataset.teamId, getSelectedPlayerName?.());
+  };
 
   resumeButton.addEventListener('click', handleResume);
   volumeSlider.addEventListener('input', handleVolume);
@@ -227,6 +239,7 @@ export function createPauseMenu({
   mapButtons.forEach((button) => button.addEventListener('click', handleMapSelect));
   gamemodeButtons.forEach((button) => button.addEventListener('click', handleGamemodeSelect));
   skyboxButtons.forEach((button) => button.addEventListener('click', handleSkyboxSelect));
+  teamButtons.forEach((button) => button.addEventListener('click', handleTeamSelect));
 
   return {
     destroy() {
@@ -241,6 +254,7 @@ export function createPauseMenu({
       mapButtons.forEach((button) => button.removeEventListener('click', handleMapSelect));
       gamemodeButtons.forEach((button) => button.removeEventListener('click', handleGamemodeSelect));
       skyboxButtons.forEach((button) => button.removeEventListener('click', handleSkyboxSelect));
+      teamButtons.forEach((button) => button.removeEventListener('click', handleTeamSelect));
       pause.remove();
     },
     setVisible(visible) {
@@ -249,7 +263,7 @@ export function createPauseMenu({
         setActivePanel(null);
       }
     },
-    updateSelections({ selectedMapId, selectedGamemodeId, selectedSkyboxId }) {
+    updateSelections({ selectedMapId, selectedGamemodeId, selectedSkyboxId, selectedTeam }) {
       if (selectedMapId !== lastSelectedMapId) {
         mapButtons.forEach((button) => {
           button.classList.toggle('hud__map-option--active', button.dataset.mapId === selectedMapId);
@@ -277,6 +291,13 @@ export function createPauseMenu({
         });
         selectedSkyboxValueEl.textContent = findLabelById(skyboxes, selectedSkyboxId);
         lastSelectedSkyboxId = selectedSkyboxId;
+      }
+
+      if (selectedTeam !== lastSelectedTeam) {
+        teamButtons.forEach((button) => {
+          button.classList.toggle('hud__pause-button--active', button.dataset.teamId === selectedTeam);
+        });
+        lastSelectedTeam = selectedTeam;
       }
 
       const volume = currentVolume();

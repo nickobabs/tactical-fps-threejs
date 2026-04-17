@@ -71,6 +71,7 @@ export function createHud({
   getKillfeedEntries,
   getIgnoreLocalCorrections,
   getIsMovementTraceRecording,
+  getShowCrouchFatigueDebug,
   consumeMarkDebugSnapshotRequested,
   onSelectSkybox,
   skyboxes = [],
@@ -231,9 +232,11 @@ export function createHud({
     onSensitivityChange,
     onFovChange,
     onVolumeChange,
+    onSelectTeam,
     getMasterVolume,
     getMouseSensitivity,
     getHorizontalFov,
+    getSelectedPlayerName,
     isGamemodeEnabled: (gamemodeId, mapId) => (
       gamemodeId !== 'competitive' || mapId === 'dust2-map-test'
     ),
@@ -300,7 +303,6 @@ export function createHud({
   let paused = false;
   let pauseMode = null;
   let showNetDebug = false;
-  let showCrouchFatigueDebug = false;
   let showScoreboard = false;
   let displaySpeed = 0;
   let lastLoadingText = '';
@@ -510,12 +512,6 @@ export function createHud({
       return;
     }
 
-    if (event.code === 'F11') {
-      showCrouchFatigueDebug = !showCrouchFatigueDebug;
-      event.preventDefault();
-      return;
-    }
-
     if (event.code === 'Tab') {
       showScoreboard = true;
       event.preventDefault();
@@ -646,8 +642,8 @@ export function createHud({
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
       const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
       const supportText = ` - support ${Number(movement.supportRatio ?? 0).toFixed(2)} - gd ${Number(movement.groundDistance ?? 0).toFixed(2)}`;
-      const crouchFatigueText = showCrouchFatigueDebug
-        ? ` - cf ${Number(movement.crouchFatigue ?? 0).toFixed(2)} - ct ${Math.max(0, Math.floor(Number(movement.crouchToggleCount ?? 0)))} - cdt ${Number.isFinite(movement.timeSinceCrouchToggle) ? Number(movement.timeSinceCrouchToggle).toFixed(2) : '--'}s - CFD(F11)`
+      const crouchFatigueText = getShowCrouchFatigueDebug?.()
+        ? ` - cf ${Number(movement.crouchFatigue ?? 0).toFixed(2)} - ct ${Math.max(0, Math.floor(Number(movement.crouchToggleCount ?? 0)))} - cdt ${Number.isFinite(movement.timeSinceCrouchToggle) ? Number(movement.timeSinceCrouchToggle).toFixed(2) : '--'}s - CFD`
         : '';
       const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${supportText}${movement.traceRecording ? ' - TRACE(F10)' : ''}${crouchFatigueText}`;
       const supportHeightText = Number.isFinite(movement.supportHeight) ? Number(movement.supportHeight).toFixed(2) : '--';
@@ -944,6 +940,7 @@ export function createHud({
         selectedMapId: getSelectedMapId?.(),
         selectedGamemodeId: getSelectedGamemodeId?.(),
         selectedSkyboxId: getSelectedSkyboxId?.(),
+        selectedTeam: getSelectedTeam?.(),
       });
       teamSelectOverlay.updateSelection(getSelectedTeam?.() ?? null);
     },

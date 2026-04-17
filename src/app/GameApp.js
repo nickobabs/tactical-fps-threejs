@@ -215,6 +215,7 @@ export class GameApp {
     this.scene.background = new THREE.Color(0x0c1218);
     this.scene.fog = new THREE.Fog(0x0c1218, 120, 320);
     this.debugController = new GameDebugController(this.scene);
+    this.showCrouchFatigueDebug = false;
     this.remotePlayerPresenter = new RemotePlayerPresenter(this.scene);
     const initialMapId = MAP_OPTIONS[0].id;
     this.selectedSkyboxId = SKYBOX_OPTIONS[0].id;
@@ -241,6 +242,7 @@ export class GameApp {
       container: this.root,
       onToggleHudMode: () => this.toggleHudMode(),
       onForceSideSwap: () => this.forceDebugSideSwap(),
+      onToggleCrouchFatigueDebug: () => this.toggleCrouchFatigueDebug(),
     });
     applyHudLayoutTuningToRoot();
     this.hudLayoutTuningPanel = createHudLayoutTuningPanel();
@@ -369,6 +371,7 @@ export class GameApp {
       getKillfeedEntries: () => this.killfeedEntries,
       getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
       getIsMovementTraceRecording: () => this.debugController.isMovementTraceRecording(),
+      getShowCrouchFatigueDebug: () => this.showCrouchFatigueDebug,
       consumeMarkDebugSnapshotRequested: () => this.debugController.consumeMarkDebugSnapshotRequested(),
       onSelectSkybox: (skyboxId) => this.setSkybox(skyboxId),
       skyboxes: SKYBOX_OPTIONS,
@@ -1254,6 +1257,10 @@ export class GameApp {
 
   pauseGame() {
     this.pauseController.pause(this.localSimulationLoop);
+  }
+
+  toggleCrouchFatigueDebug() {
+    this.showCrouchFatigueDebug = !this.showCrouchFatigueDebug;
   }
 
   async resumeGame() {
