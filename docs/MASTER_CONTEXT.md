@@ -471,6 +471,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - use only a narrow neck/head procedural aim-readability pass
     - avoid broad runtime upper/lower-body clip layering for locomotion states
 - The top active multiplayer movement blocker after the latest pass is wall/slope contact jitter under authority/correction.
+- Narrow ledge support on `Dust2 Test` is also still imperfect:
+  - shared grounding currently uses multi-sample floor support rather than binary floor contact
+  - thin ledges can therefore report partial support ratios even when the Blender geometry is solid
+  - a small stationary-ledge mitigation was added on 2026-04-17, but it can pull players toward ledge center on landing
+  - this should be treated as a temporary compromise, not a final ledge solution
 - Shared movement feel is still intentionally simple on the planar-velocity side:
   - current starts, stops, and direction changes still use a target-velocity lerp in `src/shared/playerMovement.js`
   - the next planned movement pass is explicit acceleration / deceleration / opposition braking
@@ -492,6 +497,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - landing/fall-through fixed
   - wall phasing fixed
   - wall/slope contact jitter unresolved
+  - narrow ledge support improved, but stationary ledge correction can still feel center-seeking
 - `Dust2 Legacy Import` is currently best treated as:
   - traversal testbed
   - collision/scale/lighting/fog validation map
@@ -703,6 +709,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       - build on the new authored rifle helpers and the new rifle upper-body base clip
       - continue socket-relative rifle pose tuning and per-weapon hand offsets / pose adjustments
 - Movement implementation notes for the next pass now live in `docs/movement-acceleration-plan.md`
+- Ledge-support investigation notes now also live in `docs/session-notes/session-note-2026-04-17-dust2-ledge-support.md`
 
 ## Current Remote Aim / Animation Checkpoint
 

@@ -20,16 +20,17 @@ const MAX_AIR_LANDING_SNAP_DISTANCE = 0.1;
 const MAX_AIR_COLLISION_LIFT = 0.03;
 const POSITION_CLAMP_BELOW_GROUND = 4096;
 const POSITION_CLAMP_ABOVE_GROUND = 4096;
+const STATIONARY_LEDGE_SUPPORT_SPEED = 0.2;
 const GROUND_SUPPORT_OFFSETS = [
   [0, 0],
-  [-0.22, 0],
-  [0.22, 0],
-  [0, -0.22],
-  [0, 0.22],
-  [-0.16, -0.16],
-  [0.16, -0.16],
-  [-0.16, 0.16],
-  [0.16, 0.16],
+  [-0.63, 0],
+  [0.63, 0],
+  [0, -0.63],
+  [0, 0.63],
+  [-0.46, -0.46],
+  [0.46, -0.46],
+  [-0.46, 0.46],
+  [0.46, 0.46],
 ];
 
 function clamp(value, min, max) {
@@ -54,10 +55,11 @@ function getGroundSupportInfo({
     return null;
   }
 
+  const sampleRadius = Math.max(0.08, Number(radius ?? PLAYER_MOVEMENT_DEFAULTS.radius));
   const heights = GROUND_SUPPORT_OFFSETS.map(([offsetX, offsetZ]) => (
     getGroundHeightAt(
-      x + offsetX,
-      z + offsetZ,
+      x + (offsetX * sampleRadius),
+      z + (offsetZ * sampleRadius),
       currentY,
       maxStepUp,
       maxDrop,
@@ -68,6 +70,7 @@ function getGroundSupportInfo({
   if (!Number.isFinite(centerHeight)) {
     return {
       height: null,
+      centerHeight: null,
       supportedSamples: 0,
       supportRatio: 0,
     };
@@ -89,6 +92,7 @@ function getGroundSupportInfo({
   if (supportedSamples === 0) {
     return {
       height: centerHeight,
+      centerHeight,
       supportedSamples: 0,
       supportRatio: 0,
     };
@@ -96,6 +100,7 @@ function getGroundSupportInfo({
 
   return {
     height: accumulatedHeight / supportedSamples,
+    centerHeight,
     supportedSamples,
     supportRatio: supportedSamples / heights.length,
   };
@@ -142,6 +147,10 @@ export function simulatePlayerMovement(
   const wantsWalk = Boolean(inputSnapshot?.walk);
   const walkSpeedFactor = Math.max(0.1, Number(inputSnapshot?.walkSpeedFactor ?? 0.5));
   const wantsJump = Boolean(inputSnapshot?.jump);
+  const previousHorizontalSpeed = Math.hypot(
+    Number(state.velocity?.x ?? 0),
+    Number(state.velocity?.z ?? 0),
+  );
 
   state.yaw = yaw;
   state.isCrouched = wantsCrouch;
@@ -278,8 +287,13 @@ export function simulatePlayerMovement(
         radius: config.radius,
         supportThreshold: Math.max(GROUNDED_PROBE_EPSILON, config.maxStepHeight * 0.35),
       });
-      const resolvedSupportFloor = Number.isFinite(supportInfo?.height)
-        ? Number(supportInfo.height)
+      const stationaryLedgeSupport = wasGrounded
+        && previousHorizontalSpeed <= STATIONARY_LEDGE_SUPPORT_SPEED
+        && Number.isFinite(supportInfo?.centerHeight);
+      const resolvedSupportFloor = stationaryLedgeSupport
+        ? Number(supportInfo.centerHeight)
+        : Number.isFinite(supportInfo?.height)
+          ? Number(supportInfo.height)
         : Number.isFinite(supportFloor)
           ? Number(supportFloor)
           : null;
@@ -297,7 +311,9 @@ export function simulatePlayerMovement(
             Math.abs(stepY) + (LANDING_SNAP_PADDING * 0.25),
           ),
         );
-      const minSupportRatio = wasGrounded ? 0.34 : 0.45;
+      const minSupportRatio = wasGrounded
+        ? (stationaryLedgeSupport ? 0.23 : 0.34)
+        : 0.45;
       const hasEnoughSupport = Number(supportInfo?.supportRatio ?? 0) >= minSupportRatio;
 
       if (hasSupportFloor && hasEnoughSupport && state.velocity.y <= 0 && floorDelta <= landingSnapDistance) {
@@ -401,8 +417,13 @@ export function simulatePlayerMovement(
       supportThreshold,
     })
     : null;
-  const resolvedFloor = Number.isFinite(supportInfo?.height)
-    ? Number(supportInfo.height)
+  const stationaryLedgeSupport = wasGrounded
+    && previousHorizontalSpeed <= STATIONARY_LEDGE_SUPPORT_SPEED
+    && Number.isFinite(supportInfo?.centerHeight);
+  const resolvedFloor = stationaryLedgeSupport
+    ? Number(supportInfo.centerHeight)
+    : Number.isFinite(supportInfo?.height)
+      ? Number(supportInfo.height)
     : Number.isFinite(floor)
       ? Number(floor)
       : null;
@@ -416,7 +437,7 @@ export function simulatePlayerMovement(
   if (
     wasGrounded
     && hasSupportFloor
-    && supportRatio >= 0.34
+    && supportRatio >= (stationaryLedgeSupport ? 0.23 : 0.34)
     && state.velocity.y <= 0
     && state.position.y <= resolvedFloor + config.maxStepHeight
   ) {
