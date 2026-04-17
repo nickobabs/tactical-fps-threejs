@@ -68,6 +68,13 @@ const HUD_LAYOUT_ELEMENTS = [
       ['killfeedRifleHeadshotWeaponSlotWidth', 'Rifle HS Lane', -200, 320, 1],
       ['killfeedRifleHeadshotWeaponIconSize', 'Rifle HS Size', -64, 192, 1],
       ['killfeedRifleHeadshotWeaponOffsetY', 'Rifle HS Offset Y', -160, 160, 1],
+      ['killfeedRifleHeadshotWeaponGap', 'Rifle HS Icon Gap', -80, 120, 1],
+      ['killfeedSniperBodyWeaponIconSize', 'Sniper Body Size', -64, 192, 1],
+      ['killfeedSniperBodyWeaponOffsetY', 'Sniper Body Offset Y', -160, 160, 1],
+      ['killfeedSniperHeadshotWeaponSlotWidth', 'Sniper HS Lane', -200, 320, 1],
+      ['killfeedSniperHeadshotWeaponIconSize', 'Sniper HS Size', -64, 192, 1],
+      ['killfeedSniperHeadshotWeaponOffsetY', 'Sniper HS Offset Y', -160, 160, 1],
+      ['killfeedSniperHeadshotWeaponGap', 'Sniper HS Icon Gap', -80, 120, 1],
       ['killfeedPistolBodyWeaponIconSize', 'Pistol Body Size', -64, 192, 1],
       ['killfeedPistolBodyWeaponOffsetY', 'Pistol Body Offset Y', -160, 160, 1],
       ['killfeedPistolHeadshotWeaponSlotWidth', 'Pistol HS Lane', -200, 320, 1],
@@ -97,6 +104,9 @@ function shouldRenderControl(entryKey, selectedElementKey, previewWeapon, previe
     return true;
   }
   if (entryKey.startsWith('killfeedRifle') && previewWeapon !== 'rifle') {
+    return false;
+  }
+  if (entryKey.startsWith('killfeedSniper') && previewWeapon !== 'sniper') {
     return false;
   }
   if (entryKey.startsWith('killfeedPistol') && previewWeapon !== 'pistol') {
@@ -229,7 +239,7 @@ export function createHudLayoutTuningPanel() {
   previewWeaponSelect.style.color = '#eef5ff';
   previewWeaponSelect.style.border = '1px solid rgba(174, 211, 255, 0.22)';
   previewWeaponSelect.style.borderRadius = '6px';
-  for (const [value, label] of [['rifle', 'Rifle'], ['pistol', 'Pistol']]) {
+  for (const [value, label] of [['rifle', 'Rifle'], ['sniper', 'Sniper'], ['pistol', 'Pistol']]) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = label;

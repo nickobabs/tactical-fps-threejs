@@ -145,6 +145,11 @@
     - `F8` copy exports the live panel text, while `F10` remains the trace/file workflow
     - `localStorage` export helper:
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
+  - `F11` toggles crouch-fatigue debug on the movement line
+    - `cf` = current crouch fatigue
+    - `ct` = crouch toggle count in the active fatigue window
+    - `cdt` = time since last crouch toggle
+    - `CFD(F11)` marks that the crouch-fatigue debug suffix is enabled
 - Current local movement line now also exposes support debugging fields:
   - `support`
   - `gd`

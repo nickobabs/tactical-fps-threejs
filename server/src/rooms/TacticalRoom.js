@@ -77,6 +77,7 @@ import {
 const SERVER_MOVE_POSITION = new THREE.Vector3();
 const SHOT_ORIGIN = new THREE.Vector3();
 const SHOT_DIRECTION = new THREE.Vector3();
+const SHOT_TRACE_END = new THREE.Vector3();
 const PLAYER_EYE = new THREE.Vector3();
 const TARGET_SEGMENT = new THREE.Line3();
 const CLOSEST_POINT_ON_RAY = new THREE.Vector3();
@@ -107,6 +108,8 @@ const BOMB_DROP_FORWARD_DISTANCE = 0.85;
 const BOMB_DROP_HEIGHT_OFFSET = 0.08;
 const BOMB_PICKUP_RADIUS = 1.1;
 const BOMB_DROPPER_PICKUP_LOCK_MS = 750;
+const BOMB_EXPLOSION_LETHAL_RADIUS = 30;
+const BOMB_EXPLOSION_MAX_RADIUS = 100;
 const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
 const SMOKE_BLOOM_MAX_VALIDATE_DISTANCE = 32;
 const SMOKE_THROW_MAX_VALIDATE_DISTANCE = 3;
@@ -972,9 +975,86 @@ export class TacticalRoom extends Room {
       this.objectiveState.bombBeepCountdown += getBombPulseIntervalSeconds(this.objectiveState.bombTimeRemaining);
     }
     if (this.objectiveState.bombTimeRemaining === 0) {
+      this.applyBombExplosionDamage();
       this.objectiveState.bombState = 'exploded';
       this.objectiveState.bombBeepCountdown = 0;
       this.roundManager.endRound(TEAMS.ATTACKERS, 'bomb-exploded');
+    }
+  }
+
+  getBombExplosionDamage(distance) {
+    const safeDistance = Number(distance);
+    if (!Number.isFinite(safeDistance) || safeDistance >= BOMB_EXPLOSION_MAX_RADIUS) {
+      return 0;
+    }
+    if (safeDistance <= BOMB_EXPLOSION_LETHAL_RADIUS) {
+      return PLAYER_MAX_HEALTH;
+    }
+
+    const normalized = (safeDistance - BOMB_EXPLOSION_LETHAL_RADIUS)
+      / (BOMB_EXPLOSION_MAX_RADIUS - BOMB_EXPLOSION_LETHAL_RADIUS);
+    return PLAYER_MAX_HEALTH * (1 - normalized);
+  }
+
+  killPlayer(player, { now, deathClip = null } = {}) {
+    if (!player || player.isAlive === false) {
+      return;
+    }
+
+    player.deaths = Number(player.deaths ?? 0) + 1;
+    player.isAlive = false;
+    player.respawnAt = isCompetitiveGamemode(this.roundManager.gamemode)
+      ? 0
+      : now + PLAYER_RESPAWN_DELAY_MS;
+    player.pendingInputs.length = 0;
+    player.deathClip = deathClip;
+    player.presentationState = 'dead';
+    this.dropBombForPlayer(player);
+  }
+
+  applyBombExplosionDamage() {
+    const plantedPosition = this.objectiveState?.plantedPosition;
+    if (!plantedPosition) {
+      return;
+    }
+
+    const bombMapId = this.objectiveState?.plantedMapId ?? null;
+    const explosionOrigin = new THREE.Vector3(
+      Number(plantedPosition.x ?? 0),
+      Number(plantedPosition.y ?? 0),
+      Number(plantedPosition.z ?? 0),
+    );
+    const now = Date.now();
+
+    for (const player of this.players.values()) {
+      if (!player || player.isAlive === false) {
+        continue;
+      }
+      if ((player.mapId ?? null) !== bombMapId) {
+        continue;
+      }
+
+      const motionPosition = player.motionState?.position ?? null;
+      if (!motionPosition) {
+        continue;
+      }
+
+      const distance = explosionOrigin.distanceTo(SERVER_MOVE_POSITION.set(
+        Number(motionPosition.x ?? 0),
+        Number(motionPosition.y ?? 0),
+        Number(motionPosition.z ?? 0),
+      ));
+      const damage = this.getBombExplosionDamage(distance);
+      if (damage <= 0) {
+        continue;
+      }
+
+      player.health = Math.max(0, Number(player.health ?? PLAYER_MAX_HEALTH) - damage);
+      if (player.health > 0) {
+        continue;
+      }
+
+      this.killPlayer(player, { now });
     }
   }
 
@@ -2013,11 +2093,6 @@ export class TacticalRoom extends Room {
     }
     player.lastFireAt = now;
 
-    this.broadcast('combat-event', {
-      type: 'player-fired',
-      playerId: player.playerId,
-      weaponKey: player.activeWeaponKey,
-    });
     triggerRemoteHitboxRigFire(player.hitboxRig);
 
     PLAYER_EYE.set(
@@ -2101,6 +2176,26 @@ export class TacticalRoom extends Room {
     }
 
     if (!bestTarget) {
+      const traceEnd = worldHit?.point
+        ? worldHit.point
+        : SHOT_TRACE_END.copy(SHOT_ORIGIN).addScaledVector(SHOT_DIRECTION, maxDistance);
+      this.broadcast('combat-event', {
+        type: 'player-fired',
+        playerId: player.playerId,
+        weaponKey: player.activeWeaponKey,
+        mapId: player.mapId,
+        origin: {
+          x: SHOT_ORIGIN.x,
+          y: SHOT_ORIGIN.y,
+          z: SHOT_ORIGIN.z,
+        },
+        tracerEnd: {
+          x: Number(traceEnd.x ?? 0),
+          y: Number(traceEnd.y ?? 0),
+          z: Number(traceEnd.z ?? 0),
+        },
+        impact: Boolean(worldHit),
+      });
       return;
     }
 
@@ -2109,16 +2204,8 @@ export class TacticalRoom extends Room {
     let deathClip = null;
     if (bestTarget.health === 0) {
       player.kills = Number(player.kills ?? 0) + 1;
-      bestTarget.deaths = Number(bestTarget.deaths ?? 0) + 1;
-      bestTarget.isAlive = false;
-      bestTarget.respawnAt = isCompetitiveGamemode(this.roundManager.gamemode)
-        ? 0
-        : now + PLAYER_RESPAWN_DELAY_MS;
-      bestTarget.pendingInputs.length = 0;
       deathClip = getDeathClipForShot(bestTarget, SHOT_DIRECTION);
-      bestTarget.deathClip = deathClip;
-      bestTarget.presentationState = 'dead';
-      this.dropBombForPlayer(bestTarget);
+      this.killPlayer(bestTarget, { now, deathClip });
       this.evaluateCompetitiveEliminationWin(bestTarget.mapId ?? null);
     }
 
@@ -2135,6 +2222,24 @@ export class TacticalRoom extends Room {
       killed: bestTarget.health === 0,
       deathClip,
       respawnAt: bestTarget.respawnAt,
+    });
+    SHOT_TRACE_END.copy(SHOT_ORIGIN).addScaledVector(SHOT_DIRECTION, bestDistance);
+    this.broadcast('combat-event', {
+      type: 'player-fired',
+      playerId: player.playerId,
+      weaponKey: player.activeWeaponKey,
+      mapId: player.mapId,
+      origin: {
+        x: SHOT_ORIGIN.x,
+        y: SHOT_ORIGIN.y,
+        z: SHOT_ORIGIN.z,
+      },
+      tracerEnd: {
+        x: SHOT_TRACE_END.x,
+        y: SHOT_TRACE_END.y,
+        z: SHOT_TRACE_END.z,
+      },
+      impact: true,
     });
     this.requestStateBroadcast();
   }

@@ -418,7 +418,7 @@ export class GameApp {
     const timeLeft = Math.max(0, Number(roundState.freezeDuration ?? 0) - Number(roundState.phaseTime ?? 0));
     const previousTimeLeft = Number(this.lastFreezeTimeLeft ?? (timeLeft + 1));
     let cueSecond = 0;
-    for (const [displaySecond, threshold] of [[3, 4], [2, 3], [1, 2]]) {
+    for (const [displaySecond, threshold] of [[3, 3], [2, 2], [1, 1]]) {
       if (previousTimeLeft > threshold && timeLeft <= threshold) {
         cueSecond = displaySecond;
         break;
@@ -873,7 +873,7 @@ export class GameApp {
 
     this.syncCombatNetworkingMode();
     this.runtime.playerController.updateLook(frameInput.lookDelta);
-    this.runtime.utilityManager.syncFrameInput(frameInput);
+    this.runtime.utilityManager.syncFrameInput(frameInput, this.runtime.weaponManager);
 
     if (!localPlayerAlive) {
       this.localSimulationLoop.accumulator = 0;
@@ -984,6 +984,7 @@ export class GameApp {
     const attacker = this.networkClient.getScoreboardPlayer?.(event.attackerPlayerId) ?? null;
     const victim = this.networkClient.getScoreboardPlayer?.(event.victimPlayerId) ?? null;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const localPlayerId = String(this.networkClient.playerId ?? '');
     const entry = {
       id: `${now}-${Math.random()}`,
       attackerName: String(attacker?.displayName ?? event.attackerPlayerId ?? 'Player'),
@@ -992,6 +993,8 @@ export class GameApp {
       victimTeam: String(victim?.team ?? ''),
       weaponKey: String(event.weaponKey ?? 'rifle'),
       headshot: String(event.hitZone ?? '') === 'head',
+      isLocalKill: localPlayerId.length > 0 && String(event.attackerPlayerId ?? '') === localPlayerId,
+      isLocalDeath: localPlayerId.length > 0 && String(event.victimPlayerId ?? '') === localPlayerId,
       expiresAt: now + KILLFEED_ENTRY_LIFETIME_MS,
     };
 
@@ -1078,6 +1081,8 @@ export class GameApp {
   }
 
   updateRemotePlayers(delta) {
+    this.remotePlayerPresenter.setEffectsManager(this.runtime?.effectsManager ?? null);
+    this.remotePlayerPresenter.setLocalPlayerId(this.networkClient.playerId ?? null);
     if (this.authoritativeNetworkingEnabled) {
       this.remotePlayerPresenter.syncPlayers(
         this.networkClient.getRemotePlayers(),

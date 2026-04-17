@@ -11,6 +11,12 @@ export const PLAYER_MOVEMENT_DEFAULTS = {
   deceleration: 14,
   airControl: 0.35,
   crouchLerpSpeed: 12,
+  crouchFatigueGraceToggles: 2,
+  crouchFatiguePerToggle: 0.45,
+  crouchFatigueMax: 1,
+  crouchFatigueDecayPerSecond: 1,
+  crouchFatigueResetDelay: 1,
+  crouchFatigueMinLerpMultiplier: 0.45,
   maxStepHeight: 0.45,
 };
 const GROUNDED_PROBE_EPSILON = 0.04;
@@ -117,6 +123,9 @@ export function createPlayerMovementState({
   supportHeight = null,
   supportRatio = 0,
   airborneMaxSpeed = null,
+  crouchFatigue = 0,
+  crouchToggleCount = 0,
+  timeSinceCrouchToggle = Infinity,
 } = {}) {
   return {
     position: { x: position.x, y: position.y, z: position.z },
@@ -129,6 +138,9 @@ export function createPlayerMovementState({
     supportHeight: Number.isFinite(supportHeight) ? Number(supportHeight) : null,
     supportRatio: Number(supportRatio ?? 0),
     airborneMaxSpeed: Number.isFinite(airborneMaxSpeed) ? Math.max(0, Number(airborneMaxSpeed)) : null,
+    crouchFatigue: clamp(Number(crouchFatigue ?? 0), 0, Number(PLAYER_MOVEMENT_DEFAULTS.crouchFatigueMax ?? 1)),
+    crouchToggleCount: Math.max(0, Math.floor(Number(crouchToggleCount ?? 0))),
+    timeSinceCrouchToggle: Number.isFinite(timeSinceCrouchToggle) ? Math.max(0, Number(timeSinceCrouchToggle)) : Infinity,
   };
 }
 
@@ -144,6 +156,7 @@ export function simulatePlayerMovement(
   const speedMultiplier = options.speedMultiplier ?? 1;
   const yaw = Number(inputSnapshot?.yaw ?? state.yaw ?? 0);
   const wantsCrouch = Boolean(inputSnapshot?.crouch);
+  const wasCrouched = Boolean(state.isCrouched);
   const wantsWalk = Boolean(inputSnapshot?.walk);
   const walkSpeedFactor = Math.max(0.1, Number(inputSnapshot?.walkSpeedFactor ?? 0.5));
   const wantsJump = Boolean(inputSnapshot?.jump);
@@ -153,13 +166,53 @@ export function simulatePlayerMovement(
   );
 
   state.yaw = yaw;
+  state.timeSinceCrouchToggle = Number.isFinite(state.timeSinceCrouchToggle)
+    ? state.timeSinceCrouchToggle + delta
+    : delta;
+
+  if (state.timeSinceCrouchToggle >= config.crouchFatigueResetDelay) {
+    state.crouchFatigue = 0;
+    state.crouchToggleCount = 0;
+  } else {
+    state.crouchFatigue = Math.max(
+      0,
+      Number(state.crouchFatigue ?? 0) - (config.crouchFatigueDecayPerSecond * delta),
+    );
+  }
+
+  if (wantsCrouch !== wasCrouched) {
+    if (state.timeSinceCrouchToggle >= config.crouchFatigueResetDelay) {
+      state.crouchFatigue = 0;
+      state.crouchToggleCount = 0;
+    }
+    state.crouchToggleCount = Number(state.crouchToggleCount ?? 0) + 1;
+    state.timeSinceCrouchToggle = 0;
+    if (state.crouchToggleCount > config.crouchFatigueGraceToggles) {
+      state.crouchFatigue = Math.min(
+        config.crouchFatigueMax,
+        Number(state.crouchFatigue ?? 0) + config.crouchFatiguePerToggle,
+      );
+    }
+  }
+
   state.isCrouched = wantsCrouch;
 
   const targetHeight = wantsCrouch ? config.crouchHeight : config.standHeight;
+  const crouchLerpMultiplier = lerp(
+    1,
+    config.crouchFatigueMinLerpMultiplier,
+    clamp(
+      config.crouchFatigueMax > 1e-6
+        ? Number(state.crouchFatigue ?? 0) / config.crouchFatigueMax
+        : 0,
+      0,
+      1,
+    ),
+  );
   state.currentHeight = lerp(
     state.currentHeight,
     targetHeight,
-    1 - Math.exp(-config.crouchLerpSpeed * delta),
+    1 - Math.exp(-(config.crouchLerpSpeed * crouchLerpMultiplier) * delta),
   );
 
   const forwardX = -Math.sin(yaw);

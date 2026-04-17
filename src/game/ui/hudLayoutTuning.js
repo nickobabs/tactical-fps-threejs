@@ -17,7 +17,7 @@ export const HUD_LAYOUT_TUNING = {
   bombPulseMaxScale: 1.22,
   killfeedTop: 89,
   killfeedRight: 87,
-  killfeedWidth: 528,
+  killfeedWidth: 562,
   killfeedEntryMinWidth: 13,
   killfeedPaddingX: 14,
   killfeedPaddingY: 4,
@@ -25,12 +25,19 @@ export const HUD_LAYOUT_TUNING = {
   killfeedHeadshotItemGap: 15,
   killfeedNameSize: 18,
   killfeedNameOffsetY: 0,
-  killfeedWeaponGap: -9,
+  killfeedWeaponGap: 0,
   killfeedRifleBodyWeaponIconSize: 113,
   killfeedRifleBodyWeaponOffsetY: 13,
   killfeedRifleHeadshotWeaponSlotWidth: 117,
   killfeedRifleHeadshotWeaponIconSize: 113,
   killfeedRifleHeadshotWeaponOffsetY: 13,
+  killfeedRifleHeadshotWeaponGap: 4,
+  killfeedSniperBodyWeaponIconSize: 151,
+  killfeedSniperBodyWeaponOffsetY: 8,
+  killfeedSniperHeadshotWeaponSlotWidth: 142,
+  killfeedSniperHeadshotWeaponIconSize: 151,
+  killfeedSniperHeadshotWeaponOffsetY: 8,
+  killfeedSniperHeadshotWeaponGap: 1,
   killfeedPistolBodyWeaponIconSize: 100,
   killfeedPistolBodyWeaponOffsetY: 11,
   killfeedPistolHeadshotWeaponSlotWidth: 107,
@@ -90,6 +97,13 @@ export function loadHudLayoutTuning() {
       killfeedRifleHeadshotWeaponSlotWidth: parseStoredValue(parsed, 'killfeedRifleHeadshotWeaponSlotWidth', HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponSlotWidth),
       killfeedRifleHeadshotWeaponIconSize: parseStoredValue(parsed, 'killfeedRifleHeadshotWeaponIconSize', HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponIconSize),
       killfeedRifleHeadshotWeaponOffsetY: parseStoredValue(parsed, 'killfeedRifleHeadshotWeaponOffsetY', HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponOffsetY),
+      killfeedRifleHeadshotWeaponGap: parseStoredValue(parsed, 'killfeedRifleHeadshotWeaponGap', HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponGap),
+      killfeedSniperBodyWeaponIconSize: parseStoredValue(parsed, 'killfeedSniperBodyWeaponIconSize', HUD_LAYOUT_TUNING.killfeedSniperBodyWeaponIconSize),
+      killfeedSniperBodyWeaponOffsetY: parseStoredValue(parsed, 'killfeedSniperBodyWeaponOffsetY', HUD_LAYOUT_TUNING.killfeedSniperBodyWeaponOffsetY),
+      killfeedSniperHeadshotWeaponSlotWidth: parseStoredValue(parsed, 'killfeedSniperHeadshotWeaponSlotWidth', HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponSlotWidth),
+      killfeedSniperHeadshotWeaponIconSize: parseStoredValue(parsed, 'killfeedSniperHeadshotWeaponIconSize', HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponIconSize),
+      killfeedSniperHeadshotWeaponOffsetY: parseStoredValue(parsed, 'killfeedSniperHeadshotWeaponOffsetY', HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponOffsetY),
+      killfeedSniperHeadshotWeaponGap: parseStoredValue(parsed, 'killfeedSniperHeadshotWeaponGap', HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponGap),
       killfeedPistolBodyWeaponIconSize: parseStoredValue(parsed, 'killfeedPistolBodyWeaponIconSize', HUD_LAYOUT_TUNING.killfeedPistolBodyWeaponIconSize),
       killfeedPistolBodyWeaponOffsetY: parseStoredValue(parsed, 'killfeedPistolBodyWeaponOffsetY', HUD_LAYOUT_TUNING.killfeedPistolBodyWeaponOffsetY),
       killfeedPistolHeadshotWeaponSlotWidth: parseStoredValue(parsed, 'killfeedPistolHeadshotWeaponSlotWidth', HUD_LAYOUT_TUNING.killfeedPistolHeadshotWeaponSlotWidth),
@@ -143,7 +157,7 @@ export function resetHudLayoutTuning() {
   HUD_LAYOUT_TUNING.bombPulseMaxScale = 1.22;
   HUD_LAYOUT_TUNING.killfeedTop = 89;
   HUD_LAYOUT_TUNING.killfeedRight = 87;
-  HUD_LAYOUT_TUNING.killfeedWidth = 528;
+  HUD_LAYOUT_TUNING.killfeedWidth = 562;
   HUD_LAYOUT_TUNING.killfeedEntryMinWidth = 13;
   HUD_LAYOUT_TUNING.killfeedPaddingX = 14;
   HUD_LAYOUT_TUNING.killfeedPaddingY = 4;
@@ -151,12 +165,19 @@ export function resetHudLayoutTuning() {
   HUD_LAYOUT_TUNING.killfeedHeadshotItemGap = 15;
   HUD_LAYOUT_TUNING.killfeedNameSize = 18;
   HUD_LAYOUT_TUNING.killfeedNameOffsetY = 0;
-  HUD_LAYOUT_TUNING.killfeedWeaponGap = -9;
+  HUD_LAYOUT_TUNING.killfeedWeaponGap = 0;
   HUD_LAYOUT_TUNING.killfeedRifleBodyWeaponIconSize = 113;
   HUD_LAYOUT_TUNING.killfeedRifleBodyWeaponOffsetY = 13;
   HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponSlotWidth = 117;
   HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponIconSize = 113;
   HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponOffsetY = 13;
+  HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponGap = 4;
+  HUD_LAYOUT_TUNING.killfeedSniperBodyWeaponIconSize = 151;
+  HUD_LAYOUT_TUNING.killfeedSniperBodyWeaponOffsetY = 8;
+  HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponSlotWidth = 142;
+  HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponIconSize = 151;
+  HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponOffsetY = 8;
+  HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponGap = 1;
   HUD_LAYOUT_TUNING.killfeedPistolBodyWeaponIconSize = 100;
   HUD_LAYOUT_TUNING.killfeedPistolBodyWeaponOffsetY = 11;
   HUD_LAYOUT_TUNING.killfeedPistolHeadshotWeaponSlotWidth = 107;
@@ -204,6 +225,13 @@ export function applyHudLayoutTuningToRoot(root = document?.documentElement) {
   root.style.setProperty('--hud-killfeed-rifle-headshot-weapon-slot-width', `${HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponSlotWidth}px`);
   root.style.setProperty('--hud-killfeed-rifle-headshot-weapon-icon-size', `${HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponIconSize}px`);
   root.style.setProperty('--hud-killfeed-rifle-headshot-weapon-offset-y', `${HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponOffsetY}px`);
+  root.style.setProperty('--hud-killfeed-rifle-headshot-weapon-gap', `${HUD_LAYOUT_TUNING.killfeedRifleHeadshotWeaponGap}px`);
+  root.style.setProperty('--hud-killfeed-sniper-body-weapon-icon-size', `${HUD_LAYOUT_TUNING.killfeedSniperBodyWeaponIconSize}px`);
+  root.style.setProperty('--hud-killfeed-sniper-body-weapon-offset-y', `${HUD_LAYOUT_TUNING.killfeedSniperBodyWeaponOffsetY}px`);
+  root.style.setProperty('--hud-killfeed-sniper-headshot-weapon-slot-width', `${HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponSlotWidth}px`);
+  root.style.setProperty('--hud-killfeed-sniper-headshot-weapon-icon-size', `${HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponIconSize}px`);
+  root.style.setProperty('--hud-killfeed-sniper-headshot-weapon-offset-y', `${HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponOffsetY}px`);
+  root.style.setProperty('--hud-killfeed-sniper-headshot-weapon-gap', `${HUD_LAYOUT_TUNING.killfeedSniperHeadshotWeaponGap}px`);
   root.style.setProperty('--hud-killfeed-pistol-body-weapon-icon-size', `${HUD_LAYOUT_TUNING.killfeedPistolBodyWeaponIconSize}px`);
   root.style.setProperty('--hud-killfeed-pistol-body-weapon-offset-y', `${HUD_LAYOUT_TUNING.killfeedPistolBodyWeaponOffsetY}px`);
   root.style.setProperty('--hud-killfeed-pistol-headshot-weapon-slot-width', `${HUD_LAYOUT_TUNING.killfeedPistolHeadshotWeaponSlotWidth}px`);

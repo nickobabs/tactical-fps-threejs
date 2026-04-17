@@ -60,7 +60,7 @@ export const REMOTE_UTILITY_AUDIO = {
     soundKey: 'bomb-beep',
     baseVolume: 0.8,
     minDistance: 1.5,
-    maxDistance: 18,
+    maxDistance: 23,
     rolloffExponent: 1.18,
   },
 };

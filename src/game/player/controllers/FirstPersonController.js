@@ -246,6 +246,11 @@ export class FirstPersonController {
       groundDistance: Number(this.motionState?.distanceToGround ?? 0),
       supportHeight: Number.isFinite(this.motionState?.supportHeight) ? Number(this.motionState.supportHeight) : null,
       supportRatio: Number(this.motionState?.supportRatio ?? 0),
+      crouchFatigue: Number(this.motionState?.crouchFatigue ?? 0),
+      crouchToggleCount: Number(this.motionState?.crouchToggleCount ?? 0),
+      timeSinceCrouchToggle: Number.isFinite(this.motionState?.timeSinceCrouchToggle)
+        ? Number(this.motionState.timeSinceCrouchToggle)
+        : Infinity,
       responsiveOffsetMagnitude: this.responsivePresentationOffset.length(),
       bufferedCanonicalCorrectionMagnitude: this.bufferedCanonicalCorrection.length(),
       correctionEnqueueRatePerSecond: this.correctionEnqueueEvents.length,

@@ -168,6 +168,9 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     isCrouched: Boolean(state?.isCrouched),
     currentHeight: Number(state?.currentHeight ?? 1.72),
     airborneMaxSpeed: state?.airborneMaxSpeed == null ? null : Number(state.airborneMaxSpeed),
+    crouchFatigue: Number(state?.crouchFatigue ?? 0),
+    crouchToggleCount: Number(state?.crouchToggleCount ?? 0),
+    timeSinceCrouchToggle: state?.timeSinceCrouchToggle == null ? null : Number(state.timeSinceCrouchToggle),
     health: Number(state?.health ?? 100),
     maxHealth: Number(state?.maxHealth ?? 100),
     isAlive: Boolean(state?.isAlive ?? true),
@@ -208,6 +211,11 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     airborneMaxSpeed: player?.motionState?.airborneMaxSpeed == null
       ? null
       : Number(player.motionState.airborneMaxSpeed),
+    crouchFatigue: Number(player?.motionState?.crouchFatigue ?? 0),
+    crouchToggleCount: Number(player?.motionState?.crouchToggleCount ?? 0),
+    timeSinceCrouchToggle: player?.motionState?.timeSinceCrouchToggle == null
+      ? null
+      : Number(player.motionState.timeSinceCrouchToggle),
     lastProcessedSequence: Number(player?.lastProcessedSequence ?? 0),
     lastProcessedTimestamp: Number(player?.lastProcessedTimestamp ?? 0),
     health: Number(player?.health ?? 100),

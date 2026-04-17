@@ -13,6 +13,7 @@ const C4_ROSTER_ICON = '/icons/c4.png';
 const KILLFEED_WEAPON_ICONS = {
   pistol: '/icons/pistol.svg',
   rifle: '/icons/ak47.svg',
+  sniper: '/icons/sniper.svg',
 };
 const KILLFEED_HEADSHOT_ICON = '/icons/headshot.png';
 
@@ -299,6 +300,7 @@ export function createHud({
   let paused = false;
   let pauseMode = null;
   let showNetDebug = false;
+  let showCrouchFatigueDebug = false;
   let showScoreboard = false;
   let displaySpeed = 0;
   let lastLoadingText = '';
@@ -442,13 +444,16 @@ export function createHud({
 
   function getKillfeedDebugPreviewEntry() {
     const rootDataset = document?.documentElement?.dataset ?? {};
+    const debugWeapon = rootDataset.hudDebugKillfeedWeapon;
     return {
       attackerName: 'storste mand',
       attackerTeam: 'attackers',
       victimName: 'storste mand',
       victimTeam: 'defenders',
-      weaponKey: rootDataset.hudDebugKillfeedWeapon === 'pistol' ? 'pistol' : 'rifle',
+      weaponKey: debugWeapon === 'pistol' || debugWeapon === 'sniper' ? debugWeapon : 'rifle',
       headshot: rootDataset.hudDebugKillfeedHeadshot !== 'false',
+      isLocalKill: true,
+      isLocalDeath: false,
     };
   }
 
@@ -463,16 +468,22 @@ export function createHud({
       const victimClass = getKillfeedNameClass(entry.victimTeam);
       const weaponIcon = KILLFEED_WEAPON_ICONS[entry.weaponKey] ?? KILLFEED_WEAPON_ICONS.rifle;
       const weaponLayoutClass = entry.headshot ? 'hud__killfeed-weapon--headshot' : 'hud__killfeed-weapon--single';
-      const weaponTypeClass = entry.weaponKey === 'rifle'
-        ? 'hud__killfeed-weapon--rifle'
-        : 'hud__killfeed-weapon--pistol';
-      const weaponIconClass = entry.weaponKey === 'rifle'
-        ? 'hud__killfeed-weapon-icon--rifle'
-        : 'hud__killfeed-weapon-icon--pistol';
+      const weaponTypeClass = entry.weaponKey === 'sniper'
+        ? 'hud__killfeed-weapon--sniper'
+        : (entry.weaponKey === 'rifle'
+          ? 'hud__killfeed-weapon--rifle'
+          : 'hud__killfeed-weapon--pistol');
+      const weaponIconClass = entry.weaponKey === 'sniper'
+        ? 'hud__killfeed-weapon-icon--sniper'
+        : (entry.weaponKey === 'rifle'
+          ? 'hud__killfeed-weapon-icon--rifle'
+          : 'hud__killfeed-weapon-icon--pistol');
+      const localKillClass = entry.isLocalKill ? 'hud__killfeed-entry--local-kill' : '';
+      const localDeathClass = entry.isLocalDeath ? 'hud__killfeed-entry--local-death' : '';
       const headshotIcon = entry.headshot
         ? `<img class="hud__killfeed-headshot-icon" src="${KILLFEED_HEADSHOT_ICON}" alt="" />`
         : '';
-      return `<div class="hud__killfeed-entry">
+      return `<div class="hud__killfeed-entry ${localKillClass} ${localDeathClass}">
         <span class="hud__killfeed-name ${attackerClass}">${escapeHtml(entry.attackerName)}</span>
         <span class="hud__killfeed-weapon ${weaponLayoutClass} ${weaponTypeClass}">
           <img class="hud__killfeed-weapon-icon ${weaponIconClass}" src="${weaponIcon}" alt="" />
@@ -495,6 +506,12 @@ export function createHud({
 
     if (event.code === 'F2') {
       onToggleHudMode?.();
+      event.preventDefault();
+      return;
+    }
+
+    if (event.code === 'F11') {
+      showCrouchFatigueDebug = !showCrouchFatigueDebug;
       event.preventDefault();
       return;
     }
@@ -629,7 +646,10 @@ export function createHud({
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
       const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
       const supportText = ` - support ${Number(movement.supportRatio ?? 0).toFixed(2)} - gd ${Number(movement.groundDistance ?? 0).toFixed(2)}`;
-      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${supportText}${movement.traceRecording ? ' - TRACE(F10)' : ''}`;
+      const crouchFatigueText = showCrouchFatigueDebug
+        ? ` - cf ${Number(movement.crouchFatigue ?? 0).toFixed(2)} - ct ${Math.max(0, Math.floor(Number(movement.crouchToggleCount ?? 0)))} - cdt ${Number.isFinite(movement.timeSinceCrouchToggle) ? Number(movement.timeSinceCrouchToggle).toFixed(2) : '--'}s - CFD(F11)`
+        : '';
+      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${supportText}${movement.traceRecording ? ' - TRACE(F10)' : ''}${crouchFatigueText}`;
       const supportHeightText = Number.isFinite(movement.supportHeight) ? Number(movement.supportHeight).toFixed(2) : '--';
       const positionText = `Pos: ${movement.positionText ?? '0.00, 0.00, 0.00'} - ${movement.movementMode ?? 'grounded'} - floor ${supportHeightText}`;
       const pointerText = paused

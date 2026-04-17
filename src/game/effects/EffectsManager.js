@@ -225,6 +225,17 @@ export class EffectsManager {
     this.transientObjects.push(tracer);
   }
 
+  addTracerImpact(start, end) {
+    if (!this.scene || !start || !end) {
+      return;
+    }
+
+    const marker = createImpactMarker(end);
+    const tracer = createTracer(start, end);
+    this.scene.add(marker, tracer);
+    this.transientObjects.push(marker, tracer);
+  }
+
   addSmokeCloud(position, options = {}) {
     if (!this.scene || !position) {
       return null;

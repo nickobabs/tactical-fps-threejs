@@ -34,6 +34,12 @@
 
 - Yaw and pitch are split into separate scene nodes.
 - Camera height is adjusted through stance interpolation instead of instant snapping.
+- Crouch transition speed is now shared-stateful rather than stateless:
+  - crouch toggles contribute to a small fatigue meter
+  - the first `2` quick toggles are free
+  - further quick toggles slow the crouch/stand interpolation speed
+  - the fatigue window fully clears after `1.0s` without a crouch toggle
+  - holding crouch does not build fatigue
 - Horizontal motion is still shared through `src/shared/playerMovement.js`, but the grounded feel is no longer just a flat target-velocity lerp:
   - grounded acceleration now ramps in more softly at low speed
   - grounded deceleration is explicit
@@ -77,6 +83,13 @@
   - ordinary stride footsteps are still locally triggered from the controller
   - landing now emits one synthetic footstep on real air-to-ground transitions
   - ADS, crouch, and shift-walk currently suppress bob
+- Current crouch-fatigue tuning in shared movement:
+  - grace toggles: `2`
+  - fatigue per extra quick toggle: `0.45`
+  - max fatigue: `1.0`
+  - decay: `1.0 / second`
+  - full reset delay: `1.0s`
+  - minimum crouch-transition multiplier at max fatigue: `0.45`
 - The controller refactor is partially complete:
   - low-risk helper boundaries have been extracted
   - the remaining dense core is now concentrated around simulation stepping, buffered correction, and authoritative reconciliation
@@ -154,4 +167,5 @@
 - Keep grounded presentation tied to resolved/simulated movement instead of desired intent
 - Preserve the current max-speed model while continuing to tune starts, stops, and direction changes
 - Keep counter-strafe behavior meaningful, especially for future sniper use, without making rifles or general movement feel gimmicky
+- Expect more tuning on crouch fatigue after live playtesting; the current pass is meant to stop spam-crouch abuse, not to lock down final crouch feel
 - See `docs/movement-acceleration-plan.md` for the next-pass implementation outline

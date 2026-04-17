@@ -193,6 +193,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - includes a `Copy` button for exact clipboard export of the live panel
   - `F9`: ignore local corrections
   - `F10`: toggle local movement-trace capture
+  - `F11`: toggle crouch-fatigue debug readout on the movement HUD line
   - `V`: toggle fly mode
   - `J`: log current position
   - `K`: save a debug marker
@@ -683,6 +684,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - grounded movement now uses a softer ramp-in, explicit deceleration, and stronger reversal braking
   - the local presentation layer no longer gets to lead grounded motion with desired velocity
   - airborne movement now preserves takeoff speed until landing, so weapon swaps or walk changes midair do not change horizontal velocity
+  - crouch now uses a small anti-spam fatigue system in shared simulation:
+    - the first `2` quick crouch toggles are free
+    - the `3rd` and later quick toggles slow crouch/uncrouch transition speed
+    - holding crouch does not build fatigue
+    - stopping crouch toggles for `1.0s` fully clears the fatigue window
 
 ## Near-Term Direction
 

@@ -745,13 +745,21 @@ canvas {
   max-width: 100%;
   box-sizing: border-box;
   padding: var(--hud-killfeed-padding-y, 8px) var(--hud-killfeed-padding-x, 14px);
-  border: var(--hud-killfeed-border-width, 1px) solid rgba(186, 24, 24, 0.9);
+  border: var(--hud-killfeed-border-width, 1px) solid transparent;
   border-radius: var(--hud-killfeed-border-radius, 6px);
   background: rgba(4, 4, 6, 0.92);
 }
 
+.hud__killfeed-entry--local-kill {
+  border-color: rgba(186, 24, 24, 0.9);
+}
+
+.hud__killfeed-entry--local-death {
+  background: rgba(64, 10, 12, 0.92);
+}
+
 .hud__killfeed-entry:has(.hud__killfeed-weapon--single) {
-  gap: var(--hud-killfeed-body-item-gap, 0px);
+  column-gap: 0;
 }
 
 .hud__killfeed-entry:has(.hud__killfeed-weapon--headshot) {
@@ -788,8 +796,23 @@ canvas {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--hud-killfeed-weapon-gap, 6px);
   height: 28px;
+}
+
+.hud__killfeed-entry:has(.hud__killfeed-weapon--single) .hud__killfeed-weapon {
+  margin-inline: calc(var(--hud-killfeed-body-item-gap, 0px) * 0.5);
+}
+
+.hud__killfeed-weapon > * + * {
+  margin-left: var(--hud-killfeed-weapon-gap, 0px);
+}
+
+.hud__killfeed-weapon--headshot.hud__killfeed-weapon--rifle > * + * {
+  margin-left: var(--hud-killfeed-rifle-headshot-weapon-gap, 4px);
+}
+
+.hud__killfeed-weapon--headshot.hud__killfeed-weapon--sniper > * + * {
+  margin-left: var(--hud-killfeed-sniper-headshot-weapon-gap, 1px);
 }
 
 .hud__killfeed-weapon--headshot {
@@ -802,6 +825,10 @@ canvas {
 
 .hud__killfeed-weapon--headshot.hud__killfeed-weapon--rifle {
   width: var(--hud-killfeed-rifle-headshot-weapon-slot-width, 117px);
+}
+
+.hud__killfeed-weapon--headshot.hud__killfeed-weapon--sniper {
+  width: var(--hud-killfeed-sniper-headshot-weapon-slot-width, 117px);
 }
 
 .hud__killfeed-weapon--headshot.hud__killfeed-weapon--pistol {
@@ -833,6 +860,18 @@ canvas {
   width: var(--hud-killfeed-rifle-headshot-weapon-icon-size, 113px);
   height: var(--hud-killfeed-rifle-headshot-weapon-icon-size, 113px);
   transform: translateY(var(--hud-killfeed-rifle-headshot-weapon-offset-y, 13px)) scaleX(-1);
+}
+
+.hud__killfeed-weapon-icon--sniper {
+  width: var(--hud-killfeed-sniper-body-weapon-icon-size, 113px);
+  height: var(--hud-killfeed-sniper-body-weapon-icon-size, 113px);
+  transform: translateY(var(--hud-killfeed-sniper-body-weapon-offset-y, 13px)) scaleX(1);
+}
+
+.hud__killfeed-weapon--headshot .hud__killfeed-weapon-icon--sniper {
+  width: var(--hud-killfeed-sniper-headshot-weapon-icon-size, 113px);
+  height: var(--hud-killfeed-sniper-headshot-weapon-icon-size, 113px);
+  transform: translateY(var(--hud-killfeed-sniper-headshot-weapon-offset-y, 13px)) scaleX(1);
 }
 
 .hud__killfeed-weapon-icon--pistol {

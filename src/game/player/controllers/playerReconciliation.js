@@ -14,6 +14,9 @@ export function replayAuthoritativeState({
     isGrounded: correction.authoritativeState.isGrounded ?? true,
     isCrouched: correction.authoritativeState.isCrouched ?? false,
     currentHeight: correction.authoritativeState.currentHeight ?? fallbackCurrentHeight,
+    crouchFatigue: correction.authoritativeState.crouchFatigue ?? 0,
+    crouchToggleCount: correction.authoritativeState.crouchToggleCount ?? 0,
+    timeSinceCrouchToggle: correction.authoritativeState.timeSinceCrouchToggle ?? Infinity,
   });
 
   for (const replayInput of correction.replayInputs ?? []) {

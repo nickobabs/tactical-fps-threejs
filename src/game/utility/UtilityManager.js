@@ -148,7 +148,7 @@ export class UtilityManager {
     this.updateBombVisual(null);
   }
 
-  syncFrameInput(frameInput) {
+  syncFrameInput(frameInput, weaponManager = null) {
     this.state.interactionText = '';
 
     if (
@@ -164,6 +164,9 @@ export class UtilityManager {
 
     if (frameInput?.justPressed?.has?.('Digit6') && this.smokeCharges > 0) {
       this.equippedUtilityKey = SMOKE_UTILITY_KEY;
+      if (weaponManager?.activeWeaponKey === BOMB_UTILITY_KEY) {
+        weaponManager.equipWeapon(this.lastNonBombWeaponKey || 'rifle');
+      }
     }
   }
 
@@ -224,14 +227,17 @@ export class UtilityManager {
 
   getWeaponInputBlockState({ roundManager, localPlayerAlive } = {}) {
     const competitiveActionLocked = isCompetitiveGamemode(roundManager?.gamemode) && roundManager?.phase !== 'live';
-    const smokeEquipped = this.equippedUtilityKey === SMOKE_UTILITY_KEY
+    const smokeSelected = this.equippedUtilityKey === SMOKE_UTILITY_KEY
+      && localPlayerAlive
+      && !roundManager?.roundEnded;
+    const smokeEquipped = smokeSelected
       && localPlayerAlive
       && !roundManager?.roundEnded
       && roundManager?.phase === 'live';
     return {
       blockPrimaryAction: smokeEquipped || competitiveActionLocked,
       blockSecondaryAction: smokeEquipped || competitiveActionLocked,
-      hideViewModel: smokeEquipped,
+      hideViewModel: smokeSelected,
     };
   }
 

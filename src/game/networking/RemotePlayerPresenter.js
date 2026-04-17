@@ -2054,6 +2054,8 @@ function disposeRemotePlayerVisual(visual) {
 export class RemotePlayerPresenter {
   constructor(scene, options = {}) {
     this.scene = scene;
+    this.effectsManager = options.effectsManager ?? null;
+    this.localPlayerId = options.localPlayerId ?? null;
     this.sendHitboxAudit = typeof options.sendHitboxAudit === 'function'
       ? options.sendHitboxAudit
       : null;
@@ -2081,6 +2083,23 @@ export class RemotePlayerPresenter {
           setRemotePlayerWeapon(visual, event.weaponKey);
         }
         triggerRemotePlayerFireFlash(visual);
+      }
+      if (this.effectsManager && event?.playerId !== this.localPlayerId && event?.origin && event?.tracerEnd) {
+        const origin = new THREE.Vector3(
+          Number(event.origin.x ?? 0),
+          Number(event.origin.y ?? 0),
+          Number(event.origin.z ?? 0),
+        );
+        const tracerEnd = new THREE.Vector3(
+          Number(event.tracerEnd.x ?? 0),
+          Number(event.tracerEnd.y ?? 0),
+          Number(event.tracerEnd.z ?? 0),
+        );
+        if (Boolean(event.impact)) {
+          this.effectsManager.addTracerImpact(origin, tracerEnd);
+        } else {
+          this.effectsManager.addMissTracer(origin, tracerEnd);
+        }
       }
       return;
     }
@@ -2188,6 +2207,14 @@ export class RemotePlayerPresenter {
     this.characterTuningPanel?.destroy?.();
     this.remotePlayerMaterial.dispose();
     this.remotePlayerDeadMaterial.dispose();
+  }
+
+  setEffectsManager(effectsManager) {
+    this.effectsManager = effectsManager ?? null;
+  }
+
+  setLocalPlayerId(playerId) {
+    this.localPlayerId = playerId ? String(playerId) : null;
   }
 
   maybeSendHitboxAudit(visual, renderPlayer, authoritativeState) {

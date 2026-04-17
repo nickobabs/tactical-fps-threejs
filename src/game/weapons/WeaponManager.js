@@ -214,6 +214,9 @@ export class WeaponManager {
       weaponKey,
       currentWeapon: this.currentWeapon,
     }));
+    this.zoomFov = this.baseFov;
+    this.camera.fov = this.baseFov;
+    this.camera.updateProjectionMatrix();
     this.viewModelTuningPanel?.sync?.();
     this.recoilTuningPanel?.sync?.();
     this.viewModelTuningPanel?.setForceAdsPreview?.(this.debugForceAdsPreview);
@@ -241,6 +244,9 @@ export class WeaponManager {
     this.showAdsReticle = false;
     this.scopeStage = 0;
     this.wasScoped = false;
+    this.zoomFov = this.baseFov;
+    this.camera.fov = this.baseFov;
+    this.camera.updateProjectionMatrix();
     if (this.activeWeaponKey === 'sniper') {
       this.cooldown = Math.max(0, preservedCooldown);
     }
@@ -487,6 +493,19 @@ export class WeaponManager {
     return 1;
   }
 
+  getAirborneAccuracyPenaltyRatio() {
+    if (this.activeWeaponKey !== 'sniper') {
+      return 0;
+    }
+
+    const airborneSpread = Math.max(0, Number(this.currentWeapon?.airborneSpread ?? 0));
+    if (airborneSpread <= 0 || Boolean(this.playerController?.isGrounded)) {
+      return 0;
+    }
+
+    return 1;
+  }
+
   getSniperAccuracyPenaltyRatio() {
     if (this.activeWeaponKey !== 'sniper') {
       return 0;
@@ -497,7 +516,11 @@ export class WeaponManager {
     const scopedPenaltyRatio = maxScopedPenaltySpread > 0
       ? THREE.MathUtils.clamp(scopedPenaltySpread / maxScopedPenaltySpread, 0, 1)
       : 0;
-    return Math.max(scopedPenaltyRatio, this.getMovingAccuracyPenaltyRatio());
+    return Math.max(
+      scopedPenaltyRatio,
+      this.getMovingAccuracyPenaltyRatio(),
+      this.getAirborneAccuracyPenaltyRatio(),
+    );
   }
 
   getTargetZoomFov() {
