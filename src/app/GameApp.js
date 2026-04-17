@@ -1090,6 +1090,7 @@ export class GameApp {
           this.handleCombatEventForSpectatorPresentation(event);
         },
         onLocalPlayerDamageDealt: (popup) => {
+          void this.audioManager.play('player-hit-taken');
           if (this.showDamageNumbers) {
             this.hitDamagePopups.push(popup);
           }

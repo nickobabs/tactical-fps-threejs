@@ -33,6 +33,7 @@
 
 - Audio uses the Web Audio API rather than restarting `HTMLAudioElement` instances on each shot.
 - Sounds are registered once, decoded into buffers, and played through short-lived source nodes.
+- Registered per-sound `baseVolume` now persists into playback correctly, so sound-level tuning in the registration table is actually authoritative unless a caller overrides it at play time.
 - Playback policy is data-driven per sound, with support for behaviors such as `interrupt`, `overlap`, and `skip`.
 - Master volume is handled through a dedicated gain node so future sound categories can branch from the same graph.
 - Audio context unlock is explicit, so pointer-lock resume and other user-gesture flows can reliably enable playback.
@@ -54,6 +55,7 @@
 - Implemented and active
 - Rifle fire, pistol fire, sniper fire, sniper zoom, and knife slash are registered through the shared manager
 - Rifle equip, knife draw, local being-hit, and local headshot-kill sounds are now also registered through the shared manager
+- Local confirmed enemy hits now also play the same hit-thud feedback used for taking damage, so landed shots have a stronger confirmation cue
 - Bomb planted and bomb defused announcement stingers are also registered through the shared manager
 - Local concrete footstep variants are also registered through the shared manager
 - Pause-menu master volume feeds directly into the master gain node

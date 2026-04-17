@@ -161,6 +161,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - A simple smoke grenade utility is now playable on `6` with authoritative throw replication, CS-style smoke bloom, and round-reset inventory refill.
 - A first-pass bomb explosion visual now plays at the planted bomb position when the bomb detonates.
 - Remote weapon-fire, smoke bloom, footstep, defuse-start, and short-range sniper scope-in audio now replicate from authoritative state with spatial playback on other clients.
+- Local audio feedback now also uses dedicated being-hit and headshot-kill stingers, and confirmed enemy hits can reuse the same hit-thud for stronger feedback.
 - The sniper scope overlay works and is still HUD-driven.
 - Bottom-left replicated chat is now active with `[ALL]` / `[TEAM]` send modes, timed fadeout, passive/open history limits, and full-history reveal while composing.
 - HDR skyboxes can be swapped at runtime.
@@ -181,6 +182,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - health, death, and respawn replicate back to clients
   - world geometry can block shots
   - HUD feedback now covers local health, damage taken/dealt, and respawn countdown
+  - replicated hit position/direction now also drive blood-hit feedback on remote players
 - Multiplayer correction now uses a deadzone/hysteresis policy and remains the current baseline.
 - HUD shows round state, FPS, weapon, utility, pointer-lock state, movement state, and current position/movement mode.
 - HUD now also includes:

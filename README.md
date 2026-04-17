@@ -70,6 +70,7 @@ It already supports real play loops:
 - Bomb equip, carry, drop, pickup, plant, countdown, defuse, and explosion baseline
 - First-pass bomb explosion visual at the planted position
 - Top-right killfeed with team-colored names, weapon icons, and headshot marker support
+- Compact blood-burst hit feedback on remote player hits
 
 ### Multiplayer
 
@@ -130,6 +131,7 @@ It already supports real play loops:
 - Forced-scoreboard match/intermission messaging for side swap, overtime, and match restart
 - Top-right killfeed with rifle/pistol icon support and headshot marker
 - Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
+- Confirmed-hit audio feedback for both taking damage and landing shots on enemies
 - Live `NETDEBUG` panel with clipboard copy support
 - Local browser persistence for player name, HUD mode, volume, sensitivity, and horizontal FOV
 
@@ -140,6 +142,7 @@ It already supports real play loops:
 - Bomb planted now also emits a world-positioned replicated beep that follows the planted countdown cadence
 - Local footstep pool with movement-tuned duration trimming
 - Replicated remote weapon, smoke bloom, and footstep sounds driven from authoritative state
+- Local one-shot registration now also covers dedicated knife draw, being-hit, and headshot-kill feedback, and registered per-sound base volume is now respected correctly by the runtime audio path
 - Web Audio spatial playback now prefers `PannerNode` with `HRTF` when available
 - Manual hearing-range attenuation/cutoff still applies on top of the spatial path for gameplay consistency
 
@@ -242,6 +245,7 @@ The active multiplayer baseline includes:
 - authoritative movement/state on the server
 - fire requests validated on the server
 - replicated damage, death, and respawn
+- replicated hit position/direction for better remote hit-feedback placement
 - replicated round, team, and objective state
 - replicated gamemode and match-flow state
 - replicated authoritative audio events for weapon fire, smoke bloom, and audible footsteps

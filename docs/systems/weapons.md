@@ -85,6 +85,7 @@
 - Knife equip now uses the authored full draw animation instead of only the earlier procedural stab-style presentation
 - Rifle and knife now also use dedicated equip sounds
 - Local weapon/audio feedback now also includes dedicated being-hit and headshot-kill stingers
+- Confirmed enemy hits can now also trigger the hit-thud feedback locally for stronger hit confirmation
 - Rifle, pistol, and knife now respect equip completion before they can fire
 - Semi-auto weapons now use edge-triggered fire plus a short input buffer so fast pistol clicks do not feel randomly dropped near the cooldown limit
 - Sniper specifics in the current build:

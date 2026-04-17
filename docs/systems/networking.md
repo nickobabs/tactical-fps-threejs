@@ -195,6 +195,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - clients send fire requests
   - the server validates hits against lag-compensated authoritative player hitboxes
   - rifle damage can now vary by hit zone
+  - `player-hit` events now also carry hit position/direction for better remote hit-feedback placement
   - player health / death / respawn are replicated
   - remote placeholders now reflect alive vs dead state
   - HUD feedback exists for local damage taken, damage dealt, and respawn countdown

@@ -119,6 +119,8 @@ const REMOTE_HITBOX_LAYOUT = createPlayerHitboxLayout();
 const REMOTE_HITBOX_WORLD_POINT_A = new THREE.Vector3();
 const REMOTE_HITBOX_WORLD_POINT_B = new THREE.Vector3();
 const REMOTE_TRACER_ORIGIN = new THREE.Vector3();
+const REMOTE_BLOOD_ORIGIN = new THREE.Vector3();
+const REMOTE_BLOOD_OUTWARD = new THREE.Vector3();
 const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
 const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
@@ -2118,13 +2120,27 @@ export class RemotePlayerPresenter {
           killed: Boolean(event.killed),
           authoritativeState: event.killed ? { deathClip: event.deathClip } : null,
         });
-        if (this.effectsManager && victimVisual.root?.position) {
-          const bloodOrigin = new THREE.Vector3(
-            Number(victimVisual.root.position.x ?? 0),
-            Number(victimVisual.root.position.y ?? 0) + Number(victimVisual.currentHeight ?? 1.72) * 0.62,
-            Number(victimVisual.root.position.z ?? 0),
+        if (this.effectsManager) {
+          const hitPosition = event?.hitPosition;
+          REMOTE_BLOOD_ORIGIN.set(
+            hitPosition ? Number(hitPosition.x ?? 0) : Number(victimVisual.root?.position.x ?? 0),
+            hitPosition ? Number(hitPosition.y ?? 0) : (Number(victimVisual.root?.position.y ?? 0) + Number(victimVisual.currentHeight ?? 1.72) * 0.62),
+            hitPosition ? Number(hitPosition.z ?? 0) : Number(victimVisual.root?.position.z ?? 0),
           );
-          this.effectsManager.addBloodBurst(bloodOrigin);
+
+          const hitDirection = event?.hitDirection;
+          REMOTE_BLOOD_OUTWARD.set(
+            hitDirection ? -Number(hitDirection.x ?? 0) : 0,
+            hitDirection ? -Number(hitDirection.y ?? 0) : 0.08,
+            hitDirection ? -Number(hitDirection.z ?? 0) : 0.18,
+          );
+          if (REMOTE_BLOOD_OUTWARD.lengthSq() <= 1e-6) {
+            REMOTE_BLOOD_OUTWARD.set(0, 0.12, 0.18);
+          } else {
+            REMOTE_BLOOD_OUTWARD.normalize();
+          }
+          REMOTE_BLOOD_ORIGIN.addScaledVector(REMOTE_BLOOD_OUTWARD, 0.16);
+          this.effectsManager.addBloodBurst(REMOTE_BLOOD_ORIGIN, REMOTE_BLOOD_OUTWARD);
         }
       }
       return;

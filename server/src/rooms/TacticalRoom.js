@@ -2395,6 +2395,16 @@ export class TacticalRoom extends Room {
       weaponKey: String(weapon?.key ?? player.activeWeaponKey ?? 'rifle'),
       damage,
       hitZone: bestHitZone,
+      hitPosition: {
+        x: SHOT_ORIGIN.x + (SHOT_DIRECTION.x * bestDistance),
+        y: SHOT_ORIGIN.y + (SHOT_DIRECTION.y * bestDistance),
+        z: SHOT_ORIGIN.z + (SHOT_DIRECTION.z * bestDistance),
+      },
+      hitDirection: {
+        x: SHOT_DIRECTION.x,
+        y: SHOT_DIRECTION.y,
+        z: SHOT_DIRECTION.z,
+      },
       remainingHealth: bestTarget.health,
       killed: bestTarget.health === 0,
       deathClip,

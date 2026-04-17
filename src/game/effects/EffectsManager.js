@@ -45,6 +45,12 @@ const BOMB_EXPLOSION_LAYOUT = [
 const BOMB_EXPLOSION_DURATION = 1.45;
 const BLOOD_BURST_DURATION = 0.12;
 const BLOOD_BURST_COUNT = 5;
+const BLOOD_BURST_UP = new THREE.Vector3(0, 1, 0);
+const BLOOD_BURST_FORWARD = new THREE.Vector3();
+const BLOOD_BURST_TANGENT = new THREE.Vector3();
+const BLOOD_BURST_BITANGENT = new THREE.Vector3();
+const BLOOD_BURST_OFFSET = new THREE.Vector3();
+const BLOOD_BURST_VELOCITY = new THREE.Vector3();
 
 let smokeTexture = null;
 let bloodTexture = null;
@@ -217,12 +223,26 @@ function createBombExplosion(position) {
   return group;
 }
 
-function createBloodBurst(position) {
+function createBloodBurst(position, outward = null) {
   const group = new THREE.Group();
   group.position.copy(position);
   group.userData.effectType = 'blood-burst';
   group.userData.life = BLOOD_BURST_DURATION;
   group.userData.duration = BLOOD_BURST_DURATION;
+
+  BLOOD_BURST_FORWARD.copy(outward ?? DEFAULT_NORMAL);
+  if (BLOOD_BURST_FORWARD.lengthSq() <= 1e-6) {
+    BLOOD_BURST_FORWARD.copy(DEFAULT_NORMAL);
+  } else {
+    BLOOD_BURST_FORWARD.normalize();
+  }
+  BLOOD_BURST_TANGENT.crossVectors(BLOOD_BURST_FORWARD, BLOOD_BURST_UP);
+  if (BLOOD_BURST_TANGENT.lengthSq() <= 1e-6) {
+    BLOOD_BURST_TANGENT.set(1, 0, 0);
+  } else {
+    BLOOD_BURST_TANGENT.normalize();
+  }
+  BLOOD_BURST_BITANGENT.crossVectors(BLOOD_BURST_FORWARD, BLOOD_BURST_TANGENT).normalize();
 
   const texture = getBloodTexture();
   for (let index = 0; index < BLOOD_BURST_COUNT; index += 1) {
@@ -238,17 +258,15 @@ function createBloodBurst(position) {
     );
     const baseScale = 0.14 + (index * 0.018);
     sprite.scale.setScalar(baseScale);
-    sprite.position.set(
-      Math.cos(angle) * (0.038 + index * 0.008),
-      0.018 + (index * 0.014),
-      Math.sin(angle) * (0.028 + index * 0.006),
-    );
+    BLOOD_BURST_OFFSET.copy(BLOOD_BURST_FORWARD).multiplyScalar(0.028 + index * 0.016);
+    BLOOD_BURST_OFFSET.addScaledVector(BLOOD_BURST_TANGENT, Math.cos(angle) * (0.03 + index * 0.008));
+    BLOOD_BURST_OFFSET.addScaledVector(BLOOD_BURST_BITANGENT, Math.sin(angle) * (0.022 + index * 0.006));
+    sprite.position.copy(BLOOD_BURST_OFFSET);
     sprite.userData.baseScale = baseScale;
-    sprite.userData.velocity = new THREE.Vector3(
-      Math.cos(angle) * (0.18 + index * 0.04),
-      0.09 + (index * 0.03),
-      Math.sin(angle) * (0.14 + index * 0.03),
-    );
+    BLOOD_BURST_VELOCITY.copy(BLOOD_BURST_FORWARD).multiplyScalar(0.24 + index * 0.06);
+    BLOOD_BURST_VELOCITY.addScaledVector(BLOOD_BURST_TANGENT, Math.cos(angle) * (0.1 + index * 0.028));
+    BLOOD_BURST_VELOCITY.addScaledVector(BLOOD_BURST_BITANGENT, Math.sin(angle) * (0.08 + index * 0.024));
+    sprite.userData.velocity = BLOOD_BURST_VELOCITY.clone();
     group.add(sprite);
   }
 
@@ -327,12 +345,12 @@ export class EffectsManager {
     return explosion;
   }
 
-  addBloodBurst(position) {
+  addBloodBurst(position, outward = null) {
     if (!this.scene || !position) {
       return null;
     }
 
-    const burst = createBloodBurst(position);
+    const burst = createBloodBurst(position, outward);
     this.scene.add(burst);
     this.transientObjects.push(burst);
     return burst;

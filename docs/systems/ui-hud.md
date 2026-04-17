@@ -108,6 +108,7 @@
   - headshot marker support
   - content-width cards capped by a tunable max width
 - Includes 4-way directional damage indicators around the crosshair
+- Includes remote hit blood-burst feedback on confirmed replicated player hits
 - Includes a transient bottom-left chat feed:
   - all-chat lines show `Name: message`
   - team-chat lines show `[TEAM] Name: message`
