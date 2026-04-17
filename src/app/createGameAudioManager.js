@@ -32,6 +32,7 @@ const GAME_AUDIO_REGISTRATIONS = [
   ['bomb-beep', '/audio/game/bomb beep.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ['bomb-planted', '/audio/game/bomb planted.mp3', { playback: 'interrupt' }],
   ['bomb-defused', '/audio/game/bomb defused.mp3', { playback: 'interrupt' }],
+  ['defuse-start', '/audio/game/defuse.mp3', { playback: 'interrupt', minIntervalMs: 120 }],
   ['round-freeze-clock', '/audio/game/clock.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ...FLOOR_FOOTSTEP_FILES.map((fileName, index) => {
     const sampleNumber = String(index + 1).padStart(3, '0');

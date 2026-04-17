@@ -187,6 +187,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - a toggleable classic HUD mode inspired by Source
   - plant-progress and bomb-planted timer/state feedback
   - a top-right killfeed with team-colored names, weapon icons, and headshot markers
+  - a post-death spectate banner plus teammate spectate target label/cycling hints
   - a HUD layout tuning workflow with draggable panels, live element outlines, and killfeed preview variants
 - Debug controls are now part of the active workflow:
   - `F8`: toggle `NETDEBUG`
@@ -221,6 +222,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - planting requires holding left click in a valid plant zone
   - planted bomb counts down 40 seconds
   - defenders can defuse the planted bomb
+  - only one defender can own the defuse at a time; active defuse ownership is now server-side
+  - crouch input no longer breaks defuse once the interaction is active
   - explosion awards the round to attackers
   - imported maps can define sites with `plantable_*` markers
   - server-authoritative imported-map bomb-site validation is now implemented
@@ -234,6 +237,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - infinite overtime in six-round sets with side swap after three rounds
   - match end scoreboard force-open plus 15-second automatic restart
   - side-swap / overtime intermissions with forced scoreboard and HUD messaging
+  - dead players now auto-spectate alive teammates after `2` seconds if a valid teammate exists
 
 ## Current Gameplay Snapshot
 
@@ -523,7 +527,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - intermission lockout for fire, smoke, and bomb actions while still allowing movement
 - Runtime nav generation still exists as a fallback and still runs on the main thread when used.
 - `RoundManager` and `UtilityManager` are no longer stubs, but they are still early gameplay systems with narrow rule coverage.
-- Competitive rules are now much broader than the first objective slice, but economy / spectate / buy flow are still missing.
+- Competitive rules are now much broader than the first objective slice, but economy and buy flow are still missing.
 - `PlayerState` still exists but remains unused.
 
 ## Latest Multiplayer Investigation
@@ -651,6 +655,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - dead players in that strip now render greyscaled/faded
   - the top timer is now the primary round timer surface and swaps to a red C4 icon while the bomb is planted
   - the planted bomb now also has a synced HUD pulse plus a replicated world beep from the planted position
+  - dead players now get a delayed teammate-spectate HUD banner with left/right cycling prompts while spectating
   - side swap and overtime now force the scoreboard open and show a timed transition banner
   - match win now force-opens the scoreboard and shows a timed restart banner
   - the top-right killfeed now uses SVG rifle/pistol icons and variant-specific tuning for:

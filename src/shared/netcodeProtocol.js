@@ -98,6 +98,7 @@ export function createDebugRoundControlMessage(state) {
 
 export function createBombDefuseMessage(state) {
   return {
+    action: String(state?.action ?? 'complete'),
     position: {
       x: Number(state?.position?.x ?? 0),
       y: Number(state?.position?.y ?? 0),

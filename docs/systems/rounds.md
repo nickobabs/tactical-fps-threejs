@@ -76,6 +76,10 @@
 ## Limitations
 
 - No economy or buy phase
-- No spectate / post-death competitive observer flow yet
+- Dead players now enter a simple teammate spectate flow after `2` seconds if a same-team alive player exists
+- This is currently a client-side observer pass only:
+  - no killer cam
+  - no free cam
+  - no server-side observer permissions/rules yet
 - No competitive buy/loadout rules yet
 - Competitive intermissions still allow movement for pacing; only combat/objective actions are locked

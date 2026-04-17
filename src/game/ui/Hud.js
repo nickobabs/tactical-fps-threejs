@@ -47,6 +47,7 @@ export function createHud({
   getDamageVignette,
   getDamageIndicators,
   getHitDamagePopups,
+  getRoundMvpText,
   getFps,
   getMasterVolume,
   getMouseSensitivity,
@@ -72,6 +73,8 @@ export function createHud({
   getIgnoreLocalCorrections,
   getIsMovementTraceRecording,
   getShowCrouchFatigueDebug,
+  getSpectatorState,
+  getAnnouncementText,
   consumeMarkDebugSnapshotRequested,
   onSelectSkybox,
   skyboxes = [],
@@ -123,6 +126,8 @@ export function createHud({
     </div>
     <div class="hud__hit-damage" aria-hidden="true"></div>
     <div class="hud__respawn" aria-hidden="true"></div>
+    <div class="hud__spectate" aria-hidden="true"></div>
+    <div class="hud__announcement" aria-hidden="true"></div>
     <div class="hud__ads-reticle" aria-hidden="true"></div>
     <div class="hud__scope ${weaponManager?.showScopeOverlay ? 'hud__scope--active' : ''}" aria-hidden="true">
       <div class="hud__scope-lens">
@@ -276,6 +281,8 @@ export function createHud({
   const damageIndicatorLeftEl = hud.querySelector('.hud__damage-indicator--left');
   const hitDamageEl = hud.querySelector('.hud__hit-damage');
   const respawnEl = hud.querySelector('.hud__respawn');
+  const spectateEl = hud.querySelector('.hud__spectate');
+  const announcementEl = hud.querySelector('.hud__announcement');
   const adsReticleEl = hud.querySelector('.hud__ads-reticle');
   const scopeEl = hud.querySelector('.hud__scope');
   const loadingEl = hud.querySelector('.hud__loading');
@@ -318,6 +325,8 @@ export function createHud({
   let lastDeadOverlay = null;
   let lastHitDamageHtml = '';
   let lastRespawnText = '';
+  let lastSpectateText = '';
+  let lastAnnouncementText = '';
   let lastRoundWinVisible = null;
   let lastRoundWinTitle = '';
   let lastRoundWinSubtitle = '';
@@ -378,6 +387,11 @@ export function createHud({
   }
 
   function getRoundWinMvpText(roundManager, scoreboardState) {
+    const trackedMvpText = String(getRoundMvpText?.() ?? '');
+    if (trackedMvpText) {
+      return trackedMvpText;
+    }
+
     const winnerTeam = String(roundManager?.winnerTeam ?? '');
     if (!winnerTeam) {
       return '';
@@ -834,7 +848,7 @@ export function createHud({
 
       const damageVignette = Math.max(0, Math.min(1, Number(getDamageVignette?.() ?? 0)));
       if (Math.abs(damageVignette - lastDamageVignette) > 0.01) {
-        damageVignetteEl.style.opacity = String(damageVignette * 0.75);
+        damageVignetteEl.style.opacity = String(damageVignette * 0.95);
         lastDamageVignette = damageVignette;
       }
       const damageIndicators = getDamageIndicators?.() ?? {};
@@ -861,7 +875,10 @@ export function createHud({
         lastDamageIndicatorLeft = leftIndicator;
       }
 
-      const deadOverlayActive = Boolean(localPlayerState?.isAlive === false);
+      const spectatorState = getSpectatorState?.() ?? { mode: 'none', secondsRemaining: 0, targetName: '' };
+      const deadOverlayActive = Boolean(localPlayerState?.isAlive === false)
+        && spectatorState.mode !== 'teammate'
+        && spectatorState.mode !== 'waiting';
       if (deadOverlayActive !== lastDeadOverlay) {
         deadOverlayEl.classList.toggle('hud__dead-overlay--active', deadOverlayActive);
         lastDeadOverlay = deadOverlayActive;
@@ -888,6 +905,24 @@ export function createHud({
         respawnEl.textContent = respawnText;
         respawnEl.classList.toggle('hud__respawn--active', Boolean(respawnText));
         lastRespawnText = respawnText;
+      }
+      const spectateText = spectatorState.mode === 'pending'
+        ? `Spectating in: ${Number(spectatorState.secondsRemaining ?? 0).toFixed(1)}`
+        : spectatorState.mode === 'teammate'
+          ? `Spectating: ${spectatorState.targetName} - LMB/RMB or <-/->`
+          : spectatorState.mode === 'waiting'
+            ? 'Spectating: No alive teammates'
+            : '';
+      if (spectateText !== lastSpectateText) {
+        spectateEl.textContent = spectateText;
+        spectateEl.classList.toggle('hud__spectate--active', Boolean(spectateText));
+        lastSpectateText = spectateText;
+      }
+      const announcementText = paused ? '' : String(getAnnouncementText?.() ?? '');
+      if (announcementText !== lastAnnouncementText) {
+        announcementEl.textContent = announcementText;
+        announcementEl.classList.toggle('hud__announcement--active', Boolean(announcementText));
+        lastAnnouncementText = announcementText;
       }
 
       const crosshairHidden = Boolean(weaponManager?.isScoped || paused);

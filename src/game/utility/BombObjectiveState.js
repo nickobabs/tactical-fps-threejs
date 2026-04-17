@@ -32,6 +32,7 @@ export class BombObjectiveState {
     this.pendingPlantRequest = false;
     this.defuseProgress = 0;
     this.pendingDefuseRequest = false;
+    this.pendingDefuseComplete = false;
   }
 
   resetRoundState() {
@@ -48,6 +49,7 @@ export class BombObjectiveState {
     this.pendingPlantRequest = false;
     this.defuseProgress = 0;
     this.pendingDefuseRequest = false;
+    this.pendingDefuseComplete = false;
   }
 
   collectAttackerPlayerIds({ networkClient, localPlayerId, selectedTeam }) {

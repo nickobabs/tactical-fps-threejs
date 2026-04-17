@@ -482,8 +482,8 @@ canvas {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 220px;
-  height: 220px;
+  width: 320px;
+  height: 320px;
   transform: translate(-50%, -50%);
 }
 
@@ -491,28 +491,28 @@ canvas {
   position: absolute;
   opacity: 0;
   filter:
-    drop-shadow(0 0 10px rgba(255, 40, 24, 0.4))
-    drop-shadow(0 0 4px rgba(0, 0, 0, 0.65));
+    drop-shadow(0 0 16px rgba(255, 40, 24, 0.5))
+    drop-shadow(0 0 6px rgba(0, 0, 0, 0.68));
 }
 
 .hud__damage-indicator--front,
 .hud__damage-indicator--back {
   left: 50%;
-  width: 90px;
-  height: 42px;
+  width: 124px;
+  height: 58px;
   transform: translateX(-50%);
 }
 
 .hud__damage-indicator--front {
-  top: 24px;
-  border: 5px solid rgba(255, 52, 34, 0.96);
+  top: 12px;
+  border: 6px solid rgba(255, 52, 34, 0.98);
   border-bottom: 0;
   border-radius: 999px 999px 0 0;
 }
 
 .hud__damage-indicator--back {
-  bottom: 24px;
-  border: 5px solid rgba(255, 52, 34, 0.96);
+  bottom: 12px;
+  border: 6px solid rgba(255, 52, 34, 0.98);
   border-top: 0;
   border-radius: 0 0 999px 999px;
 }
@@ -520,21 +520,21 @@ canvas {
 .hud__damage-indicator--left,
 .hud__damage-indicator--right {
   top: 50%;
-  width: 42px;
-  height: 90px;
+  width: 58px;
+  height: 124px;
   transform: translateY(-50%);
 }
 
 .hud__damage-indicator--left {
-  left: 24px;
-  border: 5px solid rgba(255, 52, 34, 0.96);
+  left: 12px;
+  border: 6px solid rgba(255, 52, 34, 0.98);
   border-right: 0;
   border-radius: 999px 0 0 999px;
 }
 
 .hud__damage-indicator--right {
-  right: 24px;
-  border: 5px solid rgba(255, 52, 34, 0.96);
+  right: 12px;
+  border: 6px solid rgba(255, 52, 34, 0.98);
   border-left: 0;
   border-radius: 0 999px 999px 0;
 }
@@ -577,6 +577,48 @@ canvas {
 }
 
 .hud__respawn--active {
+  display: block;
+}
+
+.hud__spectate {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  display: none;
+  padding: 12px 16px;
+  border: 1px solid rgba(174, 211, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(7, 12, 16, 0.78);
+  backdrop-filter: blur(10px);
+  color: #eef5ff;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hud__spectate--active {
+  display: block;
+}
+
+.hud__announcement {
+  position: absolute;
+  left: 50%;
+  bottom: 116px;
+  transform: translateX(-50%);
+  display: none;
+  padding: 10px 16px;
+  border: 1px solid rgba(233, 204, 113, 0.24);
+  border-radius: 10px;
+  background: rgba(22, 18, 9, 0.86);
+  backdrop-filter: blur(10px);
+  color: #f3df9b;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hud__announcement--active {
   display: block;
 }
 

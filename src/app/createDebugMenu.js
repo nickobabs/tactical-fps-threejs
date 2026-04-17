@@ -26,6 +26,8 @@ export function createDebugMenu({
   onToggleCrouchFatigueDebug,
   onToggleInfiniteAmmo,
   getInfiniteAmmoEnabled,
+  onToggleDamageNumbers,
+  getDamageNumbersEnabled,
 }) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return null;
@@ -83,6 +85,11 @@ export function createDebugMenu({
           label: 'Crouch Fatigue Debug',
           description: 'Toggle crouch-fatigue values on the movement HUD line.',
           onClick: () => onToggleCrouchFatigueDebug?.(),
+        },
+        {
+          getLabel: () => `Damage Numbers: ${getDamageNumbersEnabled?.() ? 'ON' : 'OFF'}`,
+          getDescription: () => 'Toggle local hit-damage popup numbers in the HUD.',
+          onClick: () => onToggleDamageNumbers?.(),
         },
       ],
     },

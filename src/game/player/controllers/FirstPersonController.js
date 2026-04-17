@@ -98,7 +98,7 @@ export class FirstPersonController {
 
     this.walkSpeed = 4.92;
     this.runSpeed = 7.44;
-    this.crouchSpeed = 2.64;
+    this.crouchSpeed = 2.1;
     this.flySpeed = 8;
     this.flySprintSpeed = 16;
     this.jumpForce = 6.1;
@@ -701,7 +701,7 @@ export class FirstPersonController {
       left: false,
       right: false,
       walk: false,
-      crouch: this.interactionLockMode === 'plant' ? true : snapshot.crouch,
+      crouch: this.interactionLockMode === 'plant' ? true : this.isCrouched,
       jump: false,
     };
   }

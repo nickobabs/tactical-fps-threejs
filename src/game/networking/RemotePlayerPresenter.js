@@ -118,6 +118,7 @@ const REMOTE_HITBOX_UP_AXIS = new THREE.Vector3(0, 1, 0);
 const REMOTE_HITBOX_LAYOUT = createPlayerHitboxLayout();
 const REMOTE_HITBOX_WORLD_POINT_A = new THREE.Vector3();
 const REMOTE_HITBOX_WORLD_POINT_B = new THREE.Vector3();
+const REMOTE_TRACER_ORIGIN = new THREE.Vector3();
 const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
 const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
@@ -2061,6 +2062,7 @@ export class RemotePlayerPresenter {
       : null;
     this.remotePlayerMeshes = new Map();
     this.showHitVolumeDebug = false;
+    this.spectatorTargetPlayerId = null;
     this.weaponTuningPanel = createRemoteWeaponTuningPanel();
     this.characterTuningPanel = createRemoteCharacterTuningPanel();
     this.remotePlayerMaterial = new THREE.MeshStandardMaterial({
@@ -2085,11 +2087,14 @@ export class RemotePlayerPresenter {
         triggerRemotePlayerFireFlash(visual);
       }
       if (this.effectsManager && event?.playerId !== this.localPlayerId && event?.origin && event?.tracerEnd) {
-        const origin = new THREE.Vector3(
-          Number(event.origin.x ?? 0),
-          Number(event.origin.y ?? 0),
-          Number(event.origin.z ?? 0),
-        );
+        const flash = visual?.weaponMesh?.userData?.flash ?? null;
+        const origin = flash
+          ? flash.getWorldPosition(REMOTE_TRACER_ORIGIN).clone()
+          : new THREE.Vector3(
+            Number(event.origin.x ?? 0),
+            Number(event.origin.y ?? 0),
+            Number(event.origin.z ?? 0),
+          );
         const tracerEnd = new THREE.Vector3(
           Number(event.tracerEnd.x ?? 0),
           Number(event.tracerEnd.y ?? 0),
@@ -2111,6 +2116,14 @@ export class RemotePlayerPresenter {
           killed: Boolean(event.killed),
           authoritativeState: event.killed ? { deathClip: event.deathClip } : null,
         });
+        if (this.effectsManager && victimVisual.root?.position) {
+          const bloodOrigin = new THREE.Vector3(
+            Number(victimVisual.root.position.x ?? 0),
+            Number(victimVisual.root.position.y ?? 0) + Number(victimVisual.currentHeight ?? 1.72) * 0.62,
+            Number(victimVisual.root.position.z ?? 0),
+          );
+          this.effectsManager.addBloodBurst(bloodOrigin);
+        }
       }
       return;
     }
@@ -2176,6 +2189,9 @@ export class RemotePlayerPresenter {
         alive: this.remotePlayerMaterial,
         dead: this.remotePlayerDeadMaterial,
       });
+      const hideForSpectator = this.spectatorTargetPlayerId != null && player.playerId === this.spectatorTargetPlayerId;
+      visual.root.visible = !hideForSpectator;
+      visual.hitVolumeDebugGroup.group.visible = this.showHitVolumeDebug && !hideForSpectator;
       this.maybeSendHitboxAudit(visual, renderPlayer, authoritativeState);
     }
 
@@ -2215,6 +2231,10 @@ export class RemotePlayerPresenter {
 
   setLocalPlayerId(playerId) {
     this.localPlayerId = playerId ? String(playerId) : null;
+  }
+
+  setSpectatorTargetPlayerId(playerId) {
+    this.spectatorTargetPlayerId = playerId ? String(playerId) : null;
   }
 
   maybeSendHitboxAudit(visual, renderPlayer, authoritativeState) {

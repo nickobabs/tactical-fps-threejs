@@ -36,6 +36,8 @@ const HUD_MODE_STORAGE_KEY = 'tactical-fps-threejs-hud-mode';
 const SETTINGS_STORAGE_KEY = 'tactical-fps-threejs-settings';
 const MAX_PLAYER_NAME_LENGTH = 24;
 const KILLFEED_ENTRY_LIFETIME_MS = 4500;
+const SPECTATE_DELAY_MS = 2000;
+const BOMB_CARRIER_ANNOUNCEMENT_MS = 3000;
 
 function sanitizePlayerName(value, fallback = 'Player') {
   const normalized = String(value ?? '')
@@ -196,6 +198,7 @@ export class GameApp {
     };
     this.hitDamagePopups = [];
     this.killfeedEntries = [];
+    this.roundKillCounts = new Map();
     this.selectedTeam = null;
     this.selectedPlayerName = loadStoredPlayerName();
     this.selectedGamemode = GAMEMODES.DEBUG;
@@ -205,6 +208,11 @@ export class GameApp {
     this.lastRoundWinReason = null;
     this.lastFreezeCountdownCue = null;
     this.lastFreezeTimeLeft = null;
+    this.lastAmmoResetRoundKey = null;
+    this.lastObservedRoundPhaseKey = null;
+    this.lastLocalPlayerHasBomb = false;
+    this.bombCarrierAnnouncementText = '';
+    this.bombCarrierAnnouncementExpiresAt = 0;
     this.audioDebugState = {
       lastFootstep: null,
       lastWeapon: null,
@@ -216,6 +224,11 @@ export class GameApp {
     this.scene.fog = new THREE.Fog(0x0c1218, 120, 320);
     this.debugController = new GameDebugController(this.scene);
     this.showCrouchFatigueDebug = false;
+    this.showDamageNumbers = false;
+    this.spectatorMode = 'none';
+    this.spectatorTargetPlayerId = null;
+    this.spectatorActivateAt = 0;
+    this.activeSpectatorTargetState = null;
     this.remotePlayerPresenter = new RemotePlayerPresenter(this.scene);
     const initialMapId = MAP_OPTIONS[0].id;
     this.selectedSkyboxId = SKYBOX_OPTIONS[0].id;
@@ -245,6 +258,8 @@ export class GameApp {
       onToggleCrouchFatigueDebug: () => this.toggleCrouchFatigueDebug(),
       onToggleInfiniteAmmo: () => this.toggleInfiniteAmmoDebug(),
       getInfiniteAmmoEnabled: () => this.getInfiniteAmmoEnabled(),
+      onToggleDamageNumbers: () => this.toggleDamageNumbers(),
+      getDamageNumbersEnabled: () => this.showDamageNumbers,
     });
     applyHudLayoutTuningToRoot();
     this.hudLayoutTuningPanel = createHudLayoutTuningPanel();
@@ -349,6 +364,7 @@ export class GameApp {
       getDamageVignette: () => this.damageVignette,
       getDamageIndicators: () => this.damageIndicators,
       getHitDamagePopups: () => this.hitDamagePopups,
+      getRoundMvpText: () => this.getRoundMvpText(),
       getFps: () => this.currentFps,
       getMasterVolume: () => this.audioManager.getMasterVolume(),
       getMouseSensitivity: () => this.mouseSensitivity,
@@ -374,6 +390,8 @@ export class GameApp {
       getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
       getIsMovementTraceRecording: () => this.debugController.isMovementTraceRecording(),
       getShowCrouchFatigueDebug: () => this.showCrouchFatigueDebug,
+      getSpectatorState: () => this.getSpectatorUiState(),
+      getAnnouncementText: () => this.getHudAnnouncementText(),
       consumeMarkDebugSnapshotRequested: () => this.debugController.consumeMarkDebugSnapshotRequested(),
       onSelectSkybox: (skyboxId) => this.setSkybox(skyboxId),
       skyboxes: SKYBOX_OPTIONS,
@@ -385,9 +403,113 @@ export class GameApp {
   unloadMap() {
     this.lastObjectiveBombState = null;
     this.lastRoundWinReason = null;
+    this.lastAmmoResetRoundKey = null;
+    this.lastObservedRoundPhaseKey = null;
+    this.roundKillCounts.clear();
+    this.lastLocalPlayerHasBomb = false;
+    this.bombCarrierAnnouncementText = '';
+    this.bombCarrierAnnouncementExpiresAt = 0;
     this.sessionController.unloadCurrentRuntime({
       remotePlayerPresenter: this.remotePlayerPresenter,
     });
+  }
+
+  updateRoundStartResets() {
+    const roundState = this.networkClient.getRoundState?.() ?? this.runtime?.roundManager ?? null;
+    if (!roundState) {
+      this.lastAmmoResetRoundKey = null;
+      return;
+    }
+
+    if (String(roundState.phase ?? '') !== 'freeze') {
+      return;
+    }
+
+    const roundKey = `${Number(roundState.roundNumber ?? 0)}:${String(roundState.phase ?? '')}`;
+    if (this.lastAmmoResetRoundKey === roundKey) {
+      return;
+    }
+
+    this.lastAmmoResetRoundKey = roundKey;
+    this.roundKillCounts.clear();
+    this.runtime?.weaponManager?.refillAllAmmo?.();
+  }
+
+  getRoundMvpText() {
+    const roundState = this.networkClient.getRoundState?.() ?? this.runtime?.roundManager ?? null;
+    const winnerTeam = String(roundState?.winnerTeam ?? '');
+    if (!winnerTeam || this.roundKillCounts.size === 0) {
+      return '';
+    }
+
+    let bestPlayerId = null;
+    let bestKills = -1;
+    let bestDeaths = Infinity;
+    let bestName = '';
+    for (const [playerId, kills] of this.roundKillCounts.entries()) {
+      const scoreboardPlayer = this.networkClient.getScoreboardPlayer?.(playerId) ?? null;
+      if (!scoreboardPlayer || String(scoreboardPlayer.team ?? '') !== winnerTeam) {
+        continue;
+      }
+      const resolvedKills = Number(kills ?? 0);
+      const resolvedDeaths = Number(scoreboardPlayer.deaths ?? 0);
+      const resolvedName = String(scoreboardPlayer.displayName ?? playerId);
+      if (
+        resolvedKills > bestKills
+        || (resolvedKills === bestKills && resolvedDeaths < bestDeaths)
+        || (resolvedKills === bestKills && resolvedDeaths === bestDeaths && resolvedName.localeCompare(bestName) < 0)
+      ) {
+        bestPlayerId = playerId;
+        bestKills = resolvedKills;
+        bestDeaths = resolvedDeaths;
+        bestName = resolvedName;
+      }
+    }
+
+    if (!bestPlayerId || bestKills <= 0) {
+      return '';
+    }
+
+    return `MVP: ${bestName} for most kills`;
+  }
+
+  updateRoundTransitionAnnouncements() {
+    const roundState = this.networkClient.getRoundState?.() ?? this.runtime?.roundManager ?? null;
+    const localPlayerHasBomb = Boolean(this.runtime?.utilityManager?.getHudState?.()?.localPlayerHasBomb);
+    if (!roundState) {
+      this.lastObservedRoundPhaseKey = null;
+      this.lastLocalPlayerHasBomb = localPlayerHasBomb;
+      return;
+    }
+
+    const roundNumber = Number(roundState.roundNumber ?? 0);
+    const phase = String(roundState.phase ?? '');
+    const phaseKey = `${roundNumber}:${phase}`;
+    const previousPhaseKey = this.lastObservedRoundPhaseKey;
+    this.lastObservedRoundPhaseKey = phaseKey;
+
+    if (previousPhaseKey === `${roundNumber}:freeze` && phase === 'live') {
+      if (localPlayerHasBomb) {
+        this.bombCarrierAnnouncementText = 'You have the bomb';
+        this.bombCarrierAnnouncementExpiresAt = performance.now() + BOMB_CARRIER_ANNOUNCEMENT_MS;
+      }
+    }
+    if (!this.lastLocalPlayerHasBomb && localPlayerHasBomb) {
+      this.bombCarrierAnnouncementText = 'You have the bomb';
+      this.bombCarrierAnnouncementExpiresAt = performance.now() + BOMB_CARRIER_ANNOUNCEMENT_MS;
+    }
+    this.lastLocalPlayerHasBomb = localPlayerHasBomb;
+  }
+
+  getHudAnnouncementText() {
+    if (
+      !this.bombCarrierAnnouncementText
+      || performance.now() >= Number(this.bombCarrierAnnouncementExpiresAt ?? 0)
+    ) {
+      return '';
+    }
+
+    return this.bombCarrierAnnouncementText;
   }
 
   updateObjectiveAudioCues() {
@@ -441,10 +563,9 @@ export class GameApp {
   }
 
   playReplicatedAudioEvents() {
-    const listenerPosition = this.runtime?.playerController?.getEyePosition?.()
-      ?? this.runtime?.playerController?.position
-      ?? null;
-    const listenerYaw = Number(this.runtime?.playerController?.yawAngle ?? 0);
+    const listenerTransform = this.getActiveViewTransform();
+    const listenerPosition = listenerTransform?.position ?? null;
+    const listenerYaw = Number(listenerTransform?.yaw ?? 0);
     const localMapId = this.networkClient.getLocalPlayerState?.()?.mapId ?? this.selectedMapId ?? null;
 
     for (const event of this.networkClient.consumeAudioEvents?.() ?? []) {
@@ -555,13 +676,14 @@ export class GameApp {
   }
 
   updateAudioListener() {
-    const listenerPosition = this.runtime?.playerController?.getEyePosition?.()
+    const listenerTransform = this.getActiveViewTransform();
+    const listenerPosition = listenerTransform?.position
       ?? this.runtime?.playerController?.position
       ?? null;
     this.audioManager.setListenerTransform({
       position: listenerPosition,
-      yaw: Number(this.runtime?.playerController?.yawAngle ?? 0),
-      pitch: Number(this.runtime?.playerController?.pitchAngle ?? 0),
+      yaw: Number(listenerTransform?.yaw ?? this.runtime?.playerController?.yawAngle ?? 0),
+      pitch: Number(listenerTransform?.pitch ?? this.runtime?.playerController?.pitchAngle ?? 0),
     });
   }
 
@@ -960,10 +1082,12 @@ export class GameApp {
           this.handleCombatEventForUi(event);
         },
         onLocalPlayerDamageDealt: (popup) => {
-          this.hitDamagePopups.push(popup);
+          if (this.showDamageNumbers) {
+            this.hitDamagePopups.push(popup);
+          }
         },
         onLocalPlayerHit: () => {
-          this.damageVignette = Math.min(1, this.damageVignette + 0.35);
+          this.damageVignette = Math.min(1, this.damageVignette + 0.55);
         },
         onLocalPlayerDamageTaken: (event) => {
           this.registerDamageIndicator(event);
@@ -985,6 +1109,14 @@ export class GameApp {
   handleCombatEventForUi(event) {
     if (event?.type !== 'player-hit' || !event?.killed) {
       return;
+    }
+
+    const attackerPlayerId = String(event.attackerPlayerId ?? '');
+    if (attackerPlayerId) {
+      this.roundKillCounts.set(
+        attackerPlayerId,
+        Number(this.roundKillCounts.get(attackerPlayerId) ?? 0) + 1,
+      );
     }
 
     const attacker = this.networkClient.getScoreboardPlayer?.(event.attackerPlayerId) ?? null;
@@ -1089,6 +1221,7 @@ export class GameApp {
   updateRemotePlayers(delta) {
     this.remotePlayerPresenter.setEffectsManager(this.runtime?.effectsManager ?? null);
     this.remotePlayerPresenter.setLocalPlayerId(this.networkClient.playerId ?? null);
+    this.remotePlayerPresenter.setSpectatorTargetPlayerId(this.spectatorMode === 'teammate' ? this.spectatorTargetPlayerId : null);
     if (this.authoritativeNetworkingEnabled) {
       this.remotePlayerPresenter.syncPlayers(
         this.networkClient.getRemotePlayers(),
@@ -1102,12 +1235,14 @@ export class GameApp {
   }
 
   updateGameplayFrame(delta, frameInput) {
+    this.updateRoundStartResets();
     const localCombatState = this.networkClient.getLocalPlayerState?.();
     const authoritativeLocalTeam = localCombatState?.team;
     if (authoritativeLocalTeam === TEAMS.ATTACKERS || authoritativeLocalTeam === TEAMS.DEFENDERS) {
       this.selectedTeam = authoritativeLocalTeam;
     }
     const localPlayerAlive = localCombatState?.isAlive !== false;
+    this.updateSpectatorState(frameInput, localPlayerAlive);
     if (!this.lastLocalPlayerAlive && localPlayerAlive) {
       this.runtime?.weaponManager?.refillAllAmmo?.();
     }
@@ -1119,18 +1254,21 @@ export class GameApp {
       this.updateEffects(delta);
       this.updatePlayerPresentation(delta);
       this.updateRemotePlayers(delta);
+      this.applySpectatorView();
       return;
     }
 
     this.queueJumpIfRequested(frameInput);
     this.runLocalSimulation(delta, frameInput, localPlayerAlive);
     this.updateWorldSimulation(delta, frameInput);
+    this.updateRoundTransitionAnnouncements();
     this.updateAudioListener();
     this.updateNetworkState(delta);
     this.updateEffects(delta);
     this.updatePlayerPresentation(delta);
     this.updateTargets(delta);
     this.updateRemotePlayers(delta);
+    this.applySpectatorView();
     this.recordMovementTraceIfNeeded();
   }
 
@@ -1266,6 +1404,13 @@ export class GameApp {
     this.showCrouchFatigueDebug = !this.showCrouchFatigueDebug;
   }
 
+  toggleDamageNumbers() {
+    this.showDamageNumbers = !this.showDamageNumbers;
+    if (!this.showDamageNumbers) {
+      this.hitDamagePopups = [];
+    }
+  }
+
   getInfiniteAmmoEnabled() {
     return Boolean(this.networkClient.getGameplaySettings?.()?.infiniteAmmoEnabled ?? true);
   }
@@ -1279,6 +1424,157 @@ export class GameApp {
       });
     }
     this.runtime?.weaponManager?.setInfiniteAmmoEnabled?.(nextEnabled);
+  }
+
+  clearSpectatorState() {
+    this.spectatorMode = 'none';
+    this.spectatorTargetPlayerId = null;
+    this.spectatorActivateAt = 0;
+    this.activeSpectatorTargetState = null;
+  }
+
+  getAliveTeammateSpectateCandidates() {
+    const localTeam = String(this.networkClient.getLocalPlayerState?.()?.team ?? this.selectedTeam ?? '');
+    return (this.networkClient.getRemotePlayers?.() ?? [])
+      .filter((player) => player?.isAlive !== false && String(player?.team ?? '') === localTeam);
+  }
+
+  cycleSpectatorTarget(direction = 1) {
+    const candidates = this.getAliveTeammateSpectateCandidates();
+    if (candidates.length === 0) {
+      this.spectatorTargetPlayerId = null;
+      return;
+    }
+
+    const currentIndex = candidates.findIndex((candidate) => candidate.playerId === this.spectatorTargetPlayerId);
+    const normalizedDirection = direction < 0 ? -1 : 1;
+    const nextIndex = currentIndex >= 0
+      ? (currentIndex + normalizedDirection + candidates.length) % candidates.length
+      : 0;
+    this.spectatorTargetPlayerId = candidates[nextIndex]?.playerId ?? null;
+  }
+
+  updateSpectatorState(frameInput, localPlayerAlive) {
+    const now = performance.now();
+    if (localPlayerAlive) {
+      this.clearSpectatorState();
+      return;
+    }
+
+    if (this.lastLocalPlayerAlive) {
+      this.spectatorMode = 'pending';
+      this.spectatorTargetPlayerId = null;
+      this.spectatorActivateAt = now + SPECTATE_DELAY_MS;
+      this.activeSpectatorTargetState = null;
+    }
+
+    if (this.spectatorMode === 'pending' && now < this.spectatorActivateAt) {
+      this.activeSpectatorTargetState = null;
+      return;
+    }
+
+    const candidates = this.getAliveTeammateSpectateCandidates();
+    if (candidates.length === 0) {
+      this.spectatorMode = 'waiting';
+      this.spectatorTargetPlayerId = null;
+      this.activeSpectatorTargetState = null;
+      return;
+    }
+
+    this.spectatorMode = 'teammate';
+    if (!candidates.some((candidate) => candidate.playerId === this.spectatorTargetPlayerId)) {
+      this.spectatorTargetPlayerId = candidates[0]?.playerId ?? null;
+    }
+
+    if (frameInput.justPressed.has('ArrowLeft') || frameInput.mouseButtonsJustPressed.has(0)) {
+      this.cycleSpectatorTarget(-1);
+    } else if (frameInput.justPressed.has('ArrowRight') || frameInput.mouseButtonsJustPressed.has(2)) {
+      this.cycleSpectatorTarget(1);
+    }
+
+    this.activeSpectatorTargetState = candidates.find((candidate) => candidate.playerId === this.spectatorTargetPlayerId) ?? null;
+  }
+
+  applySpectatorView() {
+    const playerController = this.runtime?.playerController;
+    if (!playerController || this.spectatorMode !== 'teammate' || !this.activeSpectatorTargetState) {
+      this.remotePlayerPresenter.setSpectatorTargetPlayerId(null);
+      return;
+    }
+
+    const target = this.activeSpectatorTargetState;
+    playerController.yaw.position.set(
+      Number(target.position?.x ?? 0),
+      Number(target.position?.y ?? 0),
+      Number(target.position?.z ?? 0),
+    );
+    playerController.yaw.rotation.y = Number(target.yaw ?? 0);
+    playerController.pitch.position.y = Number(target.currentHeight ?? playerController.currentHeight ?? 1.72);
+    playerController.pitch.rotation.x = Number(target.pitch ?? 0);
+    playerController.viewAnchor.position.set(0, 0, 0);
+    playerController.camera.position.set(0, 0, 0);
+    if (this.runtime?.weaponManager?.viewModel) {
+      this.runtime.weaponManager.viewModel.visible = false;
+    }
+    if (this.runtime?.weaponManager) {
+      this.runtime.weaponManager.showScopeOverlay = false;
+      this.runtime.weaponManager.showAdsReticle = false;
+    }
+    this.remotePlayerPresenter.setSpectatorTargetPlayerId(target.playerId);
+  }
+
+  getActiveViewTransform() {
+    if (this.spectatorMode === 'teammate' && this.activeSpectatorTargetState) {
+      const target = this.activeSpectatorTargetState;
+      return {
+        position: {
+          x: Number(target.position?.x ?? 0),
+          y: Number(target.position?.y ?? 0) + Number(target.currentHeight ?? 0),
+          z: Number(target.position?.z ?? 0),
+        },
+        yaw: Number(target.yaw ?? 0),
+        pitch: Number(target.pitch ?? 0),
+      };
+    }
+
+    const playerController = this.runtime?.playerController;
+    const eyePosition = playerController?.getEyePosition?.();
+    return {
+      position: eyePosition ?? playerController?.position ?? null,
+      yaw: Number(playerController?.yawAngle ?? 0),
+      pitch: Number(playerController?.pitchAngle ?? 0),
+    };
+  }
+
+  getSpectatorUiState() {
+    const now = performance.now();
+    if (this.spectatorMode === 'pending') {
+      return {
+        mode: 'pending',
+        secondsRemaining: Math.max(0, (this.spectatorActivateAt - now) / 1000),
+        targetName: '',
+      };
+    }
+    if (this.spectatorMode === 'teammate' && this.activeSpectatorTargetState) {
+      return {
+        mode: 'teammate',
+        secondsRemaining: 0,
+        targetName: String(this.activeSpectatorTargetState.displayName ?? this.activeSpectatorTargetState.playerId ?? 'Teammate'),
+      };
+    }
+    if (this.spectatorMode === 'waiting') {
+      return {
+        mode: 'waiting',
+        secondsRemaining: 0,
+        targetName: '',
+      };
+    }
+
+    return {
+      mode: 'none',
+      secondsRemaining: 0,
+      targetName: '',
+    };
   }
 
   async resumeGame() {

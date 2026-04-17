@@ -93,6 +93,12 @@
 - Imported maps can define plant zones through `plantable_*` markers
 - Server-authoritative imported-map plant-zone validation is now implemented for those marker-derived sites
 - The HUD now reuses the same objective widget for planting and defusing progress
+- Defuse ownership is now server-authoritative:
+  - only one defender can hold the active defuse at a time
+  - clients send `start` / `cancel` / `complete` defuse intents instead of only a final completion message
+  - the replicated `defuserPlayerId` is the lock owner for the live planted bomb
+- Local defuse flow now clears cleanly after a successful defuse, so the defuse bar does not linger into the round-end state
+- Defuse interaction lock now ignores crouch toggles instead of letting crouch input break the defuse hold
 
 ## Limitations
 

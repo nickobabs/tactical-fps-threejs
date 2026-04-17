@@ -43,8 +43,11 @@ const BOMB_EXPLOSION_LAYOUT = [
   [2.24, 0.88, 0.12, 2.86, 0.58, 0.28, 0.02],
 ];
 const BOMB_EXPLOSION_DURATION = 1.45;
+const BLOOD_BURST_DURATION = 0.16;
+const BLOOD_BURST_COUNT = 4;
 
 let smokeTexture = null;
+let bloodTexture = null;
 
 function createImpactMarker(point, normal = DEFAULT_NORMAL) {
   const marker = new THREE.Mesh(
@@ -94,6 +97,33 @@ function getSmokeTexture() {
   smokeTexture.colorSpace = THREE.SRGBColorSpace;
   smokeTexture.needsUpdate = true;
   return smokeTexture;
+}
+
+function getBloodTexture() {
+  if (bloodTexture || typeof document === 'undefined') {
+    return bloodTexture;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 96;
+  canvas.height = 96;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return null;
+  }
+
+  const gradient = context.createRadialGradient(48, 48, 8, 48, 48, 48);
+  gradient.addColorStop(0, 'rgba(255,210,210,0.95)');
+  gradient.addColorStop(0.28, 'rgba(190,28,28,0.92)');
+  gradient.addColorStop(0.68, 'rgba(115,8,8,0.52)');
+  gradient.addColorStop(1, 'rgba(70,0,0,0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  bloodTexture = new THREE.CanvasTexture(canvas);
+  bloodTexture.colorSpace = THREE.SRGBColorSpace;
+  bloodTexture.needsUpdate = true;
+  return bloodTexture;
 }
 
 function createSmokeCloud(position, {
@@ -186,6 +216,44 @@ function createBombExplosion(position) {
   return group;
 }
 
+function createBloodBurst(position) {
+  const group = new THREE.Group();
+  group.position.copy(position);
+  group.userData.effectType = 'blood-burst';
+  group.userData.life = BLOOD_BURST_DURATION;
+  group.userData.duration = BLOOD_BURST_DURATION;
+
+  const texture = getBloodTexture();
+  for (let index = 0; index < BLOOD_BURST_COUNT; index += 1) {
+    const angle = (index / BLOOD_BURST_COUNT) * Math.PI * 2;
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: texture,
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.88,
+        depthWrite: false,
+      }),
+    );
+    const baseScale = 0.18 + (index * 0.03);
+    sprite.scale.setScalar(baseScale);
+    sprite.position.set(
+      Math.cos(angle) * (0.08 + index * 0.015),
+      0.02 + (index * 0.025),
+      Math.sin(angle) * (0.05 + index * 0.01),
+    );
+    sprite.userData.baseScale = baseScale;
+    sprite.userData.velocity = new THREE.Vector3(
+      Math.cos(angle) * (0.55 + index * 0.08),
+      0.28 + (index * 0.08),
+      Math.sin(angle) * (0.38 + index * 0.06),
+    );
+    group.add(sprite);
+  }
+
+  return group;
+}
+
 function disposeEffectObject(root) {
   root?.removeFromParent?.();
   root?.traverse?.((child) => {
@@ -258,6 +326,17 @@ export class EffectsManager {
     return explosion;
   }
 
+  addBloodBurst(position) {
+    if (!this.scene || !position) {
+      return null;
+    }
+
+    const burst = createBloodBurst(position);
+    this.scene.add(burst);
+    this.transientObjects.push(burst);
+    return burst;
+  }
+
   updateSmokeCloud(object) {
     const duration = Math.max(0.001, Number(object.userData.duration ?? 14));
     const elapsed = Math.max(0, duration - Number(object.userData.life ?? 0));
@@ -327,6 +406,24 @@ export class EffectsManager {
     });
   }
 
+  updateBloodBurst(object) {
+    const duration = Math.max(0.001, Number(object.userData.duration ?? BLOOD_BURST_DURATION));
+    const elapsed = Math.max(0, duration - Number(object.userData.life ?? 0));
+    const alpha = 1 - THREE.MathUtils.clamp(elapsed / duration, 0, 1);
+
+    object.traverse((child) => {
+      if (!child.isSprite) {
+        return;
+      }
+
+      const velocity = child.userData.velocity ?? DEFAULT_NORMAL;
+      const baseScale = Number(child.userData.baseScale ?? 0.2);
+      child.position.addScaledVector(velocity, 0.016);
+      child.scale.setScalar(baseScale * THREE.MathUtils.lerp(0.9, 1.35, elapsed / duration));
+      child.material.opacity = alpha * 0.9;
+    });
+  }
+
   update(delta) {
     for (let index = this.transientObjects.length - 1; index >= 0; index -= 1) {
       const object = this.transientObjects[index];
@@ -336,6 +433,8 @@ export class EffectsManager {
         this.updateSmokeCloud(object);
       } else if (object.userData.effectType === 'bomb-explosion') {
         this.updateBombExplosion(object);
+      } else if (object.userData.effectType === 'blood-burst') {
+        this.updateBloodBurst(object);
       } else if (object.material?.opacity !== undefined) {
         object.material.opacity = Math.max(object.userData.life * 10, 0);
       }

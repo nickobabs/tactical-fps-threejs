@@ -89,6 +89,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - the room keeps a short recent history of authoritative target hitboxes
   - on `player-fire`, hit validation rewinds against the shooter's estimated one-way latency plus that interpolation delay
   - this rewind affects hit validation only; it does not rewind or snap victim movement
+- The first spectator flow is client-reconstructed rather than server-streamed:
+  - dead clients wait `2` seconds, then spectate an alive teammate if one exists
+  - the spectator camera is rebuilt from replicated teammate `position`, `currentHeight`, `yaw`, and `pitch`
+  - cycling targets is local-only and does not require a server observer mode
+  - this is not a mirrored first-person render; it is a camera reconstructed from replicated state
 - Round timing and the first bomb-objective slice are now server-authoritative:
   - room starts in `waiting`
   - freeze only begins once all connected players have chosen a team and sent `player-ready`
@@ -106,6 +111,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - the server rebroadcasts `smoke-thrown` combat events
   - remote clients spawn matching smoke projectiles/blooms locally
   - smoke bloom audio also replicates as positional `audio-event` traffic
+  - planted-bomb defuse ownership is now also server-owned through replicated `defuserPlayerId`
 
 ## Current Status
 
@@ -217,7 +223,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - first server-side lag compensation now exists for player-hit validation
   - current rewind uses recent authoritative hitbox history plus shooter RTT estimate, not full clock-synced rollback
   - no ammo/reload state yet
-  - killfeed replication/UI exists, but spectate flow still does not
+  - spectator view is a simple client-side teammate camera reconstruction, not a full observer system with killer-cam/free-cam/server observer rules
 - Local target dummies are now disabled by default for PvP testing unless explicitly re-enabled through `VITE_DISABLE_LOCAL_TARGETS_FOR_PVP=false`
 - The long-strip subclip path is still a temporary bridge for some motions, but it is no longer the preferred quality path for locomotion
 - Remote aim presentation is still under active iteration:

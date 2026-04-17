@@ -440,6 +440,11 @@ export class UtilityManager {
     this.updateSmokeViewModelVisibility({ roundManager, localPlayerAlive });
 
     if (roundManager.roundEnded) {
+      this.state.plantProgress = 0;
+      this.state.pendingPlantRequest = false;
+      this.state.defuseProgress = 0;
+      this.state.pendingDefuseRequest = false;
+      this.state.pendingDefuseComplete = false;
       if (roundManager.winnerTeam === TEAMS.ATTACKERS && roundManager.winReason === 'bomb-exploded') {
         this.triggerBombExplosion(roundManager);
       }
@@ -466,7 +471,9 @@ export class UtilityManager {
 
     if (this.state.bombState === 'planted') {
       const plantedPosition = objectiveState?.plantedPosition ?? null;
-      const localDefuser = networkClient?.playerId && this.state.defuserPlayerId === networkClient.playerId;
+      const localPlayerId = networkClient?.playerId ?? null;
+      const localDefuser = localPlayerId && this.state.defuserPlayerId === localPlayerId;
+      const remoteDefuserActive = Boolean(this.state.defuserPlayerId) && !localDefuser;
       if (authoritativeObjective) {
         this.state.statusText = `Bomb planted - ${formatBombSeconds(this.state.bombTimeRemaining)}s`;
         this.state.plantProgress = 0;
@@ -483,11 +490,12 @@ export class UtilityManager {
       if (selectedTeam !== TEAMS.DEFENDERS || roundManager.phase !== 'live') {
         this.state.defuseProgress = 0;
         this.state.pendingDefuseRequest = false;
+        this.state.pendingDefuseComplete = false;
         this.state.interactionText = '';
         return;
       }
 
-      if (authoritativeObjective && this.state.pendingDefuseRequest) {
+      if (authoritativeObjective && localDefuser && this.state.pendingDefuseComplete) {
         this.setDefuseMovementLock(playerController, true);
         this.state.defuseProgress = this.state.defuseDuration;
         this.state.statusText = 'Defusing C4 100%';
@@ -496,29 +504,66 @@ export class UtilityManager {
       }
 
       const canAttemptDefuse = this.canAttemptDefuse(playerController, plantedPosition);
+      const defuseHeld = Boolean(input?.isPressed?.('KeyE'));
+      const shouldCancelDefuse = authoritativeObjective
+        && (this.state.pendingDefuseRequest || this.state.pendingDefuseComplete || localDefuser)
+        && (!defuseHeld || !canAttemptDefuse || remoteDefuserActive);
+      if (shouldCancelDefuse) {
+        networkClient?.sendBombDefuse?.({
+          action: 'cancel',
+          position: playerController?.position,
+          eyePosition: playerController?.getEyePosition?.() ?? null,
+          direction: playerController?.camera?.getWorldDirection?.(playerController.getEyePosition().clone()) ?? null,
+        });
+        this.state.defuseProgress = 0;
+        this.state.pendingDefuseRequest = false;
+        this.state.pendingDefuseComplete = false;
+      }
+
+      if (remoteDefuserActive) {
+        this.state.defuseProgress = 0;
+        this.state.pendingDefuseRequest = false;
+        this.state.pendingDefuseComplete = false;
+        this.state.interactionText = canAttemptDefuse ? 'Bomb is being defused' : '';
+        return;
+      }
+
       if (canAttemptDefuse) {
         this.state.interactionText = 'Hold E to defuse';
       } else if (localDefuser) {
         this.state.interactionText = 'Keep looking at the bomb';
       }
 
-      if ((input?.isPressed?.('KeyE') ?? false) && canAttemptDefuse) {
+      if (defuseHeld && canAttemptDefuse) {
+        if (authoritativeObjective && !localDefuser && !this.state.pendingDefuseRequest) {
+          const eyePosition = playerController?.getEyePosition?.() ?? null;
+          const direction = playerController?.camera?.getWorldDirection?.(playerController.getEyePosition().clone()) ?? null;
+          networkClient?.sendBombDefuse?.({
+            action: 'start',
+            position: playerController?.position,
+            eyePosition,
+            direction,
+          });
+          this.state.pendingDefuseRequest = true;
+        }
         this.setDefuseMovementLock(playerController, true);
         this.state.defuseProgress = Math.min(this.state.defuseDuration, this.state.defuseProgress + delta);
         const percent = Math.round((this.state.defuseProgress / this.state.defuseDuration) * 100);
         this.state.statusText = `Defusing C4 ${percent}%`;
         if (this.state.defuseProgress >= this.state.defuseDuration) {
           if (authoritativeObjective) {
-            if (!this.state.pendingDefuseRequest) {
+            if (!this.state.pendingDefuseComplete) {
               const eyePosition = playerController?.getEyePosition?.() ?? null;
               const direction = playerController?.camera?.getWorldDirection?.(playerController.getEyePosition().clone()) ?? null;
               networkClient?.sendBombDefuse?.({
+                action: 'complete',
                 position: playerController?.position,
                 eyePosition,
                 direction,
               });
-              this.state.pendingDefuseRequest = true;
+              this.state.pendingDefuseComplete = true;
             }
+            this.state.pendingDefuseRequest = false;
             this.state.statusText = 'Defusing C4 100%';
             return;
           }
@@ -535,6 +580,7 @@ export class UtilityManager {
 
       this.state.defuseProgress = 0;
       this.state.pendingDefuseRequest = false;
+      this.state.pendingDefuseComplete = false;
       return;
     }
 
@@ -544,6 +590,7 @@ export class UtilityManager {
       this.state.interactionText = '';
       this.state.defuseProgress = 0;
       this.state.pendingDefuseRequest = false;
+      this.state.pendingDefuseComplete = false;
       return;
     }
     this.tryDropBomb(frameInput, roundManager, networkClient, selectedTeam, weaponManager);
@@ -554,6 +601,7 @@ export class UtilityManager {
       this.state.pendingPlantRequest = false;
       this.state.defuseProgress = 0;
       this.state.pendingDefuseRequest = false;
+      this.state.pendingDefuseComplete = false;
       this.state.statusText = selectedTeam === TEAMS.ATTACKERS ? 'Bomb dropped' : '';
       this.state.interactionText = selectedTeam === TEAMS.ATTACKERS
         ? 'Move over C4 to pick up'
@@ -567,6 +615,7 @@ export class UtilityManager {
       this.state.pendingPlantRequest = false;
       this.state.defuseProgress = 0;
       this.state.pendingDefuseRequest = false;
+      this.state.pendingDefuseComplete = false;
       this.state.statusText = this.state.localPlayerHasBomb ? 'Bomb carrier' : '';
       this.state.interactionText = '';
       if (this.equippedUtilityKey === SMOKE_UTILITY_KEY) {
@@ -593,6 +642,7 @@ export class UtilityManager {
       this.state.pendingPlantRequest = false;
       this.state.defuseProgress = 0;
       this.state.pendingDefuseRequest = false;
+      this.state.pendingDefuseComplete = false;
       return;
     }
 
@@ -631,6 +681,7 @@ export class UtilityManager {
     this.state.pendingPlantRequest = false;
     this.state.defuseProgress = 0;
     this.state.pendingDefuseRequest = false;
+    this.state.pendingDefuseComplete = false;
   }
 
   getHudState() {

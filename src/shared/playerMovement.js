@@ -4,7 +4,7 @@ export const PLAYER_MOVEMENT_DEFAULTS = {
   radius: 0.35,
   walkSpeed: 4.92,
   runSpeed: 7.44,
-  crouchSpeed: 2.64,
+  crouchSpeed: 2.1,
   jumpForce: 6.1,
   gravity: 18,
   acceleration: 18,

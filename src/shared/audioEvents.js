@@ -9,7 +9,7 @@ export const REMOTE_FOOTSTEP_AUDIO = {
     soundPrefix: 'footstep-floor-',
     baseVolume: 0.6,
     minDistance: 1.1,
-    maxDistance: 28,
+    maxDistance: 38,
     rolloffExponent: 2.1,
     attenuationHoldExponent: 0.6,
     attenuationCutoffStart: 0.4,
@@ -60,8 +60,15 @@ export const REMOTE_UTILITY_AUDIO = {
     soundKey: 'bomb-beep',
     baseVolume: 0.8,
     minDistance: 1.5,
-    maxDistance: 23,
+    maxDistance: 33,
     rolloffExponent: 1.18,
+  },
+  defuseStart: {
+    soundKey: 'defuse-start',
+    baseVolume: 0.82,
+    minDistance: 1.5,
+    maxDistance: 20,
+    rolloffExponent: 1.12,
   },
 };
 

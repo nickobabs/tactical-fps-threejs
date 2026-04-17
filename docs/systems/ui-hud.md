@@ -89,6 +89,10 @@
 - Includes a toggleable classic HUD mode inspired by Source plus the older debug HUD mode
 - Includes planted-bomb timer/state and plant-progress feedback
 - Includes defender defuse progress feedback through the same objective widget path
+- Includes a post-death spectate banner:
+  - `Spectating in: X.X` during the `2` second delay
+  - `Spectating: <teammate>` once attached to a live teammate
+  - `No alive teammates` if no valid teammate remains
 - Includes a CS-style top-center round strip with:
   - defender/attacker player icons
   - dead-state greyscale/fade
@@ -102,6 +106,7 @@
   - headshot marker support
   - content-width cards capped by a tunable max width
 - Includes 4-way directional damage indicators around the crosshair
+- Dead overlay now yields to active/waiting spectate state so spectating does not keep the full dark death fade on screen
 - HUD structure is now split across smaller files for scoreboard, classic HUD, objective widgets, and debug panels
 - Pause-menu values for volume, sensitivity, and horizontal FOV now persist locally per browser
 - Includes draggable HUD tuning/debug panels so tuning workflows do not have to overlap the live HUD they are inspecting

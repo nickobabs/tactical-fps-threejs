@@ -621,6 +621,14 @@ export class TacticalRoom extends Room {
     };
   }
 
+  clearDefuserPlayer() {
+    if (!this.objectiveState?.defuserPlayerId) {
+      return false;
+    }
+    this.objectiveState.defuserPlayerId = null;
+    return true;
+  }
+
   getPlantZonesForMap(mapId) {
     return this.plantZoneNamesByMap.get(mapId) ?? [];
   }
@@ -965,7 +973,22 @@ export class TacticalRoom extends Room {
     }
 
     if (this.objectiveState.bombState !== 'planted') {
+      this.clearDefuserPlayer();
       return;
+    }
+
+    if (this.objectiveState.defuserPlayerId) {
+      const defuser = this.players[this.objectiveState.defuserPlayerId] ?? null;
+      const plantedMapId = this.objectiveState.plantedMapId ?? null;
+      if (
+        !defuser
+        || !defuser.isAlive
+        || defuser.team !== TEAMS.DEFENDERS
+        || (plantedMapId && defuser.mapId !== plantedMapId)
+      ) {
+        this.clearDefuserPlayer();
+        this.requestStateBroadcast();
+      }
     }
 
     this.objectiveState.bombTimeRemaining = Math.max(0, this.objectiveState.bombTimeRemaining - delta);
@@ -979,6 +1002,7 @@ export class TacticalRoom extends Room {
     }
     if (this.objectiveState.bombTimeRemaining === 0) {
       this.applyBombExplosionDamage();
+      this.clearDefuserPlayer();
       this.objectiveState.bombState = 'exploded';
       this.objectiveState.bombBeepCountdown = 0;
       this.roundManager.endRound(TEAMS.ATTACKERS, 'bomb-exploded');
@@ -1012,6 +1036,9 @@ export class TacticalRoom extends Room {
     player.pendingInputs.length = 0;
     player.deathClip = deathClip;
     player.presentationState = 'dead';
+    if (this.objectiveState?.defuserPlayerId === player.playerId) {
+      this.clearDefuserPlayer();
+    }
     this.dropBombForPlayer(player);
   }
 
@@ -1200,6 +1227,19 @@ export class TacticalRoom extends Room {
       return;
     }
 
+    const action = String(message?.action ?? 'complete');
+    if (action === 'cancel') {
+      if (this.objectiveState.defuserPlayerId === player.playerId) {
+        this.clearDefuserPlayer();
+        this.requestStateBroadcast();
+      }
+      return;
+    }
+
+    if (this.objectiveState.defuserPlayerId && this.objectiveState.defuserPlayerId !== player.playerId) {
+      return;
+    }
+
     const plantedPosition = this.objectiveState.plantedPosition;
     const playerPosition = {
       x: Number(message?.position?.x ?? player.motionState?.position?.x ?? 0),
@@ -1245,7 +1285,16 @@ export class TacticalRoom extends Room {
       return;
     }
 
-    this.objectiveState.defuserPlayerId = player.playerId;
+    if (action === 'start') {
+      if (this.objectiveState.defuserPlayerId !== player.playerId) {
+        this.objectiveState.defuserPlayerId = player.playerId;
+        this.emitDefuseStartAudioEvent(player);
+        this.requestStateBroadcast();
+      }
+      return;
+    }
+
+    this.objectiveState.defuserPlayerId = null;
     this.objectiveState.bombState = 'idle';
     this.objectiveState.bombTimeRemaining = 0;
     this.clearDroppedBombState();
@@ -1776,6 +1825,9 @@ export class TacticalRoom extends Room {
 
   onLeave(client) {
     const departingPlayer = this.players[client.sessionId] ?? null;
+    if (this.objectiveState?.defuserPlayerId === client.sessionId) {
+      this.clearDefuserPlayer();
+    }
     delete this.players[client.sessionId];
 
     if (this.objectiveState.bombCarrierPlayerId === client.sessionId) {
@@ -2004,6 +2056,33 @@ export class TacticalRoom extends Room {
       maxDistance: config.maxDistance,
       rolloffExponent: config.rolloffExponent,
       playback: 'overlap',
+    });
+  }
+
+  emitDefuseStartAudioEvent(player) {
+    const config = REMOTE_UTILITY_AUDIO.defuseStart;
+    const plantedPosition = this.objectiveState?.plantedPosition ?? null;
+    const plantedMapId = this.objectiveState?.plantedMapId ?? null;
+    if (!config || !player?.playerId || !plantedPosition || !plantedMapId) {
+      return;
+    }
+
+    this.broadcastAudioEvent({
+      type: 'objective-defuse-start',
+      sourcePlayerId: player.playerId,
+      mapId: plantedMapId,
+      soundKey: config.soundKey,
+      position: {
+        x: Number(plantedPosition.x ?? 0),
+        y: Number(plantedPosition.y ?? 0),
+        z: Number(plantedPosition.z ?? 0),
+      },
+      baseVolume: config.baseVolume,
+      minDistance: config.minDistance,
+      maxDistance: config.maxDistance,
+      rolloffExponent: config.rolloffExponent,
+      playback: 'interrupt',
+      minIntervalMs: 120,
     });
   }
 
