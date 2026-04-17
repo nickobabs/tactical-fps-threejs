@@ -1056,7 +1056,7 @@ export class TacticalRoom extends Room {
     );
     const now = Date.now();
 
-    for (const player of this.players.values()) {
+    for (const player of Object.values(this.players)) {
       if (!player || player.isAlive === false) {
         continue;
       }

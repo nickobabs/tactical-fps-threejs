@@ -43,8 +43,8 @@ const BOMB_EXPLOSION_LAYOUT = [
   [2.24, 0.88, 0.12, 2.86, 0.58, 0.28, 0.02],
 ];
 const BOMB_EXPLOSION_DURATION = 1.45;
-const BLOOD_BURST_DURATION = 0.16;
-const BLOOD_BURST_COUNT = 4;
+const BLOOD_BURST_DURATION = 0.12;
+const BLOOD_BURST_COUNT = 5;
 
 let smokeTexture = null;
 let bloodTexture = null;
@@ -112,10 +112,11 @@ function getBloodTexture() {
     return null;
   }
 
-  const gradient = context.createRadialGradient(48, 48, 8, 48, 48, 48);
-  gradient.addColorStop(0, 'rgba(255,210,210,0.95)');
-  gradient.addColorStop(0.28, 'rgba(190,28,28,0.92)');
-  gradient.addColorStop(0.68, 'rgba(115,8,8,0.52)');
+  const gradient = context.createRadialGradient(48, 48, 5, 48, 48, 34);
+  gradient.addColorStop(0, 'rgba(255,242,242,1)');
+  gradient.addColorStop(0.18, 'rgba(255,72,72,0.98)');
+  gradient.addColorStop(0.5, 'rgba(196,14,14,0.9)');
+  gradient.addColorStop(0.82, 'rgba(92,0,0,0.34)');
   gradient.addColorStop(1, 'rgba(70,0,0,0)');
   context.fillStyle = gradient;
   context.fillRect(0, 0, canvas.width, canvas.height);
@@ -231,22 +232,22 @@ function createBloodBurst(position) {
         map: texture,
         color: 0xffffff,
         transparent: true,
-        opacity: 0.88,
+        opacity: 0.98,
         depthWrite: false,
       }),
     );
-    const baseScale = 0.18 + (index * 0.03);
+    const baseScale = 0.14 + (index * 0.018);
     sprite.scale.setScalar(baseScale);
     sprite.position.set(
-      Math.cos(angle) * (0.08 + index * 0.015),
-      0.02 + (index * 0.025),
-      Math.sin(angle) * (0.05 + index * 0.01),
+      Math.cos(angle) * (0.038 + index * 0.008),
+      0.018 + (index * 0.014),
+      Math.sin(angle) * (0.028 + index * 0.006),
     );
     sprite.userData.baseScale = baseScale;
     sprite.userData.velocity = new THREE.Vector3(
-      Math.cos(angle) * (0.55 + index * 0.08),
-      0.28 + (index * 0.08),
-      Math.sin(angle) * (0.38 + index * 0.06),
+      Math.cos(angle) * (0.18 + index * 0.04),
+      0.09 + (index * 0.03),
+      Math.sin(angle) * (0.14 + index * 0.03),
     );
     group.add(sprite);
   }
@@ -418,9 +419,9 @@ export class EffectsManager {
 
       const velocity = child.userData.velocity ?? DEFAULT_NORMAL;
       const baseScale = Number(child.userData.baseScale ?? 0.2);
-      child.position.addScaledVector(velocity, 0.016);
-      child.scale.setScalar(baseScale * THREE.MathUtils.lerp(0.9, 1.35, elapsed / duration));
-      child.material.opacity = alpha * 0.9;
+      child.position.addScaledVector(velocity, 0.01);
+      child.scale.setScalar(baseScale * THREE.MathUtils.lerp(1, 1.12, elapsed / duration));
+      child.material.opacity = alpha * 0.98;
     });
   }
 

@@ -858,20 +858,24 @@ export function createHud({
       const leftIndicator = Math.max(0, Math.min(1, Number(damageIndicators.left ?? 0)));
       const indicatorsActive = frontIndicator > 0.01 || rightIndicator > 0.01 || backIndicator > 0.01 || leftIndicator > 0.01;
       damageIndicatorsEl.classList.toggle('hud__damage-indicators--active', indicatorsActive);
-      if (Math.abs(frontIndicator - lastDamageIndicatorFront) > 0.01) {
-        damageIndicatorFrontEl.style.opacity = String(frontIndicator * 0.95);
+      const frontOpacity = frontIndicator <= 0.01 ? 0 : frontIndicator * 0.95;
+      const rightOpacity = rightIndicator <= 0.01 ? 0 : rightIndicator * 0.95;
+      const backOpacity = backIndicator <= 0.01 ? 0 : backIndicator * 0.95;
+      const leftOpacity = leftIndicator <= 0.01 ? 0 : leftIndicator * 0.95;
+      if (Math.abs(frontIndicator - lastDamageIndicatorFront) > 0.01 || frontOpacity === 0) {
+        damageIndicatorFrontEl.style.opacity = String(frontOpacity);
         lastDamageIndicatorFront = frontIndicator;
       }
-      if (Math.abs(rightIndicator - lastDamageIndicatorRight) > 0.01) {
-        damageIndicatorRightEl.style.opacity = String(rightIndicator * 0.95);
+      if (Math.abs(rightIndicator - lastDamageIndicatorRight) > 0.01 || rightOpacity === 0) {
+        damageIndicatorRightEl.style.opacity = String(rightOpacity);
         lastDamageIndicatorRight = rightIndicator;
       }
-      if (Math.abs(backIndicator - lastDamageIndicatorBack) > 0.01) {
-        damageIndicatorBackEl.style.opacity = String(backIndicator * 0.95);
+      if (Math.abs(backIndicator - lastDamageIndicatorBack) > 0.01 || backOpacity === 0) {
+        damageIndicatorBackEl.style.opacity = String(backOpacity);
         lastDamageIndicatorBack = backIndicator;
       }
-      if (Math.abs(leftIndicator - lastDamageIndicatorLeft) > 0.01) {
-        damageIndicatorLeftEl.style.opacity = String(leftIndicator * 0.95);
+      if (Math.abs(leftIndicator - lastDamageIndicatorLeft) > 0.01 || leftOpacity === 0) {
+        damageIndicatorLeftEl.style.opacity = String(leftOpacity);
         lastDamageIndicatorLeft = leftIndicator;
       }
 

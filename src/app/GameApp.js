@@ -572,7 +572,8 @@ export class GameApp {
       if (!event?.soundKey) {
         continue;
       }
-      if (event.sourcePlayerId && event.sourcePlayerId === this.networkClient.playerId) {
+      const allowLocalSourcePlayback = event?.type === 'objective-defuse-start';
+      if (!allowLocalSourcePlayback && event.sourcePlayerId && event.sourcePlayerId === this.networkClient.playerId) {
         continue;
       }
       if (localMapId && event.mapId && event.mapId !== localMapId) {
