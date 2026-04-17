@@ -21,13 +21,15 @@ const FLOOR_FOOTSTEP_FILES = [
 
 const GAME_AUDIO_REGISTRATIONS = [
   ['rifle-fire', '/audio/guns/m4a1_silencer_01.mp3', { playback: 'interrupt' }],
+  ['rifle-equip', '/audio/guns/rifleequip.mp3', { playback: 'interrupt' }],
   ['sniper-fire', '/audio/guns/awp-shoot-sound-effect-cs_go.mp3', { playback: 'interrupt' }],
+  ['knife-draw', '/audio/guns/knifedraw.mp3', { playback: 'interrupt' }],
   [
     'sniper-zoom',
     '/audio/guns/awp-zoom-sound-effect-cs-go.mp3',
     { playback: 'interrupt', minIntervalMs: 80 },
   ],
-  ['knife-slash', '/audio/guns/sword-slash-4.mp3', { playback: 'interrupt' }],
+  ['knife-slash', '/audio/guns/knifeswing.mp3', { playback: 'interrupt' }],
   ['smoke-bloom', '/audio/utility/smokebloom.mp3', { playback: 'overlap', minIntervalMs: 80 }],
   ['bomb-beep', '/audio/game/bomb beep.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ['bomb-planted', '/audio/game/bomb planted.mp3', { playback: 'interrupt' }],

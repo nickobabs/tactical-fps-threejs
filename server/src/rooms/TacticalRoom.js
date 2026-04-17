@@ -16,6 +16,7 @@ import {
   NETCODE_SERVER_HITBOX_HISTORY_MS,
 } from '../../../src/shared/netcode.js';
 import {
+  createChatMessage,
   createPlayerInputMessage,
   createPlayerFireMessage,
   createDebugRoundControlMessage,
@@ -612,6 +613,32 @@ export class TacticalRoom extends Room {
       .trim()
       .slice(0, MAX_DISPLAY_NAME_LENGTH);
     return normalized || fallback;
+  }
+
+  emitChatEvent(player, chatMessage) {
+    if (!player || !chatMessage?.text) {
+      return;
+    }
+
+    const event = {
+      scope: chatMessage.scope === 'team' ? 'team' : 'all',
+      text: String(chatMessage.text ?? ''),
+      playerId: String(player.playerId ?? ''),
+      displayName: this.sanitizeDisplayName(player.displayName, String(player.playerId ?? 'Player')),
+      team: this.sanitizeTeam(player.team),
+      sentAt: Date.now(),
+    };
+
+    for (const client of this.clients) {
+      const recipient = this.players[client.sessionId];
+      if (!recipient) {
+        continue;
+      }
+      if (event.scope === 'team' && this.sanitizeTeam(recipient.team) !== event.team) {
+        continue;
+      }
+      client.send('chat-event', event);
+    }
   }
 
   createObjectiveState() {
@@ -1586,6 +1613,8 @@ export class TacticalRoom extends Room {
         return;
       }
 
+      const previousWeaponKey = player.activeWeaponKey;
+      const previousScoped = Boolean(player.isScoped);
       const nextStatus = createPlayerStatusMessage(message);
       const nextWeaponKey = getSharedWeaponData(nextStatus.activeWeaponKey)
         ? nextStatus.activeWeaponKey
@@ -1597,7 +1626,30 @@ export class TacticalRoom extends Room {
 
       player.activeWeaponKey = nextWeaponKey;
       player.isScoped = nextScoped;
+      if (
+        player.isAlive
+        && previousWeaponKey === 'sniper'
+        && nextWeaponKey === 'sniper'
+        && !previousScoped
+        && nextScoped
+      ) {
+        this.emitScopeInAudioEvent(player);
+      }
       this.requestStateBroadcast();
+    });
+
+    this.onMessage('chat-message', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player?.isReady) {
+        return;
+      }
+
+      const chatMessage = createChatMessage(message);
+      if (!chatMessage.text) {
+        return;
+      }
+
+      this.emitChatEvent(player, chatMessage);
     });
 
     this.onMessage('set-gamemode', (client, message) => {
@@ -1998,6 +2050,32 @@ export class TacticalRoom extends Room {
       maxDistance: config.maxDistance,
       rolloffExponent: config.rolloffExponent,
       playback: 'overlap',
+    });
+  }
+
+  emitScopeInAudioEvent(player) {
+    const config = REMOTE_UTILITY_AUDIO.scopeIn;
+    const position = player?.motionState?.position;
+    if (!config || !position || !player?.mapId) {
+      return;
+    }
+
+    this.broadcastAudioEvent({
+      type: 'weapon-scope-in',
+      sourcePlayerId: player.playerId,
+      mapId: player.mapId,
+      soundKey: config.soundKey,
+      position: {
+        x: Number(position.x ?? 0),
+        y: Number(position.y ?? 0) + Number(player?.motionState?.currentHeight ?? 1.72),
+        z: Number(position.z ?? 0),
+      },
+      baseVolume: config.baseVolume,
+      minDistance: config.minDistance,
+      maxDistance: config.maxDistance,
+      rolloffExponent: config.rolloffExponent,
+      playback: 'overlap',
+      minIntervalMs: 80,
     });
   }
 

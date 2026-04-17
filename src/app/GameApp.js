@@ -36,8 +36,11 @@ const HUD_MODE_STORAGE_KEY = 'tactical-fps-threejs-hud-mode';
 const SETTINGS_STORAGE_KEY = 'tactical-fps-threejs-settings';
 const MAX_PLAYER_NAME_LENGTH = 24;
 const KILLFEED_ENTRY_LIFETIME_MS = 4500;
+const CHAT_ENTRY_LIFETIME_MS = 10000;
+const CHAT_ENTRY_FADE_DURATION_MS = 1200;
 const SPECTATE_DELAY_MS = 2000;
 const BOMB_CARRIER_ANNOUNCEMENT_MS = 3000;
+const MAX_CHAT_ENTRIES = 10;
 
 function sanitizePlayerName(value, fallback = 'Player') {
   const normalized = String(value ?? '')
@@ -198,6 +201,7 @@ export class GameApp {
     };
     this.hitDamagePopups = [];
     this.killfeedEntries = [];
+    this.chatEntries = [];
     this.roundKillCounts = new Map();
     this.selectedTeam = null;
     this.selectedPlayerName = loadStoredPlayerName();
@@ -387,6 +391,8 @@ export class GameApp {
       getIsLoading: () => this.isLoadingMap,
       getLoadingStatus: () => this.loadingStatus,
       getKillfeedEntries: () => this.killfeedEntries,
+      getChatEntries: () => this.chatEntries,
+      onSendChatMessage: (message) => this.sendChatMessage(message),
       getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
       getIsMovementTraceRecording: () => this.debugController.isMovementTraceRecording(),
       getShowCrouchFatigueDebug: () => this.showCrouchFatigueDebug,
@@ -1081,6 +1087,7 @@ export class GameApp {
         getPopupId: () => `${performance.now()}-${Math.random()}`,
         onCombatEvent: (event) => {
           this.handleCombatEventForUi(event);
+          this.handleCombatEventForSpectatorPresentation(event);
         },
         onLocalPlayerDamageDealt: (popup) => {
           if (this.showDamageNumbers) {
@@ -1094,6 +1101,7 @@ export class GameApp {
           this.registerDamageIndicator(event);
         },
       });
+      this.handleChatEvents();
 
       const authoritativeCorrection = this.networkClient.consumeLocalCorrection();
       if (authoritativeCorrection && !this.debugController.getIgnoreLocalCorrections()) {
@@ -1138,6 +1146,63 @@ export class GameApp {
     };
 
     this.killfeedEntries = [entry, ...this.killfeedEntries].slice(0, 5);
+  }
+
+  handleChatEvents() {
+    for (const event of this.networkClient.consumeChatEvents?.() ?? []) {
+      const text = String(event?.text ?? '').trim();
+      if (!text) {
+        continue;
+      }
+
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const fadeAt = now + CHAT_ENTRY_LIFETIME_MS;
+      const expiresAt = fadeAt + CHAT_ENTRY_FADE_DURATION_MS;
+      this.chatEntries = [
+        ...this.chatEntries.map((entry) => ({
+          ...entry,
+          fadeAt,
+          expiresAt,
+        })),
+        {
+          id: `${Number(event?.sentAt ?? Date.now())}-${Math.random()}`,
+          scope: String(event?.scope ?? 'all') === 'team' ? 'team' : 'all',
+          playerId: String(event?.playerId ?? ''),
+          displayName: String(event?.displayName ?? event?.playerId ?? 'Player'),
+          team: String(event?.team ?? ''),
+          text,
+          fadeAt,
+          expiresAt,
+        },
+      ].slice(-MAX_CHAT_ENTRIES);
+    }
+  }
+
+  sendChatMessage(message) {
+    const text = String(message?.text ?? '').replace(/\s+/g, ' ').trim();
+    if (!text) {
+      return false;
+    }
+
+    return this.networkClient.sendChatMessage({
+      scope: String(message?.scope ?? 'all') === 'team' ? 'team' : 'all',
+      text,
+    });
+  }
+
+  handleCombatEventForSpectatorPresentation(event) {
+    if (
+      event?.type !== 'player-fired'
+      || this.spectatorMode !== 'teammate'
+      || !this.activeSpectatorTargetState
+      || String(event?.playerId ?? '') !== String(this.activeSpectatorTargetState.playerId ?? '')
+    ) {
+      return;
+    }
+
+    this.runtime?.weaponManager?.triggerSpectatorFireFeedback?.({
+      weaponKey: event.weaponKey,
+    });
   }
 
   pruneKillfeedEntries() {
@@ -1246,6 +1311,7 @@ export class GameApp {
     this.updateSpectatorState(frameInput, localPlayerAlive);
     if (!this.lastLocalPlayerAlive && localPlayerAlive) {
       this.runtime?.weaponManager?.refillAllAmmo?.();
+      this.runtime?.weaponManager?.replayActiveWeaponEquip?.();
     }
     this.lastLocalPlayerAlive = localPlayerAlive;
 
@@ -1255,7 +1321,7 @@ export class GameApp {
       this.updateEffects(delta);
       this.updatePlayerPresentation(delta);
       this.updateRemotePlayers(delta);
-      this.applySpectatorView();
+      this.applySpectatorView(delta);
       return;
     }
 
@@ -1269,7 +1335,7 @@ export class GameApp {
     this.updatePlayerPresentation(delta);
     this.updateTargets(delta);
     this.updateRemotePlayers(delta);
-    this.applySpectatorView();
+    this.applySpectatorView(delta);
     this.recordMovementTraceIfNeeded();
   }
 
@@ -1428,10 +1494,30 @@ export class GameApp {
   }
 
   clearSpectatorState() {
+    const wasSpectating = this.spectatorMode !== 'none'
+      || this.spectatorTargetPlayerId != null
+      || this.activeSpectatorTargetState != null;
     this.spectatorMode = 'none';
     this.spectatorTargetPlayerId = null;
     this.spectatorActivateAt = 0;
     this.activeSpectatorTargetState = null;
+    if (this.runtime?.weaponManager && wasSpectating) {
+      const localWeaponKey = String(this.networkClient.getLocalPlayerState?.()?.activeWeaponKey ?? 'rifle');
+      this.runtime.weaponManager.equipWeapon(localWeaponKey);
+      this.runtime.weaponManager.clearSpectatorFireFeedback?.();
+      this.runtime.weaponManager.zoomFov = this.runtime.weaponManager.baseFov;
+      this.runtime.weaponManager.isScoped = false;
+      this.runtime.weaponManager.scopeStage = 0;
+      this.runtime.weaponManager.showScopeOverlay = false;
+      this.runtime.weaponManager.showAdsReticle = false;
+    }
+    if (this.camera && wasSpectating) {
+      this.camera.fov = Number(this.runtime?.weaponManager?.baseFov ?? this.camera.fov);
+      this.camera.updateProjectionMatrix();
+    }
+    if (this.runtime?.weaponManager?.viewModel && wasSpectating) {
+      this.runtime.weaponManager.viewModel.visible = true;
+    }
   }
 
   getAliveTeammateSpectateCandidates() {
@@ -1496,7 +1582,7 @@ export class GameApp {
     this.activeSpectatorTargetState = candidates.find((candidate) => candidate.playerId === this.spectatorTargetPlayerId) ?? null;
   }
 
-  applySpectatorView() {
+  applySpectatorView(delta = 0) {
     const playerController = this.runtime?.playerController;
     if (!playerController || this.spectatorMode !== 'teammate' || !this.activeSpectatorTargetState) {
       this.remotePlayerPresenter.setSpectatorTargetPlayerId(null);
@@ -1514,12 +1600,11 @@ export class GameApp {
     playerController.pitch.rotation.x = Number(target.pitch ?? 0);
     playerController.viewAnchor.position.set(0, 0, 0);
     playerController.camera.position.set(0, 0, 0);
-    if (this.runtime?.weaponManager?.viewModel) {
-      this.runtime.weaponManager.viewModel.visible = false;
-    }
     if (this.runtime?.weaponManager) {
-      this.runtime.weaponManager.showScopeOverlay = false;
-      this.runtime.weaponManager.showAdsReticle = false;
+      this.runtime.weaponManager.syncSpectatorPresentation?.(delta, {
+        activeWeaponKey: target.activeWeaponKey,
+        isScoped: target.isScoped,
+      });
     }
     this.remotePlayerPresenter.setSpectatorTargetPlayerId(target.playerId);
   }
@@ -1557,10 +1642,14 @@ export class GameApp {
       };
     }
     if (this.spectatorMode === 'teammate' && this.activeSpectatorTargetState) {
+      const targetWeaponKey = String(this.activeSpectatorTargetState.activeWeaponKey ?? 'rifle');
+      const targetWeaponLabel = targetWeaponKey.charAt(0).toUpperCase() + targetWeaponKey.slice(1);
       return {
         mode: 'teammate',
         secondsRemaining: 0,
         targetName: String(this.activeSpectatorTargetState.displayName ?? this.activeSpectatorTargetState.playerId ?? 'Teammate'),
+        targetWeaponLabel,
+        targetScoped: Boolean(this.activeSpectatorTargetState.isScoped),
       };
     }
     if (this.spectatorMode === 'waiting') {
@@ -1568,6 +1657,8 @@ export class GameApp {
         mode: 'waiting',
         secondsRemaining: 0,
         targetName: '',
+        targetWeaponLabel: '',
+        targetScoped: false,
       };
     }
 
@@ -1575,6 +1666,8 @@ export class GameApp {
       mode: 'none',
       secondsRemaining: 0,
       targetName: '',
+      targetWeaponLabel: '',
+      targetScoped: false,
     };
   }
 

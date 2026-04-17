@@ -206,10 +206,15 @@ export class WeaponManager {
     }
 
     const previousWeaponKey = this.activeWeaponKey;
+    const previousEquipSound = this.currentWeapon?.equipSound ?? null;
     const preservedCooldown = Number(this.cooldown ?? 0);
     const nextSelectionState = getWeaponSelectionState(this.activeWeaponKey, weaponKey);
     if (!nextSelectionState) {
       return;
+    }
+
+    if (previousEquipSound) {
+      this.audioManager?.stop?.(previousEquipSound);
     }
 
     this.shotCount = 0;
@@ -233,6 +238,11 @@ export class WeaponManager {
     this.recoilTuningPanel?.sync?.();
     this.viewModelTuningPanel?.setForceAdsPreview?.(this.debugForceAdsPreview);
     this.viewModelTuningPanel?.setShowMuzzlePreview?.(this.debugShowMuzzlePreview);
+    if (previousWeaponKey !== weaponKey && this.currentWeapon?.equipSound) {
+      this.audioManager?.play(this.currentWeapon.equipSound, {
+        playback: 'interrupt',
+      });
+    }
     if (previousWeaponKey === 'sniper' || weaponKey === 'sniper') {
       this.cooldown = Math.max(0, preservedCooldown);
     }
@@ -264,6 +274,59 @@ export class WeaponManager {
     }
     this.viewModelController?.onSelected?.();
     return true;
+  }
+
+  syncSpectatorPresentation(delta, spectatorState = null) {
+    if (!spectatorState) {
+      return;
+    }
+
+    const requestedWeaponKey = String(spectatorState.activeWeaponKey ?? 'rifle');
+    const weaponKey = WEAPON_CONFIGS[requestedWeaponKey] ? requestedWeaponKey : 'rifle';
+    if (weaponKey !== this.activeWeaponKey) {
+      this.equipWeapon(weaponKey);
+    }
+
+    const scoped = Boolean(spectatorState.isScoped);
+    this.scopeStage = scoped ? 1 : 0;
+    this.isScoped = scoped;
+    this.wasScoped = scoped;
+    this.showScopeOverlay = weaponKey === 'sniper' && scoped;
+    this.showAdsReticle = weaponKey !== 'sniper' && scoped;
+    this.timeSinceScopeActivated = scoped ? 0 : Infinity;
+    this.flashTime = Math.max(0, this.flashTime - delta);
+    this.recoil = THREE.MathUtils.damp(this.recoil, 0, 16, delta);
+    this.knifeAttackTime = Math.max(0, this.knifeAttackTime - delta);
+    this.timeSinceLastShot += delta;
+
+    const targetZoomFov = this.getTargetZoomFov();
+    this.zoomFov = targetZoomFov;
+    this.camera.fov = targetZoomFov;
+    this.camera.updateProjectionMatrix();
+
+    Object.values(this.viewModels).forEach((viewModel) => {
+      viewModel.update?.(delta);
+    });
+    this.updateViewModel(delta, { x: 0, y: 0 });
+  }
+
+  triggerSpectatorFireFeedback({ weaponKey = null } = {}) {
+    const requestedWeaponKey = weaponKey ? String(weaponKey) : this.activeWeaponKey;
+    if (requestedWeaponKey && WEAPON_CONFIGS[requestedWeaponKey] && requestedWeaponKey !== this.activeWeaponKey) {
+      this.equipWeapon(requestedWeaponKey);
+    }
+
+    this.flashTime = 0.04;
+    this.recoil = Math.min(this.recoil + (this.activeWeaponKey === 'sniper' ? 1.25 : 1), 1.5);
+    this.timeSinceLastShot = 0;
+    this.viewModelController?.playFire?.();
+  }
+
+  clearSpectatorFireFeedback() {
+    this.flashTime = 0;
+    this.recoil = 0;
+    this.knifeAttackTime = 0;
+    this.timeSinceLastShot = Infinity;
   }
 
   update(delta, frameInput, options = {}) {
@@ -433,6 +496,7 @@ export class WeaponManager {
     this.shotCount = sprayShotCount;
     this.timeSinceLastShot = 0;
     const shotWasScoped = this.isScoped;
+    const scopedAccuracyPenaltySpread = this.getScopedAccuracyPenaltySpread();
     if (this.activeWeaponKey === 'sniper') {
       this.scopeStage = 0;
       this.isScoped = false;
@@ -464,7 +528,7 @@ export class WeaponManager {
         Number(this.playerController?.velocity?.z ?? 0),
       ),
       isGrounded: Boolean(this.playerController?.isGrounded),
-      additionalSpread: this.getScopedAccuracyPenaltySpread(),
+      additionalSpread: scopedAccuracyPenaltySpread,
     });
   }
 
@@ -475,6 +539,8 @@ export class WeaponManager {
 
     const graceDuration = Math.max(0, Number(this.currentWeapon?.scopeAccuracyGraceDuration ?? 0));
     const maxSpread = Math.max(0, Number(this.currentWeapon?.scopeTransitionSpread ?? 0));
+    const startMultiplier = Math.max(1, Number(this.currentWeapon?.scopeTransitionStartMultiplier ?? 1));
+    const exponent = Math.max(1, Number(this.currentWeapon?.scopeTransitionExponent ?? 1));
     if (graceDuration <= 0 || maxSpread <= 0) {
       return 0;
     }
@@ -484,7 +550,7 @@ export class WeaponManager {
       0,
       1,
     );
-    return maxSpread * (1 - progress);
+    return (maxSpread * startMultiplier) * Math.pow(1 - progress, exponent);
   }
 
   getMovingAccuracyPenaltyRatio() {

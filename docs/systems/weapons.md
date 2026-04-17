@@ -66,6 +66,7 @@
 - Borrowed animated viewmodel weapons are now prevented from firing until their equip animation has completed
 - The sniper now preserves its true fire cadence across quickswitches instead of letting re-equip reset the cooldown
 - Scoped sniper accuracy now has a short settle window after zooming in, and the HUD scope overlay reflects that live inaccuracy state
+- Weapon equip audio is now data-driven per weapon, and swapping away from a weapon cuts its active equip sound immediately
 
 ## Current Status
 
@@ -81,6 +82,7 @@
 - Rifle and pistol now both lose accuracy while airborne
 - Rifle, pistol, and knife now play imported equip / hold / fire clips from the borrowed prototype viewmodel pack
 - Knife equip now uses the authored full draw animation instead of only the earlier procedural stab-style presentation
+- Rifle and knife now also use dedicated equip sounds
 - Rifle, pistol, and knife now respect equip completion before they can fire
 - Semi-auto weapons now use edge-triggered fire plus a short input buffer so fast pistol clicks do not feel randomly dropped near the cooldown limit
 - Sniper specifics in the current build:
@@ -88,7 +90,8 @@
   - movement-based inaccuracy above `1.5 m/s`
   - a stronger moving spread penalty than the original baseline
   - no scoping allowed until the weapon is actually ready to fire
-  - a `0.35s` post-scope accuracy grace so instant quickscopes are still inaccurate
+  - quickscope inaccuracy is now front-loaded and applied on the actual shot frame instead of being lost during the post-shot unscope reset
+  - current scope-settle window is intentionally shorter again after the quickscope bug fix, so the rifle becomes accurate sooner once the scope has meaningfully settled
   - instant unscope on the shot frame so tracer/impact feedback is not seen once in-scope and then again after unscope
   - procedural equip raise remains shorter than the full sniper cadence, but firing still cannot exceed the real `1.25s` rate
 - The manager itself is now significantly smaller and is primarily responsible for owned mutable weapon state plus update sequencing

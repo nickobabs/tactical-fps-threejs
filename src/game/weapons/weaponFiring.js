@@ -16,7 +16,7 @@ export function playWeaponAudio(audioManager, weaponKey, weapon) {
   }
 
   audioManager?.play(weapon.fireSound, {
-    baseVolume: weaponKey === 'sniper' ? 0.72 : weaponKey === 'knife' ? 0.5 : weaponKey === 'pistol' ? 0.5 : 0.6,
+    baseVolume: weaponKey === 'sniper' ? 0.6 : weaponKey === 'knife' ? 0.5 : weaponKey === 'pistol' ? 0.5 : 0.6,
     pitchMin: weaponKey === 'sniper' ? 0.992 : weaponKey === 'knife' ? 0.94 : weaponKey === 'pistol' ? 1.02 : 0.95,
     pitchMax: weaponKey === 'sniper' ? 1.008 : weaponKey === 'knife' ? 1.08 : weaponKey === 'pistol' ? 1.08 : 1.06,
   });

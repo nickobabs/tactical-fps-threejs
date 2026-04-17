@@ -2088,7 +2088,9 @@ export class RemotePlayerPresenter {
       }
       if (this.effectsManager && event?.playerId !== this.localPlayerId && event?.origin && event?.tracerEnd) {
         const flash = visual?.weaponMesh?.userData?.flash ?? null;
-        const origin = flash
+        const preferAuthoritativeOrigin = this.spectatorTargetPlayerId != null
+          && String(event.playerId ?? '') === String(this.spectatorTargetPlayerId);
+        const origin = !preferAuthoritativeOrigin && flash
           ? flash.getWorldPosition(REMOTE_TRACER_ORIGIN).clone()
           : new THREE.Vector3(
             Number(event.origin.x ?? 0),

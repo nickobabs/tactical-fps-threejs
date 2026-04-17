@@ -434,6 +434,19 @@ export class AudioManager {
     return sound.bufferPromise;
   }
 
+  stop(key) {
+    if (!key) {
+      return;
+    }
+
+    const sound = this.sounds.get(String(key));
+    if (!sound) {
+      return;
+    }
+
+    this.stopActiveSound(sound);
+  }
+
   stopActiveSound(sound, now = this.context?.currentTime ?? 0) {
     if (!sound.activeSource || !sound.activeGain) {
       return;

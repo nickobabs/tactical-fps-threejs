@@ -14,6 +14,7 @@ The current networking slice supports:
 - Client-to-server bomb plant requests
 - Client-to-server bomb defuse requests
 - Client-to-server smoke-throw requests
+- Client-to-server chat messages
 - Server-authoritative player positions derived from those inputs
 - Server-authoritative player health / alive state for PvP
 - Server-authoritative round state
@@ -47,6 +48,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Replicated scoreboard ping values based on client-observed RTT
 - Replicated team/display-name state for scoreboard and remote presentation
 - Replicated round/objective snapshots for HUD and gameplay flow
+- Replicated chat-event stream for team/all chat HUD feed
 
 ## Dependencies
 
@@ -112,6 +114,13 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - remote clients spawn matching smoke projectiles/blooms locally
   - smoke bloom audio also replicates as positional `audio-event` traffic
   - planted-bomb defuse ownership is now also server-owned through replicated `defuserPlayerId`
+- Short-range replicated utility/weapon-side audio now also includes the sniper scope-in cue:
+  - scope-in is emitted from the authoritative server when a sniper transitions into scoped state
+  - current audible range is intentionally short at `10`
+- Chat now uses its own lightweight replicated event path:
+  - clients send `chat-message`
+  - the server rebroadcasts `chat-event`
+  - `scope: 'team'` only reaches teammates, while `scope: 'all'` reaches the whole room
 
 ## Current Status
 
@@ -167,6 +176,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - `public/models/players/animations/newtest_rifle_upper_idle.fbx`
   - that broader upper/lower-body locomotion layering path is currently paused and is not the active runtime baseline
 - Connection state and remote-player count are visible in the HUD
+- Team/all chat is now visible through a replicated bottom-left HUD feed
 - Server authority and reconciliation are wired end-to-end for player movement
 - Friendly fire is disabled in authoritative hit validation
 - Server authority now uses shared map collision for `Training Ground` and `Desert Compound`

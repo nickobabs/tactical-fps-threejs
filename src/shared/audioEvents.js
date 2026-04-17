@@ -70,6 +70,13 @@ export const REMOTE_UTILITY_AUDIO = {
     maxDistance: 20,
     rolloffExponent: 1.12,
   },
+  scopeIn: {
+    soundKey: 'sniper-zoom',
+    baseVolume: 0.36,
+    minDistance: 1.2,
+    maxDistance: 10,
+    rolloffExponent: 1.2,
+  },
 };
 
 export const REMOTE_FOOTSTEP_SAMPLE_COUNT = 16;

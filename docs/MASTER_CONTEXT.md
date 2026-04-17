@@ -160,8 +160,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Rifle, pistol, sniper, and knife all have functioning presentation/effects/audio paths.
 - A simple smoke grenade utility is now playable on `6` with authoritative throw replication, CS-style smoke bloom, and round-reset inventory refill.
 - A first-pass bomb explosion visual now plays at the planted bomb position when the bomb detonates.
-- Remote weapon-fire, smoke bloom, and footstep audio now replicate from authoritative state with spatial playback on other clients.
+- Remote weapon-fire, smoke bloom, footstep, defuse-start, and short-range sniper scope-in audio now replicate from authoritative state with spatial playback on other clients.
 - The sniper scope overlay works and is still HUD-driven.
+- Bottom-left replicated chat is now active with `[ALL]` / `[TEAM]` send modes.
 - HDR skyboxes can be swapped at runtime.
 - Additive multiplayer still works locally through Colyseus:
   - multiple tabs can join
@@ -249,7 +250,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Weapons:
   - `Rifle`: full auto, ADS, low damage hitscan
   - `Pistol`: semi-auto sidearm, ADS, lighter recoil/spread profile than the sniper, now inaccurate in air
-  - `Sniper`: semi-auto, instant 3-stage scope toggle, `100` damage to body/head/arms/legs, inaccurate above `1.5 m/s`, scope-settle grace after zoom, and scope-overlay blur feedback for current inaccuracy
+  - `Sniper`: semi-auto, instant 3-stage scope toggle, `100` damage to body/head/arms/legs, inaccurate above `1.5 m/s`, readiness-gated scope-in, front-loaded quickscope inaccuracy that now applies on the actual shot frame, and scope-overlay blur feedback for current inaccuracy
   - `Knife`: fast movement, melee thrust
 - Bots:
   - wander on navmesh
@@ -302,7 +303,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - `FirstPersonController` consumes look input, runs fixed-step movement simulation, and exposes local presentation separately from canonical simulation state.
 - `NetworkClient` samples local inputs, receives authoritative state, and exposes corrections.
 - `RemotePlayerPresenter` renders remote placeholders / remote character models from authoritative state and combat events, and is now the active remote playermodel testbed.
-- `WeaponManager` consumes frame input for swap/scope/fire logic.
+- `WeaponManager` consumes frame input for swap/scope/fire logic, including weapon-config driven equip audio.
 - `UtilityManager` now coordinates bomb objective state, smoke utility flow, bomb equip policy, planting interaction, and planted-bomb visualization.
 - `TargetManager` updates bots using `CollisionWorld` and `NavigationManager`.
 
@@ -673,15 +674,21 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Footsteps:
   - current local step audio is registered from `/audio/players/footsteps/`
   - weapon audio is registered from `/audio/guns/`
+  - rifle and knife now also use dedicated equip sounds from `/audio/guns/`
   - current local step pool is the concrete set with random non-repeat selection
   - footsteps are currently silent while shift-walking, crouched, or moving below the audible-speed threshold
   - landing now emits one synthetic footstep on real air-to-ground transitions so bunnyhops are still audible
 - Remote audio:
-  - weapon fire, smoke bloom, and audible footsteps now replicate from authoritative state as `audio-event` messages
+  - weapon fire, smoke bloom, audible footsteps, defuse start, and short-range sniper scope-in now replicate from authoritative state as `audio-event` messages
   - remote playback now uses Web Audio spatial panning with listener transforms updated from the live first-person view
   - a manual attenuation/cutoff layer still sits on top of the spatial panner so sounds do not leak faintly cross-map
   - footsteps currently keep `HRTF` plus manual attenuation/cutoff as the live baseline
   - the debug menu now includes a remote-audio tuning panel for live footstep range/curve iteration
+- Chat:
+  - `Enter` opens the bottom-left chat input
+  - `Tab` swaps `[ALL]` / `[TEAM]` while typing
+  - the server routes `team` chat only to teammates and `all` chat to the whole room
+  - passive chat shows up to `6` lines, open chat shows up to `10`, and lines fade after `10s`
 - Walking:
   - `Shift` grounded walk is back
   - most weapons use `50%` walk speed

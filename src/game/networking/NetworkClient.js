@@ -8,6 +8,7 @@ import {
   createBombDropMessage,
   createBombDefuseMessage,
   createBombPlantMessage,
+  createChatMessage,
   createDebugRoundControlMessage,
   createGamemodeChangeMessage,
   createPlayerFireMessage,
@@ -193,6 +194,7 @@ export class NetworkClient {
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
     this.pendingAudioEvents = [];
+    this.pendingChatEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -328,6 +330,10 @@ export class NetworkClient {
 
       room.onMessage('audio-event', (message) => {
         this.pendingAudioEvents.push(createRemoteAudioEvent(message));
+      });
+
+      room.onMessage('chat-event', (message) => {
+        this.pendingChatEvents.push(message ?? null);
       });
 
       room.onMessage('pong', (message) => {
@@ -515,6 +521,7 @@ export class NetworkClient {
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
     this.pendingAudioEvents = [];
+    this.pendingChatEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -698,6 +705,15 @@ export class NetworkClient {
     return true;
   }
 
+  sendChatMessage(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('chat-message', createChatMessage(state));
+    return true;
+  }
+
   sendRemoteHitboxAudit(audit) {
     if (!this.room || !audit) {
       return false;
@@ -725,6 +741,12 @@ export class NetworkClient {
     return events;
   }
 
+  consumeChatEvents() {
+    const events = this.pendingChatEvents;
+    this.pendingChatEvents = [];
+    return events;
+  }
+
   getLocalPlayerState() {
     return this.localPlayerState;
   }
@@ -747,6 +769,7 @@ export class NetworkClient {
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
     this.pendingAudioEvents = [];
+    this.pendingChatEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -966,6 +989,7 @@ export class NetworkClient {
     this.localPlayerState = null;
     this.pendingCombatEvents = [];
     this.pendingAudioEvents = [];
+    this.pendingChatEvents = [];
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;

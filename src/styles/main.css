@@ -171,6 +171,75 @@ canvas {
   transform: translateX(-50%);
 }
 
+.hud__chat {
+  position: absolute;
+  left: 24px;
+  bottom: 118px;
+  width: min(460px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 6;
+}
+
+.hud__chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hud__chat-entry {
+  max-width: 100%;
+  color: rgba(255, 255, 255, 0.98);
+  font: 600 16px/1.2 "Trebuchet MS", "Segoe UI", sans-serif;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.85);
+  word-break: break-word;
+}
+
+.hud__chat-meta {
+  margin-right: 6px;
+}
+
+.hud__chat-text {
+  color: rgba(255, 255, 255, 0.98);
+}
+
+.hud__chat-compose {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(8, 12, 16, 0.92);
+  pointer-events: auto;
+}
+
+.hud__chat-compose--active {
+  display: flex;
+}
+
+.hud__chat-scope {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.92);
+  font: 700 15px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+  letter-spacing: 0.03em;
+}
+
+.hud__chat-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.98);
+  font: 600 16px/1.2 "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.hud__chat-input::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
 .hud__top,
 .hud__bottom {
   position: absolute;

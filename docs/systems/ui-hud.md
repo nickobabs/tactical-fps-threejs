@@ -34,6 +34,7 @@
 - Objective widgets such as plant/defuse progress
 - Round-win banner and MVP copy
 - Killfeed rendering with weapon/headshot icons
+- Bottom-left chat log and chat composer
 - HUD layout tuning/debug overlays
 
 ## Dependencies
@@ -84,6 +85,7 @@
   - horizontal FOV control
   - FPS display
   - scoped reticles
+  - Enter-to-chat composer with `[ALL]` / `[TEAM]` mode indicator in the input row
   - centered map-loading overlay
 - Includes hold-`Tab` scoreboard overlay with two team panels, player name/kills/deaths/ping columns, and live team score display
 - Includes a toggleable classic HUD mode inspired by Source plus the older debug HUD mode
@@ -106,6 +108,13 @@
   - headshot marker support
   - content-width cards capped by a tunable max width
 - Includes 4-way directional damage indicators around the crosshair
+- Includes a transient bottom-left chat feed:
+  - all-chat lines show `Name: message`
+  - team-chat lines show `[TEAM] Name: message`
+  - sender name/tag use team color, message body stays white
+  - passive feed shows up to `6` recent lines
+  - opening chat expands to up to `10` recent lines
+  - lines stay solid for `10s` and then fade out instead of popping off immediately
 - Dead overlay now yields to active/waiting spectate state so spectating does not keep the full dark death fade on screen
 - HUD structure is now split across smaller files for scoreboard, classic HUD, objective widgets, and debug panels
 - Pause-menu values for volume, sensitivity, and horizontal FOV now persist locally per browser

@@ -66,6 +66,19 @@ export function createPlayerStatusMessage(state) {
   };
 }
 
+export function createChatMessage(state) {
+  const rawScope = String(state?.scope ?? 'all').trim().toLowerCase();
+  const scope = rawScope === 'team' ? 'team' : 'all';
+  const text = String(state?.text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+  return {
+    scope,
+    text,
+  };
+}
+
 export function createGamemodeChangeMessage(state) {
   return {
     gamemode: String(state?.gamemode ?? 'debug'),

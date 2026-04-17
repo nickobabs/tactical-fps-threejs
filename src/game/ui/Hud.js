@@ -70,6 +70,8 @@ export function createHud({
   getIsLoading,
   getLoadingStatus,
   getKillfeedEntries,
+  getChatEntries,
+  onSendChatMessage,
   getIgnoreLocalCorrections,
   getIsMovementTraceRecording,
   getShowCrouchFatigueDebug,
@@ -180,6 +182,13 @@ export function createHud({
       </div>
     </div>
     <div class="hud__killfeed" aria-hidden="true"></div>
+    <div class="hud__chat" aria-hidden="true">
+      <div class="hud__chat-log"></div>
+      <div class="hud__chat-compose">
+        <span class="hud__chat-scope"></span>
+        <input class="hud__chat-input" type="text" maxlength="180" spellcheck="false" />
+      </div>
+    </div>
     <div class="hud__plant-progress">
       <div class="hud__plant-progress-label"></div>
       <div class="hud__plant-progress-track">
@@ -291,6 +300,11 @@ export function createHud({
   const bottomClusterEl = hud.querySelector('.hud__bottom');
   const scoreboardEl = hud.querySelector('.hud__scoreboard');
   const killfeedEl = hud.querySelector('.hud__killfeed');
+  const chatEl = hud.querySelector('.hud__chat');
+  const chatLogEl = hud.querySelector('.hud__chat-log');
+  const chatComposeEl = hud.querySelector('.hud__chat-compose');
+  const chatScopeEl = hud.querySelector('.hud__chat-scope');
+  const chatInputEl = hud.querySelector('.hud__chat-input');
   const plantProgressEl = hud.querySelector('.hud__plant-progress');
   const plantProgressLabelEl = hud.querySelector('.hud__plant-progress-label');
   const plantProgressFillEl = hud.querySelector('.hud__plant-progress-fill');
@@ -340,9 +354,13 @@ export function createHud({
   let lastRoundRosterDefendersScore = '';
   let lastRoundRosterAttackersScore = '';
   let lastKillfeedHtml = '';
+  let lastChatHtml = '';
   let lastHudUpdateAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   let bombPulseCountdown = null;
   let lastBombPlanted = false;
+  let chatOpen = false;
+  let chatScope = 'all';
+  let restorePointerLockAfterChat = false;
 
   function renderRoundRosterTeam(teamState, iconPath) {
     const players = [...(teamState?.players ?? [])]
@@ -440,6 +458,81 @@ export function createHud({
     return '';
   }
 
+  function getChatScopeLabel(scope) {
+    return scope === 'team' ? '[TEAM]' : '[ALL]';
+  }
+
+  function buildChatMarkup(entries = [], now = 0) {
+    if (!entries.length) {
+      return '';
+    }
+
+    return entries.map((entry) => {
+      const teamClass = getKillfeedNameClass(entry.team);
+      const fadeAt = Number(entry.fadeAt ?? 0);
+      const expiresAt = Number(entry.expiresAt ?? 0);
+      const fadeDuration = Math.max(1, expiresAt - fadeAt);
+      const opacity = fadeAt > 0 && now > fadeAt
+        ? Math.max(0, Math.min(1, (expiresAt - now) / fadeDuration))
+        : 1;
+      const feedPrefix = entry.scope === 'team'
+        ? `${getChatScopeLabel(entry.scope)} ${entry.displayName}`
+        : entry.displayName;
+      return `<div class="hud__chat-entry" style="opacity:${opacity.toFixed(3)};">
+        <span class="hud__chat-meta ${teamClass}">${escapeHtml(feedPrefix)}:</span>
+        <span class="hud__chat-text">${escapeHtml(entry.text)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function syncChatComposerUi() {
+    chatEl.classList.toggle('hud__chat--composing', chatOpen);
+    chatComposeEl.classList.toggle('hud__chat-compose--active', chatOpen);
+    chatScopeEl.textContent = getChatScopeLabel(chatScope);
+    chatInputEl.placeholder = 'message...';
+  }
+
+  function tryRestorePointerLock() {
+    if (!restorePointerLockAfterChat) {
+      return;
+    }
+    restorePointerLockAfterChat = false;
+    input?.domElement?.requestPointerLock?.();
+  }
+
+  function closeChat({ restorePointerLock = true } = {}) {
+    if (!chatOpen) {
+      return;
+    }
+    chatOpen = false;
+    chatInputEl.value = '';
+    chatInputEl.blur();
+    syncChatComposerUi();
+    if (restorePointerLock) {
+      tryRestorePointerLock();
+    } else {
+      restorePointerLockAfterChat = false;
+    }
+  }
+
+  function openChat() {
+    if (chatOpen || paused) {
+      return;
+    }
+
+    restorePointerLockAfterChat = Boolean(input?.pointerLocked);
+    input?.clearGameplayState?.();
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+    chatOpen = true;
+    syncChatComposerUi();
+    queueMicrotask(() => {
+      chatInputEl.focus();
+      chatInputEl.select();
+    });
+  }
+
   function isKillfeedDebugPreviewEnabled() {
     return document?.documentElement?.dataset?.hudDebugElement === 'killfeed';
   }
@@ -511,6 +604,27 @@ export function createHud({
   }
 
   function handleKeyDown(event) {
+    const eventTarget = event.target;
+    if (
+      eventTarget instanceof HTMLElement
+      && (eventTarget.isContentEditable
+        || eventTarget.tagName === 'INPUT'
+        || eventTarget.tagName === 'TEXTAREA'
+        || eventTarget.tagName === 'SELECT')
+    ) {
+      return;
+    }
+
+    if (chatOpen) {
+      return;
+    }
+
+    if (event.code === 'Enter' && !paused) {
+      openChat();
+      event.preventDefault();
+      return;
+    }
+
     if (event.code === 'F8') {
       showNetDebug = !showNetDebug;
       netDebugEl.hidden = !showNetDebug;
@@ -543,6 +657,35 @@ export function createHud({
 
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
+  chatInputEl.addEventListener('keydown', (event) => {
+    if (event.code === 'Tab') {
+      chatScope = chatScope === 'team' ? 'all' : 'team';
+      syncChatComposerUi();
+      event.preventDefault();
+      return;
+    }
+
+    if (event.code === 'Escape') {
+      closeChat({ restorePointerLock: true });
+      event.preventDefault();
+      return;
+    }
+
+    if (event.code !== 'Enter') {
+      return;
+    }
+
+    const didSend = onSendChatMessage?.({
+      scope: chatScope,
+      text: chatInputEl.value,
+    });
+    closeChat({ restorePointerLock: true });
+    if (didSend) {
+      input?.clearGameplayState?.();
+    }
+    event.preventDefault();
+  });
+  syncChatComposerUi();
   const scoreboardController = createHudScoreboardController({
     scoreboardEl,
     scoreboardSubtitleEl,
@@ -674,6 +817,12 @@ export function createHud({
       const forcedScoreboard = Boolean(roundManager?.matchEnded || roundManager?.phase === 'intermission');
       const scoreboardVisible = (showScoreboard || forcedScoreboard) && !paused;
       const killfeedEntries = getKillfeedEntries?.() ?? [];
+      const chatEntries = getChatEntries?.() ?? [];
+      const visibleChatEntries = chatOpen
+        ? chatEntries.slice(-10)
+        : chatEntries
+          .filter((entry) => Number(entry?.expiresAt ?? 0) > now)
+          .slice(-6);
       const hudMode = getHudMode?.() ?? 'debug';
       const classicVisible = hudMode === 'classic' && !paused;
       const roundWinDebugPreview = isRoundWinDebugPreviewEnabled();
@@ -753,6 +902,12 @@ export function createHud({
       if (killfeedHtml !== lastKillfeedHtml) {
         killfeedEl.innerHTML = killfeedHtml;
         lastKillfeedHtml = killfeedHtml;
+      }
+      const chatHtml = buildChatMarkup(visibleChatEntries, now);
+      if (chatHtml !== lastChatHtml) {
+        chatLogEl.innerHTML = chatHtml;
+        chatLogEl.scrollTop = chatLogEl.scrollHeight;
+        lastChatHtml = chatHtml;
       }
       objectiveWidgetsController.update({
         paused,
@@ -879,7 +1034,13 @@ export function createHud({
         lastDamageIndicatorLeft = leftIndicator;
       }
 
-      const spectatorState = getSpectatorState?.() ?? { mode: 'none', secondsRemaining: 0, targetName: '' };
+      const spectatorState = getSpectatorState?.() ?? {
+        mode: 'none',
+        secondsRemaining: 0,
+        targetName: '',
+        targetWeaponLabel: '',
+        targetScoped: false,
+      };
       const deadOverlayActive = Boolean(localPlayerState?.isAlive === false)
         && spectatorState.mode !== 'teammate'
         && spectatorState.mode !== 'waiting';
@@ -913,7 +1074,7 @@ export function createHud({
       const spectateText = spectatorState.mode === 'pending'
         ? `Spectating in: ${Number(spectatorState.secondsRemaining ?? 0).toFixed(1)}`
         : spectatorState.mode === 'teammate'
-          ? `Spectating: ${spectatorState.targetName} - LMB/RMB or <-/->`
+          ? `Spectating: ${spectatorState.targetName} - ${spectatorState.targetWeaponLabel}${spectatorState.targetScoped ? ' (Scoped)' : ''} - LMB/RMB or <-/->`
           : spectatorState.mode === 'waiting'
             ? 'Spectating: No alive teammates'
             : '';
