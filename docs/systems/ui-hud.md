@@ -115,7 +115,12 @@
   - passive feed shows up to `6` recent lines
   - opening chat expands to up to `10` recent lines
   - lines stay solid for `10s` and then fade out instead of popping off immediately
+  - opening chat forces stored recent lines visible at full opacity even if they were already faded in passive mode
 - Dead overlay now yields to active/waiting spectate state so spectating does not keep the full dark death fade on screen
+- Spectate now also mirrors more of the target player's first-person presentation:
+  - current weapon/viewmodel
+  - scoped state
+  - local spectator fire feedback driven from replicated target fire events
 - HUD structure is now split across smaller files for scoreboard, classic HUD, objective widgets, and debug panels
 - Pause-menu values for volume, sensitivity, and horizontal FOV now persist locally per browser
 - Includes draggable HUD tuning/debug panels so tuning workflows do not have to overlap the live HUD they are inspecting

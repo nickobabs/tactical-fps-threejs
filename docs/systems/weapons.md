@@ -67,6 +67,7 @@
 - The sniper now preserves its true fire cadence across quickswitches instead of letting re-equip reset the cooldown
 - Scoped sniper accuracy now has a short settle window after zooming in, and the HUD scope overlay reflects that live inaccuracy state
 - Weapon equip audio is now data-driven per weapon, and swapping away from a weapon cuts its active equip sound immediately
+- Spectator view can now mirror the current teammate target's first-person weapon/scoped state for a closer first-person spectate approximation
 
 ## Current Status
 
@@ -83,6 +84,7 @@
 - Rifle, pistol, and knife now play imported equip / hold / fire clips from the borrowed prototype viewmodel pack
 - Knife equip now uses the authored full draw animation instead of only the earlier procedural stab-style presentation
 - Rifle and knife now also use dedicated equip sounds
+- Local weapon/audio feedback now also includes dedicated being-hit and headshot-kill stingers
 - Rifle, pistol, and knife now respect equip completion before they can fire
 - Semi-auto weapons now use edge-triggered fire plus a short input buffer so fast pistol clicks do not feel randomly dropped near the cooldown limit
 - Sniper specifics in the current build:

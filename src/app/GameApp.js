@@ -1096,6 +1096,7 @@ export class GameApp {
         },
         onLocalPlayerHit: () => {
           this.damageVignette = Math.min(1, this.damageVignette + 0.55);
+          void this.audioManager.play('player-hit-taken');
         },
         onLocalPlayerDamageTaken: (event) => {
           this.registerDamageIndicator(event);
@@ -1144,6 +1145,10 @@ export class GameApp {
       isLocalDeath: localPlayerId.length > 0 && String(event.victimPlayerId ?? '') === localPlayerId,
       expiresAt: now + KILLFEED_ENTRY_LIFETIME_MS,
     };
+
+    if (entry.isLocalKill && entry.headshot) {
+      void this.audioManager.play('headshot-kill');
+    }
 
     this.killfeedEntries = [entry, ...this.killfeedEntries].slice(0, 5);
   }

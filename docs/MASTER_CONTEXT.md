@@ -162,7 +162,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - A first-pass bomb explosion visual now plays at the planted bomb position when the bomb detonates.
 - Remote weapon-fire, smoke bloom, footstep, defuse-start, and short-range sniper scope-in audio now replicate from authoritative state with spatial playback on other clients.
 - The sniper scope overlay works and is still HUD-driven.
-- Bottom-left replicated chat is now active with `[ALL]` / `[TEAM]` send modes.
+- Bottom-left replicated chat is now active with `[ALL]` / `[TEAM]` send modes, timed fadeout, passive/open history limits, and full-history reveal while composing.
 - HDR skyboxes can be swapped at runtime.
 - Additive multiplayer still works locally through Colyseus:
   - multiple tabs can join
@@ -174,6 +174,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - start the Colyseus server from `server/`
   - serve the built frontend and multiplayer backend from the same Railway domain
   - current RTT-based ping readings against Railway EU West (Amsterdam) have tested in a believable `15-20 ms` range from Copenhagen
+- The browser client now also has a first reconnect/backoff pass plus richer disconnect diagnostics in the console for room-close investigation.
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests to the server
   - the server now validates player hits against lag-compensated authoritative hitbox history instead of only the latest live pose
@@ -189,6 +190,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - plant-progress and bomb-planted timer/state feedback
   - a top-right killfeed with team-colored names, weapon icons, and headshot markers
   - a post-death spectate banner plus teammate spectate target label/cycling hints
+  - spectate-side first-person weapon/scoped-state mirroring for the current teammate target
   - a HUD layout tuning workflow with draggable panels, live element outlines, and killfeed preview variants
 - Debug controls are now part of the active workflow:
   - `F8`: toggle `NETDEBUG`
@@ -239,6 +241,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - match end scoreboard force-open plus 15-second automatic restart
   - side-swap / overtime intermissions with forced scoreboard and HUD messaging
   - dead players now auto-spectate alive teammates after `2` seconds if a valid teammate exists
+  - competitive now defaults room-wide infinite ammo to `off`
 
 ## Current Gameplay Snapshot
 
@@ -688,7 +691,8 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `Enter` opens the bottom-left chat input
   - `Tab` swaps `[ALL]` / `[TEAM]` while typing
   - the server routes `team` chat only to teammates and `all` chat to the whole room
-  - passive chat shows up to `6` lines, open chat shows up to `10`, and lines fade after `10s`
+  - passive chat shows up to `6` lines, open chat shows up to `10`, lines stay solid for `10s` then fade, and opening chat forces stored recent history visible at full opacity
+  - all-chat feed lines render as `Name: message`, while team chat keeps `[TEAM] Name: message`
 - Walking:
   - `Shift` grounded walk is back
   - most weapons use `50%` walk speed

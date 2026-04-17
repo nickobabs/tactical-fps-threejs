@@ -462,7 +462,7 @@ export function createHud({
     return scope === 'team' ? '[TEAM]' : '[ALL]';
   }
 
-  function buildChatMarkup(entries = [], now = 0) {
+  function buildChatMarkup(entries = [], now = 0, { forceVisible = false } = {}) {
     if (!entries.length) {
       return '';
     }
@@ -472,7 +472,9 @@ export function createHud({
       const fadeAt = Number(entry.fadeAt ?? 0);
       const expiresAt = Number(entry.expiresAt ?? 0);
       const fadeDuration = Math.max(1, expiresAt - fadeAt);
-      const opacity = fadeAt > 0 && now > fadeAt
+      const opacity = forceVisible
+        ? 1
+        : fadeAt > 0 && now > fadeAt
         ? Math.max(0, Math.min(1, (expiresAt - now) / fadeDuration))
         : 1;
       const feedPrefix = entry.scope === 'team'
@@ -903,7 +905,7 @@ export function createHud({
         killfeedEl.innerHTML = killfeedHtml;
         lastKillfeedHtml = killfeedHtml;
       }
-      const chatHtml = buildChatMarkup(visibleChatEntries, now);
+      const chatHtml = buildChatMarkup(visibleChatEntries, now, { forceVisible: chatOpen });
       if (chatHtml !== lastChatHtml) {
         chatLogEl.innerHTML = chatHtml;
         chatLogEl.scrollTop = chatLogEl.scrollHeight;

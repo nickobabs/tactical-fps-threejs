@@ -42,6 +42,7 @@
   - `Enter` sends
   - `Escape` cancels
   - `Tab` swaps `[ALL]` / `[TEAM]` while typing
+  - opening chat reveals up to `10` stored recent messages in the HUD log, independent of the passive faded state
 
 ## Current Status
 

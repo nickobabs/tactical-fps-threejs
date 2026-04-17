@@ -49,6 +49,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Replicated team/display-name state for scoreboard and remote presentation
 - Replicated round/objective snapshots for HUD and gameplay flow
 - Replicated chat-event stream for team/all chat HUD feed
+- richer disconnect diagnostics and automatic reconnect attempts after room closure
 
 ## Dependencies
 
@@ -62,6 +63,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 ## Key Design Decisions
 
 - Multiplayer remains additive. Failure to connect must never block local single-player runtime.
+- Browser reconnect is now a bounded backoff pass rather than one-shot connect only:
+  - room disconnects retry at `1s -> 2s -> 4s -> 8s`
+  - console diagnostics log room close code, last error, ping age, page visibility, online state, and reconnect attempt count
 - The first authoritative movement pass sends inputs, not positions.
 - Clients seed the server with their initial spawn state once, then switch over to input snapshots for ongoing movement.
 - Movement simulation is factored into a shared module so client and server can evolve toward a common movement model instead of duplicating magic numbers.
@@ -95,7 +99,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - dead clients wait `2` seconds, then spectate an alive teammate if one exists
   - the spectator camera is rebuilt from replicated teammate `position`, `currentHeight`, `yaw`, and `pitch`
   - cycling targets is local-only and does not require a server observer mode
-  - this is not a mirrored first-person render; it is a camera reconstructed from replicated state
+  - this is not a streamed remote client render, but the local spectator view now also mirrors more of the target's first-person weapon/scoped presentation from existing replicated state and fire events
 - Round timing and the first bomb-objective slice are now server-authoritative:
   - room starts in `waiting`
   - freeze only begins once all connected players have chosen a team and sent `player-ready`
@@ -121,6 +125,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - clients send `chat-message`
   - the server rebroadcasts `chat-event`
   - `scope: 'team'` only reaches teammates, while `scope: 'all'` reaches the whole room
+- The room now also owns room-wide infinite-ammo state for live debugging / mode defaults:
+  - competitive defaults this setting to `off`
+  - non-competitive modes keep the easier baseline default of `on`
 
 ## Current Status
 

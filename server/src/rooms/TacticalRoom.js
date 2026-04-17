@@ -119,6 +119,13 @@ const DEFAULT_GAMEPLAY_SETTINGS = Object.freeze({
   infiniteAmmoEnabled: true,
 });
 
+function createGameplaySettingsForGamemode(gamemode) {
+  return {
+    ...DEFAULT_GAMEPLAY_SETTINGS,
+    infiniteAmmoEnabled: !isCompetitiveGamemode(gamemode),
+  };
+}
+
 function getFreezeLockedInput(input) {
   return {
     ...input,
@@ -824,6 +831,7 @@ export class TacticalRoom extends Room {
     const nextGamemode = sanitizeGamemodeForMap(gamemode, mapId);
     this.roundManager.resetMatch(nextGamemode);
     this.resetObjectiveState();
+    this.gameplaySettings = createGameplaySettingsForGamemode(nextGamemode);
 
     for (const player of Object.values(this.players)) {
       if (!player?.isReady) {
@@ -1372,10 +1380,8 @@ export class TacticalRoom extends Room {
     this.roundManager = new RoundManager();
     this.roundManager.startWaiting();
     this.objectiveState = this.createObjectiveState();
-    this.gameplaySettings = {
-      ...DEFAULT_GAMEPLAY_SETTINGS,
-    };
     this.roundManager.setGamemode(GAMEMODES.DEBUG);
+    this.gameplaySettings = createGameplaySettingsForGamemode(this.roundManager.gamemode);
     void createRemoteHitboxRig().catch((error) => {
       console.warn('[TacticalRoom] Failed to preload remote hitbox rig.', error);
     });
