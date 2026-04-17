@@ -369,6 +369,10 @@ export class WeaponManager {
       onFireRequest: this.onFireRequest,
       viewModelController: this.viewModelController,
       sprayShotCount,
+      horizontalSpeed: Math.hypot(
+        Number(this.playerController?.velocity?.x ?? 0),
+        Number(this.playerController?.velocity?.z ?? 0),
+      ),
     });
   }
 

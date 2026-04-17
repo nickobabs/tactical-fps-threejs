@@ -33,6 +33,18 @@ export function applyHipfireSpread(weapon, isScoped, target = SHOT_OFFSET) {
   return target;
 }
 
+export function applyMovementSpread(weapon, horizontalSpeed = 0, target = SHOT_OFFSET) {
+  const movingSpread = Math.max(0, Number(weapon?.movingSpread ?? 0));
+  const speedThreshold = Math.max(0, Number(weapon?.movingSpreadSpeedThreshold ?? Infinity));
+  if (movingSpread <= 0 || !Number.isFinite(horizontalSpeed) || horizontalSpeed <= speedThreshold) {
+    return target;
+  }
+
+  target.x += (Math.random() * 2 - 1) * movingSpread;
+  target.y += (Math.random() * 2 - 1) * movingSpread;
+  return target;
+}
+
 export function applySprayRecoil(weapon, sprayShotCount = 1, target = SPRAY_CURVE_OFFSET) {
   target.set(0, 0);
 
@@ -103,8 +115,10 @@ export function fireHitscan({
   isScoped,
   applyDamage = true,
   sprayShotCount = 1,
+  horizontalSpeed = 0,
 }) {
   const shotOffset = applyHipfireSpread(weapon, isScoped);
+  applyMovementSpread(weapon, horizontalSpeed, shotOffset);
   shotOffset.add(applySprayRecoil(weapon, sprayShotCount));
   raycaster.layers.set(0);
   raycaster.setFromCamera(shotOffset, camera);

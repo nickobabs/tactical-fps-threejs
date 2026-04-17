@@ -15,6 +15,7 @@ export function executeWeaponShot({
   onFireRequest,
   viewModelController,
   sprayShotCount = 1,
+  horizontalSpeed = 0,
 }) {
   playWeaponAudio(audioManager, activeWeaponKey, currentWeapon);
 
@@ -29,6 +30,7 @@ export function executeWeaponShot({
     isScoped,
     applyDamage: !authoritativeCombatEnabled,
     sprayShotCount,
+    horizontalSpeed,
   });
   onFireRequest?.({
     weaponKey: activeWeaponKey,
