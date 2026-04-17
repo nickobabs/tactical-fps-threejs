@@ -207,6 +207,7 @@ export class NetworkClient {
     this.lastPingReceivedAt = 0;
     this.roundState = null;
     this.objectiveState = null;
+    this.gameplaySettings = null;
     this.audioDebugState = null;
 
     void this.connect();
@@ -303,6 +304,7 @@ export class NetworkClient {
   applyWorldState(message) {
     this.roundState = message?.round ?? null;
     this.objectiveState = message?.objective ?? null;
+    this.gameplaySettings = message?.gameplay ?? null;
     this.applyPlayerState(message?.players ?? {});
   }
 
@@ -679,6 +681,7 @@ export class NetworkClient {
     this.lastPingReceivedAt = 0;
     this.roundState = null;
     this.objectiveState = null;
+    this.gameplaySettings = null;
   }
 
   getScoreboardState() {
@@ -826,6 +829,10 @@ export class NetworkClient {
 
   getObjectiveState() {
     return this.objectiveState;
+  }
+
+  getGameplaySettings() {
+    return this.gameplaySettings;
   }
 
   getDebugState() {

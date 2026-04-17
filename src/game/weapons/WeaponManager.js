@@ -117,6 +117,18 @@ export class WeaponManager {
     this.playerController = playerController ?? null;
   }
 
+  setInfiniteAmmoEnabled(enabled, { refillIfEnabled = true } = {}) {
+    const nextEnabled = Boolean(enabled);
+    if (this.debugInfiniteAmmo === nextEnabled) {
+      return;
+    }
+
+    this.debugInfiniteAmmo = nextEnabled;
+    if (nextEnabled && refillIfEnabled) {
+      this.refillAllAmmo();
+    }
+  }
+
   getCurrentAmmoState() {
     return this.weaponAmmoStates.get(this.activeWeaponKey) ?? {
       ammoInMagazine: 0,

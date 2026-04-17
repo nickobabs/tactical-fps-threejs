@@ -243,6 +243,8 @@ export class GameApp {
       onToggleHudMode: () => this.toggleHudMode(),
       onForceSideSwap: () => this.forceDebugSideSwap(),
       onToggleCrouchFatigueDebug: () => this.toggleCrouchFatigueDebug(),
+      onToggleInfiniteAmmo: () => this.toggleInfiniteAmmoDebug(),
+      getInfiniteAmmoEnabled: () => this.getInfiniteAmmoEnabled(),
     });
     applyHudLayoutTuningToRoot();
     this.hudLayoutTuningPanel = createHudLayoutTuningPanel();
@@ -921,6 +923,7 @@ export class GameApp {
   }
 
   updateWorldSimulation(delta, frameInput) {
+    this.runtime?.weaponManager?.setInfiniteAmmoEnabled?.(this.getInfiniteAmmoEnabled());
     if (this.authoritativeNetworkingEnabled) {
       const authoritativeRoundState = this.networkClient.getRoundState?.();
       if (authoritativeRoundState) {
@@ -1261,6 +1264,21 @@ export class GameApp {
 
   toggleCrouchFatigueDebug() {
     this.showCrouchFatigueDebug = !this.showCrouchFatigueDebug;
+  }
+
+  getInfiniteAmmoEnabled() {
+    return Boolean(this.networkClient.getGameplaySettings?.()?.infiniteAmmoEnabled ?? true);
+  }
+
+  toggleInfiniteAmmoDebug() {
+    const nextEnabled = !this.getInfiniteAmmoEnabled();
+    if (this.getGameplaySyncEnabled()) {
+      this.networkClient.sendDebugRoundControl({
+        action: 'set-infinite-ammo',
+        enabled: nextEnabled,
+      });
+    }
+    this.runtime?.weaponManager?.setInfiniteAmmoEnabled?.(nextEnabled);
   }
 
   async resumeGame() {

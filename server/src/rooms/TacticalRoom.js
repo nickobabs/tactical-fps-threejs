@@ -114,6 +114,9 @@ const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
 const SMOKE_BLOOM_MAX_VALIDATE_DISTANCE = 32;
 const SMOKE_THROW_MAX_VALIDATE_DISTANCE = 3;
 const MIN_ONE_WAY_NETWORK_MS = 0;
+const DEFAULT_GAMEPLAY_SETTINGS = Object.freeze({
+  infiniteAmmoEnabled: true,
+});
 
 function getFreezeLockedInput(input) {
   return {
@@ -1293,6 +1296,9 @@ export class TacticalRoom extends Room {
     this.roundManager = new RoundManager();
     this.roundManager.startWaiting();
     this.objectiveState = this.createObjectiveState();
+    this.gameplaySettings = {
+      ...DEFAULT_GAMEPLAY_SETTINGS,
+    };
     this.roundManager.setGamemode(GAMEMODES.DEBUG);
     void createRemoteHitboxRig().catch((error) => {
       console.warn('[TacticalRoom] Failed to preload remote hitbox rig.', error);
@@ -1569,6 +1575,12 @@ export class TacticalRoom extends Room {
       const control = createDebugRoundControlMessage(message);
       if (control.action === 'force-side-swap') {
         this.forceDebugSideSwap(player);
+        return;
+      }
+
+      if (control.action === 'set-infinite-ammo' && control.enabled != null) {
+        this.gameplaySettings.infiniteAmmoEnabled = Boolean(control.enabled);
+        this.requestStateBroadcast();
       }
     });
 
@@ -1668,6 +1680,7 @@ export class TacticalRoom extends Room {
         players: this.getSerializablePlayers(),
         round: this.roundManager.getSnapshot(),
         objective: this.getObjectiveSnapshot(),
+        gameplay: { ...this.gameplaySettings },
       });
     });
 
@@ -1820,6 +1833,7 @@ export class TacticalRoom extends Room {
       players: this.getSerializablePlayers(),
       round: this.roundManager.getSnapshot(),
       objective: this.getObjectiveSnapshot(),
+      gameplay: { ...this.gameplaySettings },
     });
   }
 

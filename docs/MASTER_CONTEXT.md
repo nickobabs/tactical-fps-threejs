@@ -637,6 +637,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - `Gameplay Debugging`
   - current live round-control tooling includes:
     - force side swap
+    - room-wide infinite ammo toggle
     - crouch-fatigue debug toggle for the movement HUD line
   - the menu can also open:
     - recoil tuning

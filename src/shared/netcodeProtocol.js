@@ -92,6 +92,7 @@ export function createBombDropMessage() {
 export function createDebugRoundControlMessage(state) {
   return {
     action: String(state?.action ?? '').trim(),
+    enabled: state?.enabled == null ? null : Boolean(state.enabled),
   };
 }
 

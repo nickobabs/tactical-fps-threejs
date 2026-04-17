@@ -24,6 +24,8 @@ export function createDebugMenu({
   onToggleHudMode,
   onForceSideSwap,
   onToggleCrouchFatigueDebug,
+  onToggleInfiniteAmmo,
+  getInfiniteAmmoEnabled,
 }) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return null;
@@ -71,6 +73,11 @@ export function createDebugMenu({
           label: 'Force Side Swap',
           description: 'Trigger the competitive side-swap intermission immediately.',
           onClick: () => onForceSideSwap?.(),
+        },
+        {
+          getLabel: () => `Infinite Ammo: ${getInfiniteAmmoEnabled?.() ? 'ON' : 'OFF'}`,
+          getDescription: () => 'Toggle the room-wide infinite-ammo setting for all connected players.',
+          onClick: () => onToggleInfiniteAmmo?.(),
         },
         {
           label: 'Crouch Fatigue Debug',
@@ -173,19 +180,22 @@ export function createDebugMenu({
     card.style.textAlign = 'left';
 
     const label = document.createElement('div');
-    label.textContent = action.label;
+    label.textContent = action.getLabel ? action.getLabel() : action.label;
     label.style.fontWeight = '700';
     label.style.marginBottom = '4px';
     card.appendChild(label);
 
     const description = document.createElement('div');
-    description.textContent = action.description;
+    description.textContent = action.getDescription ? action.getDescription() : action.description;
     description.style.fontSize = '11px';
     description.style.lineHeight = '1.35';
     description.style.color = 'rgba(174, 211, 255, 0.82)';
     card.appendChild(description);
 
-    card.addEventListener('click', action.onClick);
+    card.addEventListener('click', () => {
+      action.onClick?.();
+      renderSelectedCategory();
+    });
     return card;
   }
 
