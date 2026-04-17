@@ -37,7 +37,7 @@ const GAME_AUDIO_REGISTRATIONS = [
   ['defuse-start', '/audio/game/defuse.mp3', { playback: 'interrupt', minIntervalMs: 120, baseVolume: 1.7 }],
   ['round-freeze-clock', '/audio/game/clock.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ['player-hit-taken', '/audio/players/beinghit.mp3', { playback: 'interrupt', minIntervalMs: 40, baseVolume: 0.9 }],
-  ['headshot-kill', '/audio/players/headshot.mp3', { playback: 'interrupt', minIntervalMs: 60, baseVolume: 1.14 }],
+  ['headshot-kill', '/audio/players/headshotv2.mp3', { playback: 'interrupt', minIntervalMs: 60, baseVolume: 1.64 }],
   ...FLOOR_FOOTSTEP_FILES.map((fileName, index) => {
     const sampleNumber = String(index + 1).padStart(3, '0');
     return [
