@@ -29,6 +29,8 @@ const TEAM_LABELS = {
 const PING_INTERVAL_MS = 2000;
 const PING_TIMEOUT_MS = 10000;
 const MAX_REPORTED_PING_MS = 999;
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 8000;
 
 function getNow() {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
@@ -209,8 +211,75 @@ export class NetworkClient {
     this.objectiveState = null;
     this.gameplaySettings = null;
     this.audioDebugState = null;
+    this.reconnectAttemptCount = 0;
+    this.reconnectTimerId = null;
+    this.lastDisconnectReason = null;
 
     void this.connect();
+  }
+
+  getConnectionDiagnostics() {
+    const now = getNow();
+    return {
+      serverUrl: this.serverUrl,
+      roomName: this.roomName,
+      playerId: this.playerId,
+      connectionState: this.connectionState,
+      lastError: this.lastError,
+      pingAgeMs: this.lastPingReceivedAt > 0 ? Math.round(now - this.lastPingReceivedAt) : -1,
+      pingPending: this.pendingPingId > 0,
+      visibilityState: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+      online: typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
+        ? navigator.onLine
+        : 'unknown',
+    };
+  }
+
+  clearReconnectTimer() {
+    if (this.reconnectTimerId == null) {
+      return;
+    }
+
+    clearTimeout(this.reconnectTimerId);
+    this.reconnectTimerId = null;
+  }
+
+  scheduleReconnect(reason, extra = {}) {
+    if (this.destroyed) {
+      return;
+    }
+
+    if (this.connectionState === 'connected' || this.connectionState === 'connecting') {
+      return;
+    }
+
+    if (this.reconnectTimerId != null) {
+      return;
+    }
+
+    const delayMs = Math.min(
+      RECONNECT_MAX_DELAY_MS,
+      RECONNECT_BASE_DELAY_MS * (2 ** Math.max(0, this.reconnectAttemptCount)),
+    );
+    this.reconnectAttemptCount += 1;
+    this.lastDisconnectReason = {
+      reason: String(reason ?? 'unknown'),
+      ...extra,
+      scheduledAt: Date.now(),
+      delayMs,
+    };
+    console.warn('[NetworkClient] Scheduling reconnect.', {
+      ...this.getConnectionDiagnostics(),
+      reason,
+      delayMs,
+      reconnectAttempt: this.reconnectAttemptCount,
+      ...extra,
+    });
+
+    this.reconnectTimerId = setTimeout(() => {
+      this.reconnectTimerId = null;
+      void this.connect();
+    }, delayMs);
   }
 
   async connect() {
@@ -218,6 +287,7 @@ export class NetworkClient {
       return;
     }
 
+    this.clearReconnectTimer();
     this.connectionState = 'connecting';
     this.lastError = null;
     console.info(`[NetworkClient] Connecting to ${this.serverUrl}/${this.roomName}`);
@@ -233,6 +303,7 @@ export class NetworkClient {
 
       this.room = room;
       this.connectionState = 'connected';
+      this.reconnectAttemptCount = 0;
       this.playerId = room.sessionId;
       console.info(`[NetworkClient] Connected to room "${room.name}" with session ${room.sessionId}`);
       console.info(`[NetworkClient] Assigned player ID: ${this.playerId}`);
@@ -267,12 +338,21 @@ export class NetworkClient {
         this.room = null;
         this.remotePlayerBuffers.clear();
         this.connectionState = this.destroyed ? 'closed' : 'disconnected';
-        console.info(`[NetworkClient] Room closed with code ${code}`);
+        console.warn('[NetworkClient] Room left / disconnected.', {
+          ...this.getConnectionDiagnostics(),
+          closeCode: code,
+          lastDisconnectReason: this.lastDisconnectReason,
+        });
+        this.scheduleReconnect('room-onLeave', { closeCode: code });
       });
 
       room.onError((code, message) => {
         this.lastError = `${code}: ${message}`;
-        console.error(`[NetworkClient] Room error ${code}: ${message}`);
+        console.error('[NetworkClient] Room error.', {
+          ...this.getConnectionDiagnostics(),
+          errorCode: code,
+          errorMessage: message,
+        });
       });
 
       if (this.pendingInitializationState) {
@@ -294,10 +374,11 @@ export class NetworkClient {
       this.remotePlayerBuffers.clear();
       this.connectionState = 'offline';
       this.lastError = error instanceof Error ? error.message : String(error);
-      console.warn(
-        `[NetworkClient] Multiplayer unavailable at ${this.serverUrl}. Continuing in single-player mode.`,
-        error,
-      );
+      console.warn('[NetworkClient] Connect failed.', {
+        ...this.getConnectionDiagnostics(),
+        error: this.lastError,
+      });
+      this.scheduleReconnect('connect-failed', { error: this.lastError });
     }
   }
 
@@ -874,6 +955,7 @@ export class NetworkClient {
 
   destroy() {
     this.destroyed = true;
+    this.clearReconnectTimer();
     this.remotePlayerBuffers.clear();
     this.pendingLocalCorrection = null;
     this.pendingInitializationState = null;
