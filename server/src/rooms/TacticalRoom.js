@@ -72,6 +72,19 @@ import {
   getWeaponDamageForHitZone,
 } from '../combat/shotValidation.js';
 import { resolvePlayerFire } from '../combat/fireResolution.js';
+import {
+  createBombBeepAudioEvent,
+  createDefuseStartAudioEvent,
+  createPlayerFiredEvent,
+  createPlayerHitEvent,
+  createPlayerRespawnedEvent,
+  createPositionalAudioEvent,
+} from './tacticalRoomEventPayloads.js';
+import {
+  createObjectiveSnapshot,
+  createPlayerStatePayload,
+  createSmokeThrownEvent,
+} from './tacticalRoomStatePayloads.js';
 
 const SERVER_MOVE_POSITION = new THREE.Vector3();
 const OBJECTIVE_TO_BOMB = new THREE.Vector3();
@@ -872,28 +885,7 @@ export class TacticalRoom extends Room {
   }
 
   getObjectiveSnapshot() {
-    return {
-      bombCarrierPlayerId: this.objectiveState.bombCarrierPlayerId,
-      bombState: this.objectiveState.bombState,
-      bombTimeRemaining: Number(this.objectiveState.bombTimeRemaining ?? 0),
-      droppedMapId: this.objectiveState.droppedMapId,
-      droppedPosition: this.objectiveState.droppedPosition
-        ? {
-          x: Number(this.objectiveState.droppedPosition.x ?? 0),
-          y: Number(this.objectiveState.droppedPosition.y ?? 0),
-          z: Number(this.objectiveState.droppedPosition.z ?? 0),
-        }
-        : null,
-      plantedZoneName: this.objectiveState.plantedZoneName,
-      defuserPlayerId: this.objectiveState.defuserPlayerId,
-      plantedPosition: this.objectiveState.plantedPosition
-        ? {
-          x: Number(this.objectiveState.plantedPosition.x ?? 0),
-          y: Number(this.objectiveState.plantedPosition.y ?? 0),
-          z: Number(this.objectiveState.plantedPosition.z ?? 0),
-        }
-        : null,
-    };
+    return createObjectiveSnapshot(this.objectiveState);
   }
 
   onCreate() {
@@ -1290,15 +1282,7 @@ export class TacticalRoom extends Room {
         return;
       }
 
-      this.broadcast('combat-event', {
-        type: 'smoke-thrown',
-        playerId: player.playerId,
-        mapId: player.mapId,
-        origin: smokeThrow.origin,
-        direction: smokeThrow.direction,
-        inheritedVelocity: smokeThrow.inheritedVelocity,
-        speed: smokeThrow.speed,
-      });
+      this.broadcast('combat-event', createSmokeThrownEvent(player, smokeThrow));
     });
 
     this.onMessage('bomb-plant', (client, message) => {
@@ -1359,12 +1343,12 @@ export class TacticalRoom extends Room {
     });
 
     this.onMessage('request-player-state', (client) => {
-      client.send('player-state', {
+      client.send('player-state', createPlayerStatePayload({
         players: this.getSerializablePlayers(),
-        round: this.roundManager.getSnapshot(),
-        objective: this.getObjectiveSnapshot(),
-        gameplay: { ...this.gameplaySettings },
-      });
+        roundManager: this.roundManager,
+        objectiveState: this.objectiveState,
+        gameplaySettings: this.gameplaySettings,
+      }));
     });
 
     this.onMessage('remote-hitbox-audit', (client, message) => {
@@ -1516,12 +1500,12 @@ export class TacticalRoom extends Room {
   }
 
   broadcastPlayerState() {
-    this.broadcast('player-state', {
+    this.broadcast('player-state', createPlayerStatePayload({
       players: this.getSerializablePlayers(),
-      round: this.roundManager.getSnapshot(),
-      objective: this.getObjectiveSnapshot(),
-      gameplay: { ...this.gameplaySettings },
-    });
+      roundManager: this.roundManager,
+      objectiveState: this.objectiveState,
+      gameplaySettings: this.gameplaySettings,
+    }));
   }
 
   getSniperOwnerForTeam(teamKey, { excludePlayerId = null } = {}) {
@@ -1638,10 +1622,7 @@ export class TacticalRoom extends Room {
     player.presentationState = this.getPresentationStateForPlayer(player);
     clearPlayerHitboxHistory(player);
     if (broadcastEvent) {
-      this.broadcast('combat-event', {
-        type: 'player-respawned',
-        playerId: player.playerId,
-      });
+      this.broadcast('combat-event', createPlayerRespawnedEvent(player));
     }
     this.requestStateBroadcast();
   }
@@ -1658,22 +1639,18 @@ export class TacticalRoom extends Room {
 
     const soundKey = pickRemoteWeaponAudioSoundKey(config);
 
-    this.broadcastAudioEvent({
+    this.broadcastAudioEvent(createPositionalAudioEvent({
       type: 'weapon-fire',
       sourcePlayerId: player.playerId,
       mapId: player.mapId,
       soundKey,
-      position: {
-        x: Number(origin.x ?? 0),
-        y: Number(origin.y ?? 0),
-        z: Number(origin.z ?? 0),
-      },
+      position: origin,
       baseVolume: config.baseVolume,
       minDistance: config.minDistance,
       maxDistance: config.maxDistance,
       rolloffExponent: config.rolloffExponent,
       playback: 'overlap',
-    });
+    }));
   }
 
   emitScopeInAudioEvent(player) {
@@ -1683,7 +1660,7 @@ export class TacticalRoom extends Room {
       return;
     }
 
-    this.broadcastAudioEvent({
+    this.broadcastAudioEvent(createPositionalAudioEvent({
       type: 'weapon-scope-in',
       sourcePlayerId: player.playerId,
       mapId: player.mapId,
@@ -1699,7 +1676,7 @@ export class TacticalRoom extends Room {
       rolloffExponent: config.rolloffExponent,
       playback: 'overlap',
       minIntervalMs: 80,
-    });
+    }));
   }
 
   emitFootstepAudioEvent(player) {
@@ -1714,7 +1691,7 @@ export class TacticalRoom extends Room {
     }
     player.lastFootstepSampleIndex = sampleIndex;
 
-    this.broadcastAudioEvent({
+    this.broadcastAudioEvent(createPositionalAudioEvent({
       type: 'footstep',
       sourcePlayerId: player.playerId,
       mapId: player.mapId,
@@ -1733,7 +1710,7 @@ export class TacticalRoom extends Room {
       attenuationCutoffExponent: profile.attenuationCutoffExponent,
       playback: 'overlap',
       minIntervalMs: 60,
-    });
+    }));
   }
 
   emitSmokeBloomAudioEvent(player, position) {
@@ -1742,22 +1719,18 @@ export class TacticalRoom extends Room {
       return;
     }
 
-    this.broadcastAudioEvent({
+    this.broadcastAudioEvent(createPositionalAudioEvent({
       type: 'utility-smoke-bloom',
       sourcePlayerId: player.playerId,
       mapId: player.mapId,
       soundKey: config.soundKey,
-      position: {
-        x: Number(position.x ?? 0),
-        y: Number(position.y ?? 0),
-        z: Number(position.z ?? 0),
-      },
+      position,
       baseVolume: config.baseVolume,
       minDistance: config.minDistance,
       maxDistance: config.maxDistance,
       rolloffExponent: config.rolloffExponent,
       playback: 'overlap',
-    });
+    }));
   }
 
   emitDefuseStartAudioEvent(player) {
@@ -1768,23 +1741,12 @@ export class TacticalRoom extends Room {
       return;
     }
 
-    this.broadcastAudioEvent({
-      type: 'objective-defuse-start',
-      sourcePlayerId: player.playerId,
-      mapId: plantedMapId,
-      soundKey: config.soundKey,
-      position: {
-        x: Number(plantedPosition.x ?? 0),
-        y: Number(plantedPosition.y ?? 0),
-        z: Number(plantedPosition.z ?? 0),
-      },
-      baseVolume: config.baseVolume,
-      minDistance: config.minDistance,
-      maxDistance: config.maxDistance,
-      rolloffExponent: config.rolloffExponent,
-      playback: 'interrupt',
-      minIntervalMs: 120,
-    });
+    this.broadcastAudioEvent(createDefuseStartAudioEvent({
+      player,
+      plantedMapId,
+      plantedPosition,
+      config,
+    }));
   }
 
   emitBombBeepAudioEvent() {
@@ -1799,24 +1761,12 @@ export class TacticalRoom extends Room {
     const pulseInterval = getBombPulseIntervalSeconds(bombTimeRemaining);
     const beepDuration = Math.max(0.05, Math.min(0.16, pulseInterval * 0.58));
 
-    this.broadcastAudioEvent({
-      type: 'objective-bomb-beep',
-      sourcePlayerId: null,
-      mapId: plantedMapId,
-      soundKey: config.soundKey,
-      position: {
-        x: Number(plantedPosition.x ?? 0),
-        y: Number(plantedPosition.y ?? 0),
-        z: Number(plantedPosition.z ?? 0),
-      },
-      baseVolume: config.baseVolume,
-      minDistance: config.minDistance,
-      maxDistance: config.maxDistance,
-      rolloffExponent: config.rolloffExponent,
-      playback: 'interrupt',
-      minIntervalMs: 0,
+    this.broadcastAudioEvent(createBombBeepAudioEvent({
+      plantedMapId,
+      plantedPosition,
+      config,
       duration: beepDuration,
-    });
+    }));
   }
 
   updatePlayerFootsteps(player, previousPosition, inputSnapshot, wasGroundedBeforeStep = false) {
@@ -1904,15 +1854,7 @@ export class TacticalRoom extends Room {
     this.emitWeaponAudioEvent(player, player.activeWeaponKey, shotResult.origin);
 
     if (!shotResult.hit || !shotResult.bestTarget) {
-      this.broadcast('combat-event', {
-        type: 'player-fired',
-        playerId: player.playerId,
-        weaponKey: player.activeWeaponKey,
-        mapId: player.mapId,
-        origin: shotResult.origin,
-        tracerEnd: shotResult.traceEnd,
-        impact: shotResult.impact,
-      });
+      this.broadcast('combat-event', createPlayerFiredEvent(player, shotResult));
       return;
     }
 
@@ -1928,33 +1870,16 @@ export class TacticalRoom extends Room {
 
     player.presentationState = this.getPresentationStateForPlayer(player);
 
-    this.broadcast('combat-event', {
-      type: 'player-hit',
-      attackerPlayerId: player.playerId,
-      victimPlayerId: shotResult.bestTarget.playerId,
-      weaponKey: String(weapon?.key ?? player.activeWeaponKey ?? 'rifle'),
+    this.broadcast('combat-event', createPlayerHitEvent({
+      attacker: player,
+      target: shotResult.bestTarget,
+      weaponKey: weapon?.key ?? player.activeWeaponKey ?? 'rifle',
       damage,
       hitZone: shotResult.bestHitZone,
-      hitPosition: {
-        x: shotResult.origin.x + (shotResult.direction.x * shotResult.bestDistance),
-        y: shotResult.origin.y + (shotResult.direction.y * shotResult.bestDistance),
-        z: shotResult.origin.z + (shotResult.direction.z * shotResult.bestDistance),
-      },
-      hitDirection: shotResult.direction,
-      remainingHealth: shotResult.bestTarget.health,
-      killed: shotResult.bestTarget.health === 0,
+      shotResult,
       deathClip,
-      respawnAt: shotResult.bestTarget.respawnAt,
-    });
-    this.broadcast('combat-event', {
-      type: 'player-fired',
-      playerId: player.playerId,
-      weaponKey: player.activeWeaponKey,
-      mapId: player.mapId,
-      origin: shotResult.origin,
-      tracerEnd: shotResult.traceEnd,
-      impact: true,
-    });
+    }));
+    this.broadcast('combat-event', createPlayerFiredEvent(player, shotResult));
     this.requestStateBroadcast();
   }
 

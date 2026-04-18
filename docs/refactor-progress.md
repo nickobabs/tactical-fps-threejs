@@ -20,6 +20,9 @@ See also:
 - [session-note-2026-04-18-remote-networking-refactor-checkpoint.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-remote-networking-refactor-checkpoint.md)
   - `RemotePlayerPresenter` now delegates fire/death/presentation helpers more cleanly
   - `NetworkClient` now delegates snapshot bookkeeping and queue/reset helpers while keeping reconnect ownership local
+- [session-note-2026-04-18-tactical-room-payload-refactor.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-tactical-room-payload-refactor.md)
+  - `TacticalRoom` now delegates event/snapshot payload shaping more cleanly
+  - server authority, validation, and broadcast sequencing still remain local to the room
 
 ## What Is Already In Better Shape
 
@@ -55,6 +58,10 @@ See also:
   - server shot/hit geometry now lives in [shotValidation.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/shotValidation.js)
   - server shot target resolution now lives in [fireResolution.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/fireResolution.js)
   - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js) is now more of an authoritative combat orchestrator than a geometry helper dump
+- Server room payload helpers
+  - combat/audio payload shaping now lives in [tacticalRoomEventPayloads.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/tacticalRoomEventPayloads.js)
+  - objective/world-state payload shaping now lives in [tacticalRoomStatePayloads.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/tacticalRoomStatePayloads.js)
+  - `TacticalRoom` still owns the authoritative timing of those messages
 - Remote animation / debug helpers
   - remote hitbox debug now lives in [remoteHitboxDebug.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxDebug.js)
   - remote hitbox audit now lives in [remoteHitboxAudit.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxAudit.js)
@@ -110,7 +117,7 @@ See also:
   - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
   - these are functionally important and still fairly dense
   - they should only be refactored when there is a clear ownership win, not just because they are large
-  - the first useful server combat extractions are now done, so future slices should target state-application or event-construction boundaries only if they are equally clear
+  - the first useful server combat and payload extractions are now done, so future slices should target state-application or event-construction boundaries only if they are equally clear
 - Connection lifecycle in [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
   - future cleanup here must preserve explicit active-room ownership
   - stale async room callbacks are now a known regression risk
@@ -149,4 +156,5 @@ See also:
 2. Prefer low-risk `NetworkClient` cleanup next, such as ping/diagnostics helpers, while leaving reconnect ownership local.
 3. If remote presentation work resumes, only take another `RemotePlayerPresenter` slice if it is still clearly a mixed-responsibility boundary rather than orchestration for its own sake.
 4. If server combat work continues, keep extracting only narrow authority-adjacent helpers from `TacticalRoom` without moving state mutation/broadcast sequencing prematurely.
-5. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.
+5. Treat server payload shaping as mostly “done enough” unless a similarly clear serialization boundary appears.
+6. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.

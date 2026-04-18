@@ -66,7 +66,7 @@ export const REMOTE_UTILITY_AUDIO = {
   },
   defuseStart: {
     soundKey: 'defuse-start',
-    baseVolume: 1.7,
+    baseVolume: 2.0,
     minDistance: 1.5,
     maxDistance: 20,
     rolloffExponent: 1.12,

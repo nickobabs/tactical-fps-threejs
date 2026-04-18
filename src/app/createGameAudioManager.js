@@ -38,7 +38,7 @@ const GAME_AUDIO_REGISTRATIONS = [
   ['bomb-beep', '/audio/game/bomb beep.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ['bomb-planted', '/audio/game/bomb planted.mp3', { playback: 'interrupt' }],
   ['bomb-defused', '/audio/game/bomb defused.mp3', { playback: 'interrupt' }],
-  ['defuse-start', '/audio/game/defuse.mp3', { playback: 'interrupt', minIntervalMs: 120, baseVolume: 1.7 }],
+  ['defuse-start', '/audio/game/defuse.mp3', { playback: 'interrupt', minIntervalMs: 120, baseVolume: 2.0 }],
   ['round-freeze-clock', '/audio/game/clock.mp3', { playback: 'interrupt', minIntervalMs: 0 }],
   ['player-hit-taken', '/audio/players/beinghit.mp3', { playback: 'interrupt', minIntervalMs: 40, baseVolume: 0.9 }],
   ['headshot-kill', '/audio/players/headshotv2.mp3', { playback: 'interrupt', minIntervalMs: 60, baseVolume: 2.13 }],

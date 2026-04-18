@@ -36,6 +36,13 @@ import {
   resetGameplayState,
   resetPendingEventQueues,
 } from './networkClientState.js';
+import {
+  buildConnectionDiagnostics,
+  buildNetworkDebugState,
+  handlePongMessage,
+  resetPingState,
+  sendPingProbe,
+} from './networkClientDiagnostics.js';
 
 const ROOM_NAME = 'TacticalRoom';
 const SCOREBOARD_TEAMS = ['attackers', 'defenders'];
@@ -43,34 +50,10 @@ const TEAM_LABELS = {
   attackers: 'Attackers',
   defenders: 'Defenders',
 };
-const PING_INTERVAL_MS = 2000;
-const PING_TIMEOUT_MS = 10000;
-const MAX_REPORTED_PING_MS = 999;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 8000;
 const MAX_CONNECTION_EVENT_HISTORY = 40;
 let NEXT_NETWORK_CLIENT_INSTANCE_ID = 1;
-
-function formatAudioDebugEntry(entry, now) {
-  if (!entry) {
-    return null;
-  }
-
-  return {
-    eventType: entry.eventType ?? 'unknown',
-    soundKey: entry.soundKey ?? 'unknown',
-    distance: Number(entry.distance ?? 0),
-    baseVolume: Number(entry.baseVolume ?? 0),
-    manualVolume: Number(entry.manualVolume ?? 0),
-    spatialVolumeMultiplier: Number(entry.spatialVolumeMultiplier ?? 0),
-    finalVolume: Number(entry.finalVolume ?? 0),
-    minDistance: Number(entry.minDistance ?? 0),
-    maxDistance: Number(entry.maxDistance ?? 0),
-    rolloffFactor: Number(entry.rolloffFactor ?? 0),
-    panningModel: String(entry.panningModel ?? 'unknown'),
-    ageMs: Number(now - Number(entry.recordedAt ?? now)),
-  };
-}
 
 function getDefaultServerUrl() {
   if (typeof window === 'undefined') {
@@ -213,25 +196,7 @@ export class NetworkClient {
   }
 
   getConnectionDiagnostics() {
-    const now = getTimelineNow();
-    return {
-      serverUrl: this.serverUrl,
-      roomName: this.roomName,
-      instanceId: this.instanceId,
-      playerId: this.playerId,
-      connectionState: this.connectionState,
-      lastError: this.lastError,
-      pingAgeMs: this.lastPingReceivedAt > 0 ? Math.round(now - this.lastPingReceivedAt) : -1,
-      pingPending: this.pendingPingId > 0,
-      visibilityState: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
-      online: typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
-        ? navigator.onLine
-        : 'unknown',
-      activeRoomToken: this.activeRoomToken,
-      connectAttemptCount: this.connectAttemptCount,
-      reconnectAttemptCount: this.reconnectAttemptCount,
-      recentConnectionEvents: this.connectionEvents.slice(-10),
-    };
+    return buildConnectionDiagnostics(this);
   }
 
   clearReconnectTimer() {
@@ -355,7 +320,7 @@ export class NetworkClient {
       });
 
       room.onMessage('pong', (message) => {
-        this.handlePong(message);
+        handlePongMessage(this, message);
       });
 
       room.onLeave((code) => {
@@ -402,14 +367,8 @@ export class NetworkClient {
       }
 
       room.send('request-player-state');
-      this.lastPingSentAt = 0;
-      this.pendingPingId = 0;
-      this.pendingPingSentAt = 0;
-      this.lastPingRoundTripMs = 0;
-      this.lastPingServerTurnaroundMs = 0;
-      this.lastPingEstimatedNetworkMs = 0;
-      this.lastPingReceivedAt = 0;
-      this.sendPingProbe(true);
+      resetPingState(this);
+      sendPingProbe(this, true);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (this.activeRoomToken !== roomToken) {
@@ -571,62 +530,8 @@ export class NetworkClient {
   }
 
   update() {
-    this.sendPingProbe();
+    sendPingProbe(this);
     return false;
-  }
-
-  handlePong(message) {
-    const pongId = Number(message?.id ?? 0);
-    if (pongId <= 0 || pongId !== this.pendingPingId || this.pendingPingSentAt <= 0) {
-      return;
-    }
-
-    const now = getTimelineNow();
-    const roundTripMs = Math.max(0, Math.round(now - this.pendingPingSentAt));
-    const serverReceivedAt = Number(message?.serverReceivedAt ?? 0);
-    const serverSentAt = Number(message?.serverSentAt ?? serverReceivedAt);
-    const serverTurnaroundMs = serverSentAt >= serverReceivedAt
-      ? Math.max(0, Math.round(serverSentAt - serverReceivedAt))
-      : 0;
-    const estimatedNetworkMs = Math.max(0, Math.round(roundTripMs - serverTurnaroundMs));
-    this.pendingPingId = 0;
-    this.pendingPingSentAt = 0;
-    this.lastPingRoundTripMs = roundTripMs;
-    this.lastPingServerTurnaroundMs = serverTurnaroundMs;
-    this.lastPingEstimatedNetworkMs = estimatedNetworkMs;
-    this.lastPingReceivedAt = now;
-    this.averagePingMs = this.averagePingMs > 0
-      ? Math.round((this.averagePingMs * 0.7) + (roundTripMs * 0.3))
-      : roundTripMs;
-
-    if (this.room) {
-      this.room.send('player-ping', {
-        pingMs: Math.max(0, Math.min(MAX_REPORTED_PING_MS, this.averagePingMs)),
-      });
-    }
-  }
-
-  sendPingProbe(force = false) {
-    if (!this.room) {
-      return;
-    }
-
-    const now = getTimelineNow();
-    if (this.pendingPingId > 0 && now - this.pendingPingSentAt >= PING_TIMEOUT_MS) {
-      this.pendingPingId = 0;
-      this.pendingPingSentAt = 0;
-    }
-
-    if (!force && (this.pendingPingId > 0 || now - this.lastPingSentAt < PING_INTERVAL_MS)) {
-      return;
-    }
-
-    const pingId = this.nextPingId;
-    this.nextPingId += 1;
-    this.pendingPingId = pingId;
-    this.pendingPingSentAt = now;
-    this.lastPingSentAt = now;
-    this.room.send('ping', { id: pingId });
   }
 
   sendFireRequest(fireRequest) {
@@ -889,36 +794,7 @@ export class NetworkClient {
   }
 
   getDebugState() {
-    const now = getTimelineNow();
-    return {
-      connectionState: this.connectionState,
-      localMapId: this.localMapId,
-      receivedPlayerStateCount: this.lastReceivedPlayerStateCount,
-      sameMapRemoteStateCount: this.lastSameMapRemoteStateCount,
-      filteredRemoteStateCount: this.lastFilteredRemoteStateCount,
-      receivedRemoteMaps: [...this.lastReceivedRemoteMaps],
-      latestSequence: Math.max(0, this.nextInputSequence - 1),
-      acknowledgedSequence: this.lastAuthoritativeSequence,
-      pendingInputCount: this.pendingInputs.length,
-      sequenceGap: Math.max(0, (this.nextInputSequence - 1) - this.lastAuthoritativeSequence),
-      snapshotAgeMs: this.lastAuthoritativeStateAt > 0 ? Math.round(now - this.lastAuthoritativeStateAt) : -1,
-      lastPredictedDriftDistance: this.lastCorrectionDistance,
-      authoritativeUpdatesPerSecond: this.authoritativeEvents.length,
-      pendingJumpSend: this.pendingJumpSend,
-      serverUrl: this.serverUrl,
-      pingRoundTripMs: this.lastPingRoundTripMs,
-      pingAverageMs: this.averagePingMs,
-      pingServerTurnaroundMs: this.lastPingServerTurnaroundMs,
-      pingEstimatedNetworkMs: this.lastPingEstimatedNetworkMs,
-      pingAgeMs: this.lastPingReceivedAt > 0 ? Math.round(now - this.lastPingReceivedAt) : -1,
-      pingPending: this.pendingPingId > 0,
-      audioDebug: this.audioDebugState
-        ? {
-          lastFootstep: formatAudioDebugEntry(this.audioDebugState.lastFootstep, now),
-          lastWeapon: formatAudioDebugEntry(this.audioDebugState.lastWeapon, now),
-        }
-        : null,
-    };
+    return buildNetworkDebugState(this);
   }
 
   setAudioDebugState(audioDebugState) {
@@ -932,14 +808,7 @@ export class NetworkClient {
     const activeRoomSessionId = activeRoom?.sessionId ?? null;
     this.pendingInitializationState = null;
     this.resetRoomState();
-    this.lastPingSentAt = 0;
-    this.pendingPingId = 0;
-    this.pendingPingSentAt = 0;
-    this.averagePingMs = 0;
-    this.lastPingRoundTripMs = 0;
-    this.lastPingServerTurnaroundMs = 0;
-    this.lastPingEstimatedNetworkMs = 0;
-    this.lastPingReceivedAt = 0;
+    resetPingState(this);
     resetGameplayState(this);
     this.audioDebugState = null;
     this.recordConnectionEvent('destroy', {

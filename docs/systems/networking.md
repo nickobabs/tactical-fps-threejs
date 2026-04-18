@@ -98,6 +98,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - `NetworkClient` has also started delegating lower-risk client state handling:
   - remote snapshot dedupe/prune helpers now live in `src/game/networking/networkRemoteState.js`
   - pending event queue and gameplay-state helpers now live in `src/game/networking/networkClientState.js`
+  - ping/diagnostics helpers now live in `src/game/networking/networkClientDiagnostics.js`
   - reconnect lifecycle, room-token guards, and active-room ownership intentionally still remain in `NetworkClient.js`
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 - The current combat slice is intentionally narrow:
@@ -108,6 +109,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - lag-compensation and hitbox-history helpers live in `server/src/combat/lagCompensation.js`
     - shot/hit geometry helpers live in `server/src/combat/shotValidation.js`
     - shot sanitization and target-selection flow live in `server/src/combat/fireResolution.js`
+    - combat/audio payload shaping now lives in `server/src/rooms/tacticalRoomEventPayloads.js`
+    - objective/world-state payload shaping now lives in `server/src/rooms/tacticalRoomStatePayloads.js`
     - `TacticalRoom` still owns rate limiting, damage application, kill/respawn side effects, and combat-event broadcast sequencing
 - Remote players are intentionally rendered slightly behind live authority for smoother interpolation, while PvP hit validation now compensates for that timeline gap on the server:
   - current remote interpolation delay is `67 ms`

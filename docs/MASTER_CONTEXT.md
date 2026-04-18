@@ -740,6 +740,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `NetworkClient` extraction has also continued in low-risk state-shape slices:
     - `src/game/networking/networkRemoteState.js`
     - `src/game/networking/networkClientState.js`
+    - `src/game/networking/networkClientDiagnostics.js`
+  - `TacticalRoom` extraction has also continued in payload-shaping slices:
+    - `server/src/rooms/tacticalRoomEventPayloads.js`
+    - `server/src/rooms/tacticalRoomStatePayloads.js`
   - immediate review after each slice has already caught real issues, including:
     - stale room callback reconnect churn
     - a lag-comp RTT argument regression
@@ -786,6 +790,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `docs/session-notes/session-note-2026-04-18-server-combat-refactor.md`
   - `docs/session-notes/session-note-2026-04-18-remote-animation-refactor.md`
   - `docs/session-notes/session-note-2026-04-18-remote-networking-refactor-checkpoint.md`
+  - `docs/session-notes/session-note-2026-04-18-tactical-room-payload-refactor.md`
 
 ## Current Remote Aim / Animation Checkpoint
 
