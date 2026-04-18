@@ -734,6 +734,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - `src/game/networking/remoteHitboxAudit.js`
     - `src/game/networking/remoteAnimationPolicy.js`
     - `src/game/networking/remoteAnimationPlayback.js`
+    - `src/game/networking/remoteAnimationEffects.js`
+    - `src/game/networking/remoteAnimationDeath.js`
+    - `src/game/networking/remoteAnimationPresentation.js`
+  - `NetworkClient` extraction has also continued in low-risk state-shape slices:
+    - `src/game/networking/networkRemoteState.js`
+    - `src/game/networking/networkClientState.js`
   - immediate review after each slice has already caught real issues, including:
     - stale room callback reconnect churn
     - a lag-comp RTT argument regression
@@ -779,6 +785,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `docs/session-notes/session-note-2026-04-18-networking-refactor-guardrails.md`
   - `docs/session-notes/session-note-2026-04-18-server-combat-refactor.md`
   - `docs/session-notes/session-note-2026-04-18-remote-animation-refactor.md`
+  - `docs/session-notes/session-note-2026-04-18-remote-networking-refactor-checkpoint.md`
 
 ## Current Remote Aim / Animation Checkpoint
 
@@ -803,6 +810,10 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - the authoritative server hitbox rig
   - this keeps fast strafe-direction reversals from flashing briefly through idle on either the mesh or latest hitbox debug
   - `F3` now also exposes remote animation clip/layer state for transition debugging
+  - `RemotePlayerPresenter` now delegates:
+    - fire/hit orchestration
+    - death playback/reset
+    - aim/weapon/character-root presentation
   - current remote body aiming is intentionally modest:
     - neck/head-only procedural pitch remains active
     - crouch body aiming is disabled

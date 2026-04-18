@@ -1,6 +1,5 @@
 import { Client } from 'colyseus.js';
 import {
-  NETCODE_MAX_REMOTE_SNAPSHOTS,
   NETCODE_REMOTE_INTERPOLATION_DELAY_MS,
   NETCODE_SIMULATION_STEP,
 } from '../../shared/netcode.js';
@@ -24,7 +23,19 @@ import {
   createPlayerStatusMessage,
   normalizeAuthoritativePlayerState,
 } from '../../shared/netcodeProtocol.js';
-import { createRemoteAudioEvent } from '../../shared/audioEvents.js';
+import {
+  pruneRemotePlayerState,
+  pushRemotePlayerSnapshot,
+} from './networkRemoteState.js';
+import {
+  applyGameplayState,
+  consumePendingEvents,
+  enqueueAudioEvent,
+  enqueueChatEvent,
+  enqueueCombatEvent,
+  resetGameplayState,
+  resetPendingEventQueues,
+} from './networkClientState.js';
 
 const ROOM_NAME = 'TacticalRoom';
 const SCOREBOARD_TEAMS = ['attackers', 'defenders'];
@@ -59,78 +70,6 @@ function formatAudioDebugEntry(entry, now) {
     panningModel: String(entry.panningModel ?? 'unknown'),
     ageMs: Number(now - Number(entry.recordedAt ?? now)),
   };
-}
-
-function hasSamePoint(a, b) {
-  return a && b && a.x === b.x && a.y === b.y && a.z === b.z;
-}
-
-function hasSameSegment(a, b) {
-  return a && b
-    && hasSamePoint(a.start, b.start)
-    && hasSamePoint(a.end, b.end)
-    && a.radius === b.radius;
-}
-
-function hasSameSphere(a, b) {
-  return a && b && hasSamePoint(a.center, b.center) && a.radius === b.radius;
-}
-
-function hasSameVector(a, b) {
-  return a && b && a.x === b.x && a.y === b.y && a.z === b.z;
-}
-
-function hasSameHead(a, b) {
-  return a && b
-    && hasSamePoint(a.center, b.center)
-    && a.radius === b.radius
-    && hasSameVector(a.size, b.size)
-    && hasSameVector(a.right, b.right)
-    && hasSameVector(a.up, b.up)
-    && hasSameVector(a.forward, b.forward);
-}
-
-function hasSameHitboxes(a, b) {
-  if (a === b) {
-    return true;
-  }
-  if (!a || !b) {
-    return !a && !b;
-  }
-  if (!hasSameHead(a.head, b.head) || !hasSameSegment(a.torso, b.torso) || !hasSameSegment(a.pelvis, b.pelvis)) {
-    return false;
-  }
-  const armsA = a.arms ?? [];
-  const armsB = b.arms ?? [];
-  if (armsA.length !== armsB.length) {
-    return false;
-  }
-  for (let index = 0; index < armsA.length; index += 1) {
-    if (!hasSameSegment(armsA[index], armsB[index])) {
-      return false;
-    }
-  }
-  const handsA = a.hands ?? [];
-  const handsB = b.hands ?? [];
-  if (handsA.length !== handsB.length) {
-    return false;
-  }
-  for (let index = 0; index < handsA.length; index += 1) {
-    if (!hasSameSphere(handsA[index], handsB[index])) {
-      return false;
-    }
-  }
-  const legsA = a.legs ?? [];
-  const legsB = b.legs ?? [];
-  if (legsA.length !== legsB.length) {
-    return false;
-  }
-  for (let index = 0; index < legsA.length; index += 1) {
-    if (!hasSameSegment(legsA[index], legsB[index])) {
-      return false;
-    }
-  }
-  return true;
 }
 
 function getDefaultServerUrl() {
@@ -175,9 +114,7 @@ export class NetworkClient {
     this.lastCorrectionDistance = 0;
     this.authoritativeEvents = [];
     this.localPlayerState = null;
-    this.pendingCombatEvents = [];
-    this.pendingAudioEvents = [];
-    this.pendingChatEvents = [];
+    resetPendingEventQueues(this);
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -192,9 +129,7 @@ export class NetworkClient {
     this.lastPingServerTurnaroundMs = 0;
     this.lastPingEstimatedNetworkMs = 0;
     this.lastPingReceivedAt = 0;
-    this.roundState = null;
-    this.objectiveState = null;
-    this.gameplaySettings = null;
+    resetGameplayState(this);
     this.audioDebugState = null;
     this.reconnectAttemptCount = 0;
     this.reconnectTimerId = null;
@@ -273,12 +208,8 @@ export class NetworkClient {
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
     this.lastReceivedRemoteMaps = [];
-    this.pendingCombatEvents = [];
-    this.pendingAudioEvents = [];
-    this.pendingChatEvents = [];
-    this.roundState = null;
-    this.objectiveState = null;
-    this.gameplaySettings = null;
+    resetPendingEventQueues(this);
+    resetGameplayState(this);
   }
 
   getConnectionDiagnostics() {
@@ -412,15 +343,15 @@ export class NetworkClient {
       });
 
       room.onMessage('combat-event', (message) => {
-        this.pendingCombatEvents.push(message);
+        enqueueCombatEvent(this, message);
       });
 
       room.onMessage('audio-event', (message) => {
-        this.pendingAudioEvents.push(createRemoteAudioEvent(message));
+        enqueueAudioEvent(this, message);
       });
 
       room.onMessage('chat-event', (message) => {
-        this.pendingChatEvents.push(message ?? null);
+        enqueueChatEvent(this, message);
       });
 
       room.onMessage('pong', (message) => {
@@ -502,9 +433,7 @@ export class NetworkClient {
   }
 
   applyWorldState(message) {
-    this.roundState = message?.round ?? null;
-    this.objectiveState = message?.objective ?? null;
-    this.gameplaySettings = message?.gameplay ?? null;
+    applyGameplayState(this, message);
     this.applyPlayerState(message?.players ?? {});
   }
 
@@ -567,37 +496,7 @@ export class NetworkClient {
       sameMapRemoteStateCount += 1;
       nextRemotePlayerIds.add(playerId);
       this.scoreboardPlayers.set(playerId, normalizedState);
-      const buffer = this.remotePlayerBuffers.get(playerId) ?? [];
-      const previousSnapshot = buffer[buffer.length - 1];
-      const isDuplicate = previousSnapshot
-        && previousSnapshot.position.x === normalizedState.position.x
-        && previousSnapshot.position.y === normalizedState.position.y
-        && previousSnapshot.position.z === normalizedState.position.z
-        && previousSnapshot.yaw === normalizedState.yaw
-        && previousSnapshot.pitch === normalizedState.pitch
-        && previousSnapshot.currentHeight === normalizedState.currentHeight
-        && previousSnapshot.isCrouched === normalizedState.isCrouched
-        && previousSnapshot.displayName === normalizedState.displayName
-        && previousSnapshot.team === normalizedState.team
-        && previousSnapshot.activeWeaponKey === normalizedState.activeWeaponKey
-        && previousSnapshot.isScoped === normalizedState.isScoped
-        && previousSnapshot.presentationState === normalizedState.presentationState
-        && previousSnapshot.deathClip === normalizedState.deathClip
-        && previousSnapshot.isAlive === normalizedState.isAlive
-        && hasSameHitboxes(previousSnapshot.hitboxes, normalizedState.hitboxes);
-
-      if (!isDuplicate) {
-        buffer.push({
-          ...normalizedState,
-          receivedAt,
-        });
-
-        while (buffer.length > NETCODE_MAX_REMOTE_SNAPSHOTS) {
-          buffer.shift();
-        }
-      }
-
-      this.remotePlayerBuffers.set(playerId, buffer);
+      pushRemotePlayerSnapshot(this.remotePlayerBuffers, playerId, normalizedState, receivedAt);
     }
 
     this.lastReceivedPlayerStateCount = receivedPlayerStateCount;
@@ -605,17 +504,12 @@ export class NetworkClient {
     this.lastFilteredRemoteStateCount = filteredRemoteStateCount;
     this.lastReceivedRemoteMaps = [...receivedRemoteMaps].sort();
 
-    for (const playerId of this.remotePlayerBuffers.keys()) {
-      if (!nextRemotePlayerIds.has(playerId)) {
-        this.remotePlayerBuffers.delete(playerId);
-      }
-    }
-
-    for (const playerId of [...this.scoreboardPlayers.keys()]) {
-      if (playerId !== this.playerId && !nextRemotePlayerIds.has(playerId)) {
-        this.scoreboardPlayers.delete(playerId);
-      }
-    }
+    pruneRemotePlayerState({
+      remotePlayerBuffers: this.remotePlayerBuffers,
+      scoreboardPlayers: this.scoreboardPlayers,
+      localPlayerId: this.playerId,
+      nextRemotePlayerIds,
+    });
   }
 
   initializeLocalPlayer(initialState) {
@@ -632,9 +526,7 @@ export class NetworkClient {
     this.lastReconciledSequence = 0;
     this.authoritativeEvents.length = 0;
     this.localPlayerState = null;
-    this.pendingCombatEvents = [];
-    this.pendingAudioEvents = [];
-    this.pendingChatEvents = [];
+    resetPendingEventQueues(this);
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -852,21 +744,15 @@ export class NetworkClient {
   }
 
   consumeCombatEvents() {
-    const events = this.pendingCombatEvents;
-    this.pendingCombatEvents = [];
-    return events;
+    return consumePendingEvents(this, 'pendingCombatEvents');
   }
 
   consumeAudioEvents() {
-    const events = this.pendingAudioEvents;
-    this.pendingAudioEvents = [];
-    return events;
+    return consumePendingEvents(this, 'pendingAudioEvents');
   }
 
   consumeChatEvents() {
-    const events = this.pendingChatEvents;
-    this.pendingChatEvents = [];
-    return events;
+    return consumePendingEvents(this, 'pendingChatEvents');
   }
 
   getLocalPlayerState() {
@@ -889,9 +775,7 @@ export class NetworkClient {
     this.lastAuthoritativeStateAt = 0;
     this.authoritativeEvents.length = 0;
     this.localPlayerState = null;
-    this.pendingCombatEvents = [];
-    this.pendingAudioEvents = [];
-    this.pendingChatEvents = [];
+    resetPendingEventQueues(this);
     this.lastReceivedPlayerStateCount = 0;
     this.lastSameMapRemoteStateCount = 0;
     this.lastFilteredRemoteStateCount = 0;
@@ -905,9 +789,7 @@ export class NetworkClient {
     this.lastPingServerTurnaroundMs = 0;
     this.lastPingEstimatedNetworkMs = 0;
     this.lastPingReceivedAt = 0;
-    this.roundState = null;
-    this.objectiveState = null;
-    this.gameplaySettings = null;
+    resetGameplayState(this);
   }
 
   getScoreboardState() {
@@ -1058,8 +940,7 @@ export class NetworkClient {
     this.lastPingServerTurnaroundMs = 0;
     this.lastPingEstimatedNetworkMs = 0;
     this.lastPingReceivedAt = 0;
-    this.roundState = null;
-    this.objectiveState = null;
+    resetGameplayState(this);
     this.audioDebugState = null;
     this.recordConnectionEvent('destroy', {
       activeRoomSessionId,

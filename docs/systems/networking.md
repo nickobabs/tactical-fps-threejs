@@ -90,8 +90,15 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - hitbox audit now lives in `src/game/networking/remoteHitboxAudit.js`
   - remote animation clip-choice policy now lives in `src/game/networking/remoteAnimationPolicy.js`
   - low-level mixer/action playback helpers now live in `src/game/networking/remoteAnimationPlayback.js`
-  - `RemotePlayerPresenter.js` still owns high-level remote animation orchestration, transform application, aim application, and runtime socket attachment
+  - fire/hit orchestration now lives in `src/game/networking/remoteAnimationEffects.js`
+  - death playback/reset helpers now live in `src/game/networking/remoteAnimationDeath.js`
+  - aim/weapon/character-root presentation helpers now live in `src/game/networking/remoteAnimationPresentation.js`
+  - `RemotePlayerPresenter.js` still owns high-level per-player runtime orchestration and runtime socket attachment
   - the current swap/integration contract is documented in `docs/remote-character-asset-contract.md`
+- `NetworkClient` has also started delegating lower-risk client state handling:
+  - remote snapshot dedupe/prune helpers now live in `src/game/networking/networkRemoteState.js`
+  - pending event queue and gameplay-state helpers now live in `src/game/networking/networkClientState.js`
+  - reconnect lifecycle, room-token guards, and active-room ownership intentionally still remain in `NetworkClient.js`
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 - The current combat slice is intentionally narrow:
   - local weapon presentation stays immediate

@@ -17,6 +17,9 @@ See also:
 - [session-note-2026-04-18-remote-animation-refactor.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-remote-animation-refactor.md)
   - remote presenter debug, audit, policy, and playback responsibilities are now split into dedicated helper modules
   - client/server idle-entry dwell is now mirrored to preserve visible mesh vs authoritative hitbox parity during fast strafe reversals
+- [session-note-2026-04-18-remote-networking-refactor-checkpoint.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-remote-networking-refactor-checkpoint.md)
+  - `RemotePlayerPresenter` now delegates fire/death/presentation helpers more cleanly
+  - `NetworkClient` now delegates snapshot bookkeeping and queue/reset helpers while keeping reconnect ownership local
 
 ## What Is Already In Better Shape
 
@@ -57,7 +60,14 @@ See also:
   - remote hitbox audit now lives in [remoteHitboxAudit.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxAudit.js)
   - remote clip-selection policy now lives in [remoteAnimationPolicy.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPolicy.js)
   - low-level mixer/action helpers now live in [remoteAnimationPlayback.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPlayback.js)
+  - fire/hit orchestration now lives in [remoteAnimationEffects.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationEffects.js)
+  - death playback/reset helpers now live in [remoteAnimationDeath.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationDeath.js)
+  - aim/weapon/character-root presentation helpers now live in [remoteAnimationPresentation.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPresentation.js)
   - [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js) is now more of a remote-animation/runtime orchestrator than a single-file implementation dump
+- Network client state helpers
+  - remote snapshot dedupe/pruning now lives in [networkRemoteState.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/networkRemoteState.js)
+  - pending event queue and gameplay-state helpers now live in [networkClientState.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/networkClientState.js)
+  - [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js) now keeps reconnect lifecycle local while delegating lower-risk state bookkeeping
 
 ## Main Remaining Hotspots
 
@@ -78,13 +88,23 @@ See also:
     - hitbox audit
     - clip-selection policy
     - low-level playback/mixer helpers
+    - fire/hit orchestration
+    - death playback/reset helpers
+    - aim/weapon/character-root presentation helpers
   - it still owns the higher-risk runtime behavior:
     - active visual updates
-    - higher-level fire/death animation orchestration
-    - pose/aim application
+    - per-player runtime update orchestration
     - socket attachment at runtime
     - runtime presentation-state integration
   - any further extraction should stay smaller and narrower than the earlier reverted hit-volume-debug attempt
+- [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
+  - reconnect lifecycle is now the main sensitive hotspot there
+  - recent safe extractions moved:
+    - remote snapshot dedupe/pruning
+    - event queue helpers
+    - gameplay-state apply/reset helpers
+  - the remaining rule is important:
+    - keep room-token guards and reconnect ownership local unless there is a very strong boundary
 - Server-side authoritative room / hitbox runtime
   - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
   - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
@@ -126,6 +146,7 @@ See also:
 ## Practical Next Refactor Order
 
 1. Leave `FirstPersonController` alone unless there is a concrete need around one of the remaining dense methods.
-2. If remote presentation work resumes, take the next slice out of `RemotePlayerPresenter` in a very narrow module boundary.
-3. If server combat work continues, keep extracting only narrow authority-adjacent helpers from `TacticalRoom` without moving state mutation/broadcast sequencing prematurely.
-4. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.
+2. Prefer low-risk `NetworkClient` cleanup next, such as ping/diagnostics helpers, while leaving reconnect ownership local.
+3. If remote presentation work resumes, only take another `RemotePlayerPresenter` slice if it is still clearly a mixed-responsibility boundary rather than orchestration for its own sake.
+4. If server combat work continues, keep extracting only narrow authority-adjacent helpers from `TacticalRoom` without moving state mutation/broadcast sequencing prematurely.
+5. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.

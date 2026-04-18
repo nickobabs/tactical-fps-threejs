@@ -12,14 +12,9 @@ import {
   REMOTE_CHARACTER_AIM_SETTINGS,
   REMOTE_CHARACTER_HITBOX_SETTINGS,
   REMOTE_CHARACTER_MODEL_SCALE,
-  REMOTE_AIM_BONE_SIGN,
   REMOTE_AIM_BONE_SPECS,
-  REMOTE_AIM_CLIP_FACTORS,
-  REMOTE_AIM_PITCH_MAX,
-  REMOTE_AIM_PITCH_MIN,
-  REMOTE_AIM_STATE_FACTORS,
   REMOTE_CLIPS,
-  getRemoteSocketPoseKey,
+  usesRemoteMeleeClipSet,
 } from '../../shared/remoteCharacterConfig.js';
 import {
   getTimelineNow,
@@ -53,12 +48,23 @@ import {
   findRemoteClipAction,
   freezeRemoteCharacterClip,
   normalizeRemoteClipName,
-  playRemoteUpperBodyClip,
   setRemoteCharacterClip,
-  stopRemoteUpperBodyActions,
   updateRemoteFullBodyAction,
   updateRemoteUpperBodyAction,
 } from './remoteAnimationPlayback.js';
+import {
+  triggerRemotePlayerFireFlash,
+  triggerRemotePlayerHitReaction,
+} from './remoteAnimationEffects.js';
+import {
+  playRemoteDeathClip,
+  resetRemoteDeathPresentation,
+} from './remoteAnimationDeath.js';
+import {
+  applyRemoteAimPitch,
+  applyRemoteCharacterPresentation,
+  applyRemoteWeaponPresentation,
+} from './remoteAnimationPresentation.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_PLAYER_BODY_RADIUS = 0.35;
@@ -101,11 +107,6 @@ const REMOTE_IDLE_ENTRY_DELAY = 0.1;
 const REMOTE_IK_BLEND_FACTOR = 0.9;
 const REMOTE_IK_ITERATIONS = 2;
 const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
-const REMOTE_AIM_WEAPON_FACTOR = 0.9;
-const REMOTE_AIM_PROXY_WEAPON_FACTOR = 0.75;
-const REMOTE_AIM_WEAPON_AXIS = 'y';
-const REMOTE_AIM_PROXY_WEAPON_AXIS = 'y';
-const REMOTE_AIM_BONE_LOCAL_AXIS = new THREE.Vector3(0, 0, 1);
 const DEFAULT_REMOTE_DEBUG_SETTINGS = {
   freezePose: false,
   freezeClip: REMOTE_CLIPS.idle,
@@ -118,10 +119,8 @@ const REMOTE_CHARACTER_ROOT_WORLD = new THREE.Vector3();
 const REMOTE_WEAPON_BOX = new THREE.Box3();
 const REMOTE_WEAPON_SIZE = new THREE.Vector3();
 const REMOTE_WEAPON_CENTER = new THREE.Vector3();
-const REMOTE_WORLD_SCALE = new THREE.Vector3();
 const REMOTE_IK_TARGET_WORLD = new THREE.Vector3();
 const REMOTE_IK_TARGET_LOCAL = new THREE.Vector3();
-const REMOTE_AIM_BONE_QUATERNION = new THREE.Quaternion();
 const REMOTE_HITBOX_SEGMENT_START = new THREE.Vector3();
 const REMOTE_HITBOX_SEGMENT_END = new THREE.Vector3();
 const REMOTE_HITBOX_SEGMENT_CENTER = new THREE.Vector3();
@@ -225,10 +224,6 @@ function getRemoteDebugSettings() {
   return remoteTuningStore.getDebugSettings();
 }
 
-function getRemoteAimPitch(value) {
-  return THREE.MathUtils.clamp(Number(value ?? 0), REMOTE_AIM_PITCH_MIN, REMOTE_AIM_PITCH_MAX);
-}
-
 function findRemoteAimBones(characterRoot) {
   const resolvedBones = [];
   const usedBoneNames = new Set();
@@ -272,64 +267,6 @@ function findRemoteAimBones(characterRoot) {
 function captureRemoteAimBoneBasePose(visual) {
   for (const entry of visual.characterAimBones ?? []) {
     entry.baseQuaternion.copy(entry.bone.quaternion);
-  }
-}
-
-function getRemoteAimStateFactors(presentationState) {
-  if (presentationState === 'dead') {
-    return REMOTE_AIM_STATE_FACTORS.dead;
-  }
-  if (presentationState === 'air') {
-    return REMOTE_AIM_STATE_FACTORS.air;
-  }
-  if (presentationState === 'scoped-idle') {
-    return REMOTE_AIM_STATE_FACTORS.scopedIdle;
-  }
-  if (presentationState === 'scoped-move') {
-    return REMOTE_AIM_STATE_FACTORS.scopedMove;
-  }
-  if (presentationState === 'move') {
-    return REMOTE_AIM_STATE_FACTORS.move;
-  }
-  if (String(presentationState ?? '').startsWith('crouch')) {
-    return REMOTE_AIM_STATE_FACTORS.crouch;
-  }
-  return REMOTE_AIM_STATE_FACTORS.idle;
-}
-
-function applyRemoteAimPitch(visual, pitch, presentationState = 'idle', targetClip = null) {
-  const aimPitch = getRemoteAimPitch(pitch);
-  const aimFactors = getRemoteAimStateFactors(presentationState);
-  const aimSettings = getRemoteAimSettings();
-  const clipFactor = REMOTE_AIM_CLIP_FACTORS[targetClip] ?? 1;
-  const weaponFactor = aimFactors.weapon * aimSettings.weaponStrength;
-  const boneFactor = aimFactors.bones * aimSettings.boneStrength * clipFactor;
-
-  if (visual.characterWeaponAnchor) {
-    visual.characterWeaponAnchor.rotation[aimSettings.weaponAxis] = aimPitch * REMOTE_AIM_WEAPON_FACTOR * weaponFactor;
-  } else {
-    visual.weaponAnchor.rotation[aimSettings.proxyWeaponAxis] = (visual.weaponAnchor.userData[`baseRotation${aimSettings.proxyWeaponAxis.toUpperCase()}`] ?? 0)
-      + aimPitch * REMOTE_AIM_PROXY_WEAPON_FACTOR * weaponFactor;
-  }
-
-  if (!visual.characterRoot || boneFactor <= 0) {
-    return;
-  }
-
-  REMOTE_AIM_BONE_LOCAL_AXIS.set(
-    aimSettings.boneAxis === 'x' ? 1 : 0,
-    aimSettings.boneAxis === 'y' ? 1 : 0,
-    aimSettings.boneAxis === 'z' ? 1 : 0,
-  );
-
-  for (const entry of visual.characterAimBones ?? []) {
-    entry.bone.quaternion.copy(entry.baseQuaternion);
-    entry.bone.quaternion.premultiply(
-      REMOTE_AIM_BONE_QUATERNION.setFromAxisAngle(
-        REMOTE_AIM_BONE_LOCAL_AXIS,
-        aimPitch * entry.weight * boneFactor * REMOTE_AIM_BONE_SIGN,
-      ),
-    );
   }
 }
 
@@ -875,6 +812,15 @@ function setRemotePlayerWeapon(visual, weaponKey) {
     return;
   }
 
+  const previousWeaponKey = visual.weaponKey || 'rifle';
+  const crossesMeleeLocomotionBoundary = usesRemoteMeleeClipSet(previousWeaponKey)
+    !== usesRemoteMeleeClipSet(nextWeaponKey);
+  if (crossesMeleeLocomotionBoundary) {
+    visual.idleEntryCandidateClip = null;
+    visual.idleEntryElapsed = 0;
+    visual.lastNonIdleBaseClip = null;
+  }
+
   if (visual.weaponMesh) {
     visual.weaponMesh.parent?.remove(visual.weaponMesh);
     visual.weaponMesh.userData.dispose?.();
@@ -897,76 +843,6 @@ function setRemotePlayerWeapon(visual, weaponKey) {
     .catch((error) => {
       console.warn(`[RemotePlayerPresenter] Failed to load remote ${nextWeaponKey} model. Keeping fallback proxy.`, error);
     });
-}
-
-function triggerRemotePlayerFireFlash(visual) {
-  if (!visual) {
-    return;
-  }
-
-  visual.flashTime = REMOTE_FIRE_FLASH_DURATION;
-  if (visual.characterDefinition?.prefersFullBodyRifleFire && visual.weaponKey === 'rifle') {
-    if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
-      visual.fullBodyActionClip = REMOTE_CLIPS.fire;
-      visual.fullBodyActionTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
-      setRemoteCharacterClip(visual, REMOTE_CLIPS.fire);
-      visual.characterMixer?.update?.(0);
-      captureRemoteAimBoneBasePose(visual);
-      return;
-    }
-  }
-  if (visual.characterDefinition?.prefersFullBodyPistolFire && visual.weaponKey === 'pistol') {
-    if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
-      visual.fullBodyActionClip = REMOTE_CLIPS.fire;
-      visual.fullBodyActionTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
-      setRemoteCharacterClip(visual, REMOTE_CLIPS.fire);
-      visual.characterMixer?.update?.(0);
-      captureRemoteAimBoneBasePose(visual);
-      return;
-    }
-  }
-  playRemoteUpperBodyClip(visual, REMOTE_CLIPS.fire);
-  visual.characterMixer?.update?.(0);
-  captureRemoteAimBoneBasePose(visual);
-}
-
-function resetRemoteDeathPresentation(visual) {
-  if (!visual) {
-    return;
-  }
-
-  visual.fullBodyActionClip = null;
-  visual.fullBodyActionTime = 0;
-  visual.deathTransitionTime = 0;
-}
-
-function playRemoteDeathClip(visual, player, authoritativeState) {
-  if (!visual) {
-    return false;
-  }
-
-  const deathClip = resolveRemoteDeathClipPolicy(visual, player, authoritativeState, findRemoteClipAction);
-  if (!deathClip) {
-    return false;
-  }
-
-  stopRemoteUpperBodyActions(visual);
-  visual.fullBodyActionClip = deathClip;
-  visual.fullBodyActionTime = REMOTE_PERSISTENT_ACTION_TIME;
-  setRemoteCharacterClip(visual, deathClip);
-  return true;
-}
-
-function triggerRemotePlayerHitReaction(visual, { killed = false, player = null, authoritativeState = null } = {}) {
-  if (!visual) {
-    return;
-  }
-
-  visual.hitReactionTime = REMOTE_HIT_REACTION_DURATION;
-  if (killed) {
-    visual.deathTransitionTime = REMOTE_DEATH_TRANSITION_DURATION;
-    playRemoteDeathClip(visual, player, authoritativeState);
-  }
 }
 
 function shouldLockFireBaseClip(visual, targetClip) {
@@ -1338,33 +1214,6 @@ function ensureRemoteCharacterModel(visual) {
     });
 }
 
-function getCharacterWeaponPose(weaponKey, isScoped) {
-  if (weaponKey === 'pistol') {
-    return isScoped
-      ? { position: [0.01, 0.18, -0.08], rotation: [0.02, -0.18, -0.02], scale: 0.88 }
-      : { position: [0.04, 0.14, -0.04], rotation: [0.08, -0.12, -0.08], scale: 0.9 };
-  }
-
-  if (weaponKey === 'sniper') {
-    return isScoped
-      ? { position: [-0.02, -0.02, -0.38], rotation: [0.08, -0.24, -0.08], scale: 1.15 }
-      : { position: [0.02, -0.04, -0.26], rotation: [0.12, -0.14, -0.18], scale: 1.1 };
-  }
-
-  if (weaponKey === 'knife') {
-    return { position: [-0.03, -0.08, -0.14], rotation: [0.22, 0.2, -0.52], scale: 1.05 };
-  }
-
-  return isScoped
-    ? { position: [0.02, 0.2, -0.12], rotation: [-0.02, -0.3, -0.02], scale: 0.88 }
-    : { position: [0.05, 0.16, -0.08], rotation: [0.06, -0.18, -0.12], scale: 0.84 };
-}
-
-function getSocketWeaponPose(weaponKey, isScoped) {
-  const tuning = ensureRemoteWeaponTuning();
-  return tuning.weaponPoses[getRemoteSocketPoseKey(weaponKey, isScoped)];
-}
-
 function updateClipPlaybackParameters(visual, authoritativeState, targetClip) {
   const clipSettings = visual.characterDefinition?.clips ?? null;
   for (const action of visual.characterActions.values()) {
@@ -1399,6 +1248,118 @@ function updateClipPlaybackParameters(visual, authoritativeState, targetClip) {
   }
 }
 
+function updateRemoteDamageTimers(visual, delta) {
+  if (visual.hitReactionTime > 0) {
+    visual.hitReactionTime = Math.max(0, visual.hitReactionTime - delta);
+  }
+  if (visual.deathTransitionTime > 0) {
+    visual.deathTransitionTime = Math.max(0, visual.deathTransitionTime - delta);
+  }
+}
+
+function updateRemoteBodyAndAnchorPresentation(visual, {
+  height,
+  cylinderHeight,
+  isScopedStance,
+  isCrouched,
+} = {}) {
+  visual.body.position.y = height * 0.5;
+  visual.bodyCylinder.scale.y = cylinderHeight;
+  visual.bodyTop.position.y = cylinderHeight * 0.5;
+  visual.bodyBottom.position.y = -cylinderHeight * 0.5;
+  visual.weaponAnchor.position.set(
+    isScopedStance ? REMOTE_PLAYER_WEAPON_SIDE_X * 0.72 : REMOTE_PLAYER_WEAPON_SIDE_X,
+    Math.max(0.58, height * (isCrouched ? 0.64 : (isScopedStance ? 0.6 : 0.52))),
+    isScopedStance ? REMOTE_PLAYER_WEAPON_FORWARD_Z - 0.22 : REMOTE_PLAYER_WEAPON_FORWARD_Z,
+  );
+  visual.weaponAnchor.rotation.set(
+    isScopedStance ? 0.04 : 0.12,
+    0,
+    isScopedStance ? -0.08 : -0.18,
+  );
+  visual.weaponAnchor.userData.baseRotationX = visual.weaponAnchor.rotation.x;
+  visual.weaponAnchor.userData.baseRotationY = visual.weaponAnchor.rotation.y;
+  visual.weaponAnchor.userData.baseRotationZ = visual.weaponAnchor.rotation.z;
+  visual.weaponAnchor.visible = true;
+}
+
+function updateRemoteAnimationPresentation(visual, {
+  delta,
+  authoritativeState,
+  presentationState,
+  isAlive,
+} = {}) {
+  if (!visual.characterMixer) {
+    return;
+  }
+
+  const debugSettings = getRemoteDebugSettings();
+  const targetClip = debugSettings.freezePose
+    ? debugSettings.freezeClip
+    : selectTargetClip(authoritativeState, presentationState);
+  if (debugSettings.freezePose) {
+    visual.animationDebugState = {
+      presentationState,
+      targetClip,
+      baseClip: targetClip,
+      activeCharacterClip: visual.activeCharacterClip ?? null,
+      activeUpperBodyClip: visual.activeUpperBodyClip ?? null,
+      fullBodyActionClip: visual.fullBodyActionClip ?? null,
+      upperBodyActionTime: Number(visual.upperBodyActionTime ?? 0),
+      fullBodyActionTime: Number(visual.fullBodyActionTime ?? 0),
+      fireBaseLocked: false,
+      freezePose: true,
+    };
+    freezeRemoteCharacterClip(visual, targetClip, {
+      captureAimBoneBasePose: captureRemoteAimBoneBasePose,
+    });
+  } else {
+    const fullBodyActionClip = updateRemoteFullBodyAction(visual, delta);
+    const delayedBaseTargetClip = resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta);
+    const fireBaseLocked = shouldLockFireBaseClip(visual, delayedBaseTargetClip);
+    const baseClip = fireBaseLocked
+      ? REMOTE_CLIPS.fire
+      : delayedBaseTargetClip;
+    setRemoteCharacterClip(visual, fullBodyActionClip ?? baseClip);
+    updateClipPlaybackParameters(visual, authoritativeState, targetClip);
+    updateRemoteUpperBodyAction(visual, delta);
+    visual.characterMixer.update(delta);
+    captureRemoteAimBoneBasePose(visual);
+    visual.animationDebugState = {
+      presentationState,
+      targetClip,
+      baseClip,
+      activeCharacterClip: visual.activeCharacterClip ?? null,
+      activeUpperBodyClip: visual.activeUpperBodyClip ?? null,
+      fullBodyActionClip: visual.fullBodyActionClip ?? null,
+      upperBodyActionTime: Number(visual.upperBodyActionTime ?? 0),
+      fullBodyActionTime: Number(visual.fullBodyActionTime ?? 0),
+      fireBaseLocked,
+      freezePose: false,
+    };
+  }
+
+  applyRemoteCharacterPresentation(visual, {
+    isAlive,
+    getRemoteCharacterModelScale,
+  });
+}
+
+function updateRemoteFireFlashPresentation(visual, delta) {
+  if (visual.flashTime > 0) {
+    visual.flashTime = Math.max(0, visual.flashTime - delta);
+  }
+  const flash = visual.weaponMesh?.userData?.flash ?? null;
+  if (!flash) {
+    return;
+  }
+
+  const normalizedFlash = Math.max(0, Math.min(1, visual.flashTime / REMOTE_FIRE_FLASH_DURATION));
+  flash.visible = normalizedFlash > 0.01;
+  flash.material.opacity = normalizedFlash * 0.95;
+  flash.scale.setScalar(0.6 + (1 - normalizedFlash) * 0.65);
+}
+
 function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bodyMaterials) {
   const height = Math.max(
     0.8,
@@ -1427,19 +1388,22 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   visual.bodyBottom.material = isAlive ? bodyMaterials.alive : bodyMaterials.dead;
   visual.body.visible = visual.characterLoadState !== 'ready';
   visual.root.position.set(player.position.x, player.position.y, player.position.z);
-  if (visual.hitReactionTime > 0) {
-    visual.hitReactionTime = Math.max(0, visual.hitReactionTime - delta);
-  }
-  if (visual.deathTransitionTime > 0) {
-    visual.deathTransitionTime = Math.max(0, visual.deathTransitionTime - delta);
-  }
+  updateRemoteDamageTimers(visual, delta);
 
   const hitAlpha = Math.max(0, Math.min(1, visual.hitReactionTime / REMOTE_HIT_REACTION_DURATION));
   const deathClip = !isAlive
     ? resolveRemoteDeathClipPolicy(visual, player, authoritativeState, findRemoteClipAction)
     : null;
   if (!isAlive && deathClip && visual.fullBodyActionClip !== normalizeRemoteClipName(deathClip)) {
-    playRemoteDeathClip(visual, player, authoritativeState);
+    playRemoteDeathClip(visual, player, authoritativeState, {
+      persistentActionTime: REMOTE_PERSISTENT_ACTION_TIME,
+      resolveRemoteDeathClip: (deathVisual, deathPlayer, deathAuthoritativeState) => resolveRemoteDeathClipPolicy(
+        deathVisual,
+        deathPlayer,
+        deathAuthoritativeState,
+        findRemoteClipAction,
+      ),
+    });
   }
   const deathAlpha = isAlive
     ? 0
@@ -1455,133 +1419,32 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   );
   visual.root.position.y += hitAlpha * 0.01;
 
-  visual.body.position.y = height * 0.5;
-  visual.bodyCylinder.scale.y = cylinderHeight;
-  visual.bodyTop.position.y = cylinderHeight * 0.5;
-  visual.bodyBottom.position.y = -cylinderHeight * 0.5;
-  visual.weaponAnchor.position.set(
-    isScopedStance ? REMOTE_PLAYER_WEAPON_SIDE_X * 0.72 : REMOTE_PLAYER_WEAPON_SIDE_X,
-    Math.max(0.58, height * (isCrouched ? 0.64 : (isScopedStance ? 0.6 : 0.52))),
-    isScopedStance ? REMOTE_PLAYER_WEAPON_FORWARD_Z - 0.22 : REMOTE_PLAYER_WEAPON_FORWARD_Z,
-  );
-  visual.weaponAnchor.rotation.set(
-    isScopedStance ? 0.04 : 0.12,
-    0,
-    isScopedStance ? -0.08 : -0.18,
-  );
-  visual.weaponAnchor.userData.baseRotationX = visual.weaponAnchor.rotation.x;
-  visual.weaponAnchor.userData.baseRotationY = visual.weaponAnchor.rotation.y;
-  visual.weaponAnchor.userData.baseRotationZ = visual.weaponAnchor.rotation.z;
-  visual.weaponAnchor.visible = true;
-  if (visual.characterMixer) {
-    const debugSettings = getRemoteDebugSettings();
-    const targetClip = debugSettings.freezePose
-      ? debugSettings.freezeClip
-      : selectTargetClip(authoritativeState, presentationState);
-    if (debugSettings.freezePose) {
-      visual.animationDebugState = {
-        presentationState,
-        targetClip,
-        baseClip: targetClip,
-        activeCharacterClip: visual.activeCharacterClip ?? null,
-        activeUpperBodyClip: visual.activeUpperBodyClip ?? null,
-        fullBodyActionClip: visual.fullBodyActionClip ?? null,
-        upperBodyActionTime: Number(visual.upperBodyActionTime ?? 0),
-        fullBodyActionTime: Number(visual.fullBodyActionTime ?? 0),
-        fireBaseLocked: false,
-        freezePose: true,
-      };
-      freezeRemoteCharacterClip(visual, targetClip, {
-        captureAimBoneBasePose: captureRemoteAimBoneBasePose,
-      });
-    } else {
-      const fullBodyActionClip = updateRemoteFullBodyAction(visual, delta);
-      const delayedBaseTargetClip = resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta);
-      const fireBaseLocked = shouldLockFireBaseClip(visual, delayedBaseTargetClip);
-      const baseClip = fireBaseLocked
-        ? REMOTE_CLIPS.fire
-        : delayedBaseTargetClip;
-      setRemoteCharacterClip(visual, fullBodyActionClip ?? baseClip);
-      updateClipPlaybackParameters(visual, authoritativeState, targetClip);
-      updateRemoteUpperBodyAction(visual, delta);
-      visual.characterMixer.update(delta);
-      captureRemoteAimBoneBasePose(visual);
-      visual.animationDebugState = {
-        presentationState,
-        targetClip,
-        baseClip,
-        activeCharacterClip: visual.activeCharacterClip ?? null,
-        activeUpperBodyClip: visual.activeUpperBodyClip ?? null,
-        fullBodyActionClip: visual.fullBodyActionClip ?? null,
-        upperBodyActionTime: Number(visual.upperBodyActionTime ?? 0),
-        fullBodyActionTime: Number(visual.fullBodyActionTime ?? 0),
-        fireBaseLocked,
-        freezePose: false,
-      };
-    }
-    if (visual.characterRoot) {
-      const currentModelScaleSetting = getRemoteCharacterModelScale();
-      const modelScale = visual.characterScaleBase * currentModelScaleSetting;
-      const positionScaleRatio = currentModelScaleSetting / Math.max(visual.characterModelScaleAtAttach, 1e-6);
-      visual.characterRoot.visible = true;
-      visual.characterRoot.rotation.set(0, visual.characterDefinition?.modelYawOffset ?? Math.PI, 0);
-      visual.characterRoot.position.copy(visual.characterBasePosition).multiplyScalar(positionScaleRatio);
-      visual.characterRoot.position.y += isAlive ? 0 : -0.04;
-      visual.characterRoot.scale.setScalar(modelScale);
-      if (visual.characterWeaponAnchor) {
-        visual.characterWeaponAnchor.scale.setScalar(1 / Math.max(modelScale, 1e-6));
-      }
-    }
-  }
+  updateRemoteBodyAndAnchorPresentation(visual, {
+    height,
+    cylinderHeight,
+    isScopedStance,
+    isCrouched,
+  });
+  updateRemoteAnimationPresentation(visual, {
+    delta,
+    authoritativeState,
+    presentationState,
+    isAlive,
+  });
 
-  applyRemoteAimPitch(visual, aimPitch, presentationState, visual.activeCharacterClip);
-
-  if (visual.weaponMesh) {
-    visual.weaponMesh.visible = true;
-    if (visual.characterWeaponSocket) {
-      const pose = getSocketWeaponPose(visual.weaponKey, isScopedStance);
-      visual.characterWeaponAnchor.getWorldScale(REMOTE_WORLD_SCALE);
-      const inheritedAnchorScale = Math.max(
-        Math.abs(REMOTE_WORLD_SCALE.x),
-        Math.abs(REMOTE_WORLD_SCALE.y),
-        Math.abs(REMOTE_WORLD_SCALE.z),
-        1e-6,
-      );
-      const normalizedRifleScale = (REMOTE_RIFLE_TARGET_LENGTH
-        / Math.max(visual.weaponMesh.userData.rifleLongestDimension ?? 1, 1e-3))
-        / inheritedAnchorScale;
-      const targetLength = Number(visual.weaponMesh.userData.targetLength ?? 0);
-      const normalizedWeaponScale = targetLength > 0
-        ? (targetLength / Math.max(visual.weaponMesh.userData.weaponLongestDimension ?? 1, 1e-3)) / inheritedAnchorScale
-        : null;
-      const weaponScale = visual.weaponKey === 'rifle'
-        ? normalizedRifleScale * Math.max(0.001, Number(pose.scale ?? 1))
-        : normalizedWeaponScale
-          ? normalizedWeaponScale * Math.max(0.001, Number(pose.scale ?? 1))
-          : pose.scale;
-      visual.weaponMesh.position.set(...pose.position);
-      visual.weaponMesh.rotation.set(...pose.rotation);
-      visual.weaponMesh.scale.setScalar(weaponScale);
-    } else {
-      const pose = getCharacterWeaponPose(visual.weaponKey, isScopedStance);
-      visual.weaponMesh.position.set(...pose.position);
-      visual.weaponMesh.rotation.set(...pose.rotation);
-      visual.weaponMesh.scale.setScalar(pose.scale);
-    }
-  }
+  applyRemoteAimPitch(visual, aimPitch, {
+    presentationState,
+    targetClip: visual.activeCharacterClip,
+    getRemoteAimSettings,
+  });
+  applyRemoteWeaponPresentation(visual, {
+    isScopedStance,
+    rifleTargetLength: REMOTE_RIFLE_TARGET_LENGTH,
+    ensureRemoteWeaponTuning,
+  });
 
   updateRemoteLeftHandIk(visual);
-
-  if (visual.flashTime > 0) {
-    visual.flashTime = Math.max(0, visual.flashTime - delta);
-  }
-  const flash = visual.weaponMesh?.userData?.flash ?? null;
-  if (flash) {
-    const normalizedFlash = Math.max(0, Math.min(1, visual.flashTime / REMOTE_FIRE_FLASH_DURATION));
-    flash.visible = normalizedFlash > 0.01;
-    flash.material.opacity = normalizedFlash * 0.95;
-    flash.scale.setScalar(0.6 + (1 - normalizedFlash) * 0.65);
-  }
+  updateRemoteFireFlashPresentation(visual, delta);
 }
 
 function disposeRemotePlayerVisual(visual) {
@@ -1643,7 +1506,11 @@ export class RemotePlayerPresenter {
         if (event.weaponKey && event.weaponKey !== visual.weaponKey) {
           setRemotePlayerWeapon(visual, event.weaponKey);
         }
-        triggerRemotePlayerFireFlash(visual);
+        triggerRemotePlayerFireFlash(visual, {
+          fireFlashDuration: REMOTE_FIRE_FLASH_DURATION,
+          fullBodyFireActionDuration: REMOTE_FULL_BODY_FIRE_ACTION_DURATION,
+          captureAimBoneBasePose: captureRemoteAimBoneBasePose,
+        });
       }
       if (this.effectsManager && event?.playerId !== this.localPlayerId && event?.origin && event?.tracerEnd) {
         const flash = visual?.weaponMesh?.userData?.flash ?? null;
@@ -1675,6 +1542,9 @@ export class RemotePlayerPresenter {
       if (victimVisual) {
         triggerRemotePlayerHitReaction(victimVisual, {
           killed: Boolean(event.killed),
+          hitReactionDuration: REMOTE_HIT_REACTION_DURATION,
+          deathTransitionDuration: REMOTE_DEATH_TRANSITION_DURATION,
+          playRemoteDeathClip,
           authoritativeState: event.killed ? { deathClip: event.deathClip } : null,
         });
         if (this.effectsManager) {
