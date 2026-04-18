@@ -160,6 +160,188 @@ function getRemoteAnimationTraceUploadUrl(serverUrl) {
   return getDebugUploadUrl(serverUrl, '/debug/remote-animation-trace');
 }
 
+function getHorizontalDistance(vector) {
+  if (!vector) {
+    return 0;
+  }
+  return Math.hypot(Number(vector.x ?? 0), Number(vector.z ?? 0));
+}
+
+function getVectorMagnitude(vector) {
+  if (!vector) {
+    return 0;
+  }
+  return Math.hypot(Number(vector.x ?? 0), Number(vector.y ?? 0), Number(vector.z ?? 0));
+}
+
+function summarizeRemoteAnimationTraceSamples(samples) {
+  if (!Array.isArray(samples) || samples.length === 0) {
+    return {
+      sampleCount: 0,
+      durationMs: 0,
+      averageRewoundDistance: 0,
+      averageRewoundHorizontalDistance: 0,
+      maxRewoundDistance: 0,
+      maxRewoundHorizontalDistance: 0,
+      averageLatestDistance: 0,
+      averageLatestHorizontalDistance: 0,
+      maxLatestDistance: 0,
+      maxLatestHorizontalDistance: 0,
+      transitionSampleCount: 0,
+      transitionLagSampleCount: 0,
+      transitionMaxRewoundHorizontalDistance: 0,
+      transitionAverageRewoundHorizontalDistance: 0,
+      snapEventCount: 0,
+      clipChangeCount: 0,
+      baseClipChangeCount: 0,
+      activeClipChangeCount: 0,
+      fullBodyClipChangeCount: 0,
+      upperBodyClipChangeCount: 0,
+    };
+  }
+
+  const firstPerfNow = Number(samples[0]?.perfNow ?? 0);
+  const lastPerfNow = Number(samples[samples.length - 1]?.perfNow ?? firstPerfNow);
+  let totalRewoundDistance = 0;
+  let totalRewoundHorizontalDistance = 0;
+  let maxRewoundDistance = 0;
+  let maxRewoundHorizontalDistance = 0;
+  let totalLatestDistance = 0;
+  let totalLatestHorizontalDistance = 0;
+  let maxLatestDistance = 0;
+  let maxLatestHorizontalDistance = 0;
+  let transitionSampleCount = 0;
+  let transitionLagSampleCount = 0;
+  let transitionRewoundHorizontalDistanceTotal = 0;
+  let transitionMaxRewoundHorizontalDistance = 0;
+  let snapEventCount = 0;
+  let clipChangeCount = 0;
+  let baseClipChangeCount = 0;
+  let activeClipChangeCount = 0;
+  let fullBodyClipChangeCount = 0;
+  let upperBodyClipChangeCount = 0;
+  let maxRewoundHeadPoseHorizontalDistance = 0;
+  let maxRewoundTorsoPoseHorizontalDistance = 0;
+  let maxRewoundPelvisPoseHorizontalDistance = 0;
+  let averageRewoundHeadPoseHorizontalDistance = 0;
+  let averageRewoundTorsoPoseHorizontalDistance = 0;
+  let averageRewoundPelvisPoseHorizontalDistance = 0;
+  let poseSampleCount = 0;
+
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = samples[index];
+    const remote = sample?.remote ?? null;
+    const transition = remote?.transition ?? null;
+    const pose = remote?.pose ?? null;
+    const rewoundDistance = Number(remote?.rewoundDistance ?? getVectorMagnitude(remote?.rewoundDelta));
+    const rewoundHorizontalDistance = Number(remote?.rewoundHorizontalDistance ?? getHorizontalDistance(remote?.rewoundDelta));
+    const latestDistance = Number(remote?.distance ?? getVectorMagnitude(remote?.delta));
+    const latestHorizontalDistance = Number(remote?.horizontalDistance ?? getHorizontalDistance(remote?.delta));
+
+    totalRewoundDistance += rewoundDistance;
+    totalRewoundHorizontalDistance += rewoundHorizontalDistance;
+    maxRewoundDistance = Math.max(maxRewoundDistance, rewoundDistance);
+    maxRewoundHorizontalDistance = Math.max(maxRewoundHorizontalDistance, rewoundHorizontalDistance);
+    totalLatestDistance += latestDistance;
+    totalLatestHorizontalDistance += latestHorizontalDistance;
+    maxLatestDistance = Math.max(maxLatestDistance, latestDistance);
+    maxLatestHorizontalDistance = Math.max(maxLatestHorizontalDistance, latestHorizontalDistance);
+
+    if (transition?.isActive) {
+      transitionSampleCount += 1;
+      transitionRewoundHorizontalDistanceTotal += rewoundHorizontalDistance;
+      transitionMaxRewoundHorizontalDistance = Math.max(
+        transitionMaxRewoundHorizontalDistance,
+        rewoundHorizontalDistance,
+      );
+      if (rewoundHorizontalDistance >= 0.08) {
+        transitionLagSampleCount += 1;
+      }
+    }
+
+    if (transition?.targetClipChanged) {
+      clipChangeCount += 1;
+    }
+    if (transition?.baseClipChanged) {
+      baseClipChangeCount += 1;
+    }
+    if (transition?.activeCharacterClipChanged) {
+      activeClipChangeCount += 1;
+    }
+    if (transition?.fullBodyActionClipChanged) {
+      fullBodyClipChangeCount += 1;
+    }
+    if (transition?.activeUpperBodyClipChanged) {
+      upperBodyClipChangeCount += 1;
+    }
+
+    if (index > 0) {
+      const previousRemote = samples[index - 1]?.remote ?? null;
+      const previousRewoundHorizontalDistance = Number(
+        previousRemote?.rewoundHorizontalDistance ?? getHorizontalDistance(previousRemote?.rewoundDelta),
+      );
+      if (
+        previousRewoundHorizontalDistance >= 0.08
+        && rewoundHorizontalDistance <= 0.03
+        && (transition?.isActive || samples[index - 1]?.remote?.transition?.isActive)
+      ) {
+        snapEventCount += 1;
+      }
+    }
+
+    const rewoundHeadPoseError = Number(pose?.rewoundError?.head?.horizontalDistance ?? 0);
+    const rewoundTorsoPoseError = Number(pose?.rewoundError?.torso?.horizontalDistance ?? 0);
+    const rewoundPelvisPoseError = Number(pose?.rewoundError?.pelvis?.horizontalDistance ?? 0);
+    if (pose?.rewoundError?.head || pose?.rewoundError?.torso || pose?.rewoundError?.pelvis) {
+      poseSampleCount += 1;
+      averageRewoundHeadPoseHorizontalDistance += rewoundHeadPoseError;
+      averageRewoundTorsoPoseHorizontalDistance += rewoundTorsoPoseError;
+      averageRewoundPelvisPoseHorizontalDistance += rewoundPelvisPoseError;
+      maxRewoundHeadPoseHorizontalDistance = Math.max(maxRewoundHeadPoseHorizontalDistance, rewoundHeadPoseError);
+      maxRewoundTorsoPoseHorizontalDistance = Math.max(maxRewoundTorsoPoseHorizontalDistance, rewoundTorsoPoseError);
+      maxRewoundPelvisPoseHorizontalDistance = Math.max(maxRewoundPelvisPoseHorizontalDistance, rewoundPelvisPoseError);
+    }
+  }
+
+  return {
+    sampleCount: samples.length,
+    durationMs: Math.max(0, lastPerfNow - firstPerfNow),
+    averageRewoundDistance: totalRewoundDistance / samples.length,
+    averageRewoundHorizontalDistance: totalRewoundHorizontalDistance / samples.length,
+    maxRewoundDistance,
+    maxRewoundHorizontalDistance,
+    averageLatestDistance: totalLatestDistance / samples.length,
+    averageLatestHorizontalDistance: totalLatestHorizontalDistance / samples.length,
+    maxLatestDistance,
+    maxLatestHorizontalDistance,
+    transitionSampleCount,
+    transitionLagSampleCount,
+    transitionMaxRewoundHorizontalDistance,
+    transitionAverageRewoundHorizontalDistance: transitionSampleCount > 0
+      ? transitionRewoundHorizontalDistanceTotal / transitionSampleCount
+      : 0,
+    snapEventCount,
+    clipChangeCount,
+    baseClipChangeCount,
+    activeClipChangeCount,
+    fullBodyClipChangeCount,
+    upperBodyClipChangeCount,
+    poseSampleCount,
+    averageRewoundHeadPoseHorizontalDistance: poseSampleCount > 0
+      ? averageRewoundHeadPoseHorizontalDistance / poseSampleCount
+      : 0,
+    averageRewoundTorsoPoseHorizontalDistance: poseSampleCount > 0
+      ? averageRewoundTorsoPoseHorizontalDistance / poseSampleCount
+      : 0,
+    averageRewoundPelvisPoseHorizontalDistance: poseSampleCount > 0
+      ? averageRewoundPelvisPoseHorizontalDistance / poseSampleCount
+      : 0,
+    maxRewoundHeadPoseHorizontalDistance,
+    maxRewoundTorsoPoseHorizontalDistance,
+    maxRewoundPelvisPoseHorizontalDistance,
+  };
+}
+
 function getDebugUploadUrl(serverUrl, pathName) {
   if (!serverUrl) {
     return null;
@@ -1573,6 +1755,38 @@ export class GameApp {
       return;
     }
 
+    const previousSample = this.remoteAnimationTraceSamples[this.remoteAnimationTraceSamples.length - 1] ?? null;
+    const previousAnimation = previousSample?.remote?.animation ?? null;
+    const currentAnimation = remoteDebug.animation ?? null;
+    const targetClipChanged = (previousAnimation?.targetClip ?? null) !== (currentAnimation?.targetClip ?? null);
+    const baseClipChanged = (previousAnimation?.baseClip ?? null) !== (currentAnimation?.baseClip ?? null);
+    const activeCharacterClipChanged = (previousAnimation?.activeCharacterClip ?? null) !== (currentAnimation?.activeCharacterClip ?? null);
+    const activeUpperBodyClipChanged = (previousAnimation?.activeUpperBodyClip ?? null) !== (currentAnimation?.activeUpperBodyClip ?? null);
+    const fullBodyActionClipChanged = (previousAnimation?.fullBodyActionClip ?? null) !== (currentAnimation?.fullBodyActionClip ?? null);
+    const presentationStateChanged = (previousAnimation?.presentationState ?? null) !== (currentAnimation?.presentationState ?? null);
+    const currentDistance = Number(remoteDebug.distance ?? getVectorMagnitude(remoteDebug.delta));
+    const currentHorizontalDistance = Number(remoteDebug.horizontalDistance ?? getHorizontalDistance(remoteDebug.delta));
+    const currentRewoundDistance = Number(remoteDebug.rewoundDistance ?? getVectorMagnitude(remoteDebug.rewoundDelta));
+    const currentRewoundHorizontalDistance = Number(
+      remoteDebug.rewoundHorizontalDistance ?? getHorizontalDistance(remoteDebug.rewoundDelta),
+    );
+    const previousRewoundHorizontalDistance = Number(
+      previousSample?.remote?.rewoundHorizontalDistance ?? getHorizontalDistance(previousSample?.remote?.rewoundDelta),
+    );
+    const isTransitionActive = Boolean(
+      targetClipChanged
+      || baseClipChanged
+      || activeCharacterClipChanged
+      || activeUpperBodyClipChanged
+      || fullBodyActionClipChanged
+      || presentationStateChanged
+      || currentAnimation?.fireBaseLocked
+      || Number(currentAnimation?.upperBodyActionTime ?? 0) > 0
+      || Number(currentAnimation?.fullBodyActionTime ?? 0) > 0
+      || currentHorizontalDistance >= 0.03
+      || currentRewoundHorizontalDistance >= 0.03,
+    );
+
     this.remoteAnimationTraceSamples.push({
       recordedAt: Date.now(),
       perfNow: now,
@@ -1596,13 +1810,34 @@ export class GameApp {
         renderedPosition: remoteDebug.renderedPosition ? { ...remoteDebug.renderedPosition } : null,
         authoritativePosition: remoteDebug.authoritativePosition ? { ...remoteDebug.authoritativePosition } : null,
         delta: remoteDebug.delta ? { ...remoteDebug.delta } : null,
+        distance: currentDistance,
+        horizontalDistance: currentHorizontalDistance,
         snapshotAgeMs: remoteDebug.snapshotAgeMs,
         rewoundPosition: remoteDebug.rewoundPosition ? { ...remoteDebug.rewoundPosition } : null,
         rewoundDelta: remoteDebug.rewoundDelta ? { ...remoteDebug.rewoundDelta } : null,
+        rewoundDistance: currentRewoundDistance,
+        rewoundHorizontalDistance: currentRewoundHorizontalDistance,
         rewoundSnapshotAgeMs: remoteDebug.rewoundSnapshotAgeMs,
         rewindMs: remoteDebug.rewindMs,
         animation: remoteDebug.animation ? { ...remoteDebug.animation } : null,
         playerState: remoteDebug.playerState ? { ...remoteDebug.playerState } : null,
+        pose: remoteDebug.pose ? JSON.parse(JSON.stringify(remoteDebug.pose)) : null,
+        transition: {
+          isActive: isTransitionActive,
+          targetClipChanged,
+          baseClipChanged,
+          activeCharacterClipChanged,
+          activeUpperBodyClipChanged,
+          fullBodyActionClipChanged,
+          presentationStateChanged,
+          previousTargetClip: previousAnimation?.targetClip ?? null,
+          previousBaseClip: previousAnimation?.baseClip ?? null,
+          previousActiveCharacterClip: previousAnimation?.activeCharacterClip ?? null,
+          previousActiveUpperBodyClip: previousAnimation?.activeUpperBodyClip ?? null,
+          previousFullBodyActionClip: previousAnimation?.fullBodyActionClip ?? null,
+          previousPresentationState: previousAnimation?.presentationState ?? null,
+          rewoundHorizontalDistanceDelta: currentRewoundHorizontalDistance - previousRewoundHorizontalDistance,
+        },
       },
       network: network
         ? {
@@ -1661,9 +1896,11 @@ export class GameApp {
   }
 
   flushRemoteAnimationTrace() {
+    const summary = summarizeRemoteAnimationTraceSamples(this.remoteAnimationTraceSamples);
     const payload = {
       recordedAt: Date.now(),
       mapId: this.selectedMapId,
+      summary,
       samples: this.remoteAnimationTraceSamples,
     };
 
@@ -1671,6 +1908,7 @@ export class GameApp {
       try {
         window.localStorage.setItem(REMOTE_ANIMATION_TRACE_STORAGE_KEY, JSON.stringify(payload));
         console.info(`[GameApp] Saved remote animation trace samples=${this.remoteAnimationTraceSamples.length} to localStorage key "${REMOTE_ANIMATION_TRACE_STORAGE_KEY}".`);
+        console.info('[GameApp] Remote animation trace summary:', summary);
       } catch (error) {
         console.warn('[GameApp] Failed to persist remote animation trace.', error);
       }

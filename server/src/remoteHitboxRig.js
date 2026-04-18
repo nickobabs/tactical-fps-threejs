@@ -15,15 +15,24 @@ import {
   REMOTE_AIM_PITCH_MIN,
   REMOTE_AIM_STATE_FACTORS,
   REMOTE_PRIMARY_CHARACTER_SKELETON,
-  getRemoteMovementClipBaselineSpeeds,
   getRemoteSocketPoseKey,
-  shouldUseRemoteWalkClip,
-  usesRemoteMeleeClipSet,
 } from '../../src/shared/remoteCharacterConfig.js';
 import {
   createRemoteHitboxPointCache,
 } from '../../src/shared/remoteHitboxes.js';
-import { isPlayerPresentationCrouched } from '../../src/shared/playerMovement.js';
+import {
+  createRemoteClipTransitionState,
+  REMOTE_BASE_CLIP_FADE_DURATION,
+  REMOTE_FULL_BODY_FIRE_ACTION_DURATION,
+  shouldPlayRemoteFullBodyFire,
+  stepRemoteClipTransitionState,
+} from '../../src/shared/remotePosePlayback.js';
+import {
+  clearRemoteIdleEntryState,
+  getRemoteMovementPlaybackScale as getSharedRemoteMovementPlaybackScale,
+  resolveRemoteIdleEntryTarget,
+  selectRemoteMovementClip,
+} from '../../src/shared/remotePoseState.js';
 import {
   describeRemoteHitboxAudit,
   resolveRemoteHitBones,
@@ -34,9 +43,7 @@ const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_MODEL_URL = new URL('../../public/models/players/newtest.glb', import.meta.url);
 const REMOTE_ANIMATION_ROOT_URL = new URL('../../public/models/players/animations/', import.meta.url);
 const REMOTE_RIFLE_MODEL_URL = new URL('../../public/models/weapons/newak.glb', import.meta.url);
-const REMOTE_FIRE_ACTION_DURATION = 0.18;
 const REMOTE_IDLE_ENTRY_DELAY = 0.1;
-const MOVEMENT_DIRECTION_EPSILON = 0.08;
 const REMOTE_AIM_BONE_AXIS = new THREE.Vector3(0, 0, 1);
 const REMOTE_AIM_BONE_QUATERNION = new THREE.Quaternion();
 const TMP_CAPTURE_POINT = new THREE.Vector3();
@@ -44,8 +51,6 @@ const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
 const REMOTE_JUMP_TIME_SCALE = 0.76;
 const REMOTE_JUMP_END_HOLD_RATIO = 0.58;
 const REMOTE_USE_LEFT_HAND_IK = false;
-const REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE = 0.55;
-const REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE = 1.45;
 
 const CLIPS = REMOTE_CLIPS;
 
@@ -76,9 +81,6 @@ const CLIP_DEFS = {
 const TMP_BOX = new THREE.Box3();
 const TMP_SIZE = new THREE.Vector3();
 const TMP_ROOT_WORLD = new THREE.Vector3();
-const MOVE_VECTOR = new THREE.Vector3();
-const FORWARD = new THREE.Vector3();
-const RIGHT = new THREE.Vector3();
 const REMOTE_ROOT_MOTION_BONE_NAMES = ['mixamorighips', 'hips', 'root', '_rootjoint', 'armature', 'bip01'];
 
 let remoteRigAssetPromise = null;
@@ -393,72 +395,6 @@ function applyRigAimPitch(rig, player) {
   }
 }
 
-function selectMovementClip(player) {
-  const presentationState = String(player.presentationState ?? 'idle');
-  if (!player?.isAlive) {
-    return CLIPS.idle;
-  }
-
-  const velocity = player.motionState?.velocity ?? null;
-  const isCrouched = isPlayerPresentationCrouched(player.motionState);
-  const weaponKey = String(player?.activeWeaponKey ?? 'rifle');
-  if (presentationState === 'air') {
-    return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeJump : CLIPS.jump;
-  }
-  if (!velocity) {
-    if (isCrouched) {
-      return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeCrouchIdle : CLIPS.crouchIdle;
-    }
-    return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeIdle : CLIPS.idle;
-  }
-
-  MOVE_VECTOR.set(Number(velocity.x ?? 0), 0, Number(velocity.z ?? 0));
-  const horizontalSpeed = MOVE_VECTOR.length();
-  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
-    if (isCrouched) {
-      return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeCrouchIdle : CLIPS.crouchIdle;
-    }
-    return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeIdle : CLIPS.idle;
-  }
-
-  const yaw = Number(player.motionState?.yaw ?? 0);
-  FORWARD.set(-Math.sin(yaw), 0, -Math.cos(yaw));
-  RIGHT.set(Math.cos(yaw), 0, -Math.sin(yaw));
-  const forwardAmount = MOVE_VECTOR.dot(FORWARD);
-  const strafeAmount = MOVE_VECTOR.dot(RIGHT);
-
-  if (isCrouched) {
-    if (usesRemoteMeleeClipSet(weaponKey)) {
-      return CLIPS.meleeCrouchWalk;
-    }
-    if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
-      return forwardAmount >= 0 ? CLIPS.crouchWalk : CLIPS.crouchBackward;
-    }
-    return CLIPS.crouchWalk;
-  }
-
-  if (usesRemoteMeleeClipSet(weaponKey)) {
-    if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
-      if (forwardAmount >= 0) {
-        return shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)
-          ? CLIPS.meleeWalkForward
-          : CLIPS.meleeRunForward;
-      }
-      return CLIPS.meleeWalkBackward;
-    }
-    return strafeAmount >= 0 ? CLIPS.meleeStrafeRight : CLIPS.meleeStrafeLeft;
-  }
-
-  if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
-    if (shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)) {
-      return forwardAmount >= 0 ? CLIPS.walkForward : CLIPS.walkBackward;
-    }
-    return forwardAmount >= 0 ? CLIPS.runForward : CLIPS.runBackward;
-  }
-
-  return strafeAmount >= 0 ? CLIPS.strafeRight : CLIPS.strafeLeft;
-}
-
 function getRigMovementPlaybackScale(player, targetClip) {
   if (
     targetClip === CLIPS.jump
@@ -471,127 +407,33 @@ function getRigMovementPlaybackScale(player, targetClip) {
   ) {
     return 1;
   }
-
-  const velocity = player?.motionState?.velocity ?? null;
-  if (!velocity) {
-    return 1;
-  }
-
-  const horizontalSpeed = Math.hypot(
-    Number(velocity.x ?? 0),
-    Number(velocity.z ?? 0),
-  );
-  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
-    return 1;
-  }
-
-  const weaponKey = String(player?.activeWeaponKey ?? 'rifle');
-  const baselineSpeeds = getRemoteMovementClipBaselineSpeeds(weaponKey);
-  const crouchClip = [
-    CLIPS.crouchWalk,
-    CLIPS.crouchBackward,
-    CLIPS.meleeCrouchWalk,
-  ].includes(targetClip);
-  const walkClip = [
-    CLIPS.walkForward,
-    CLIPS.walkBackward,
-    CLIPS.meleeWalkForward,
-    CLIPS.meleeWalkBackward,
-  ].includes(targetClip);
-  const baselineSpeed = crouchClip
-    ? baselineSpeeds.crouchSpeed
-    : (walkClip ? baselineSpeeds.walkSpeed : baselineSpeeds.fullSpeed);
-  if (!Number.isFinite(baselineSpeed) || baselineSpeed <= 0) {
-    return 1;
-  }
-
-  return THREE.MathUtils.clamp(
-    horizontalSpeed / baselineSpeed,
-    REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE,
-    REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE,
-  );
-}
-
-function getRigIdleClipFamily(targetClip) {
-  if (targetClip === CLIPS.idle) {
-    return 'stand';
-  }
-  if (targetClip === CLIPS.crouchIdle || targetClip === CLIPS.crouchWalk || targetClip === CLIPS.crouchBackward) {
-    return 'crouch';
-  }
-  if (targetClip === CLIPS.meleeIdle) {
-    return 'melee-stand';
-  }
-  if (targetClip === CLIPS.meleeCrouchIdle || targetClip === CLIPS.meleeCrouchWalk) {
-    return 'melee-crouch';
-  }
-  if (
-    targetClip === CLIPS.meleeWalkForward
-    || targetClip === CLIPS.meleeWalkBackward
-    || targetClip === CLIPS.meleeRunForward
-    || targetClip === CLIPS.meleeStrafeLeft
-    || targetClip === CLIPS.meleeStrafeRight
-  ) {
-    return 'melee-stand';
-  }
-  return 'stand';
+  return getSharedRemoteMovementPlaybackScale({
+    ...player?.motionState,
+    activeWeaponKey: player?.activeWeaponKey,
+  }, targetClip, CLIPS);
 }
 
 function clearRigIdleEntryCarryover(rig) {
-  rig.idleEntryCandidateClip = null;
-  rig.idleEntryElapsed = 0;
-  rig.lastNonIdleMovementClip = null;
+  const resetState = clearRemoteIdleEntryState();
+  rig.idleEntryCandidateClip = resetState.idleEntryCandidateClip;
+  rig.idleEntryElapsed = resetState.idleEntryElapsed;
+  rig.lastNonIdleMovementClip = resetState.lastNonIdleClip;
 }
 
 function resolveRigMovementClipWithIdleEntryDelay(rig, targetClip, delta) {
-  const isIdleTarget = targetClip === CLIPS.idle
-    || targetClip === CLIPS.crouchIdle
-    || targetClip === CLIPS.meleeIdle
-    || targetClip === CLIPS.meleeCrouchIdle;
-
-  if (!isIdleTarget) {
-    rig.idleEntryCandidateClip = null;
-    rig.idleEntryElapsed = 0;
-    rig.lastNonIdleMovementClip = targetClip;
-    return targetClip;
-  }
-
-  const lastNonIdleMovementClip = rig.lastNonIdleMovementClip ?? null;
-  if (!lastNonIdleMovementClip) {
-    return targetClip;
-  }
-
-  const targetFamily = getRigIdleClipFamily(targetClip);
-  const lastNonIdleFamily = getRigIdleClipFamily(lastNonIdleMovementClip);
-  if (targetFamily !== lastNonIdleFamily) {
-    rig.idleEntryCandidateClip = null;
-    rig.idleEntryElapsed = 0;
-    return targetClip;
-  }
-
-  const shouldDelayIdleEntry = (
-    (targetClip === CLIPS.idle && lastNonIdleMovementClip !== CLIPS.meleeIdle)
-    || (targetClip === CLIPS.crouchIdle && lastNonIdleMovementClip !== CLIPS.meleeCrouchIdle)
-    || (targetClip === CLIPS.meleeIdle && lastNonIdleMovementClip !== CLIPS.idle)
-    || (targetClip === CLIPS.meleeCrouchIdle && lastNonIdleMovementClip !== CLIPS.crouchIdle)
-  );
-
-  if (!shouldDelayIdleEntry) {
-    return targetClip;
-  }
-
-  if (rig.idleEntryCandidateClip !== targetClip) {
-    rig.idleEntryCandidateClip = targetClip;
-    rig.idleEntryElapsed = 0;
-  } else {
-    rig.idleEntryElapsed = Math.min(REMOTE_IDLE_ENTRY_DELAY, rig.idleEntryElapsed + Math.max(0, delta));
-  }
-
-  if (rig.idleEntryElapsed < REMOTE_IDLE_ENTRY_DELAY) {
-    return lastNonIdleMovementClip;
-  }
-
-  return targetClip;
+  const resolved = resolveRemoteIdleEntryTarget({
+    targetClip,
+    idleEntryCandidateClip: rig.idleEntryCandidateClip,
+    idleEntryElapsed: rig.idleEntryElapsed,
+    lastNonIdleClip: rig.lastNonIdleMovementClip,
+    delta,
+    idleEntryDelay: REMOTE_IDLE_ENTRY_DELAY,
+    clips: CLIPS,
+  });
+  rig.idleEntryCandidateClip = resolved.idleEntryCandidateClip;
+  rig.idleEntryElapsed = resolved.idleEntryElapsed;
+  rig.lastNonIdleMovementClip = resolved.lastNonIdleClip;
+  return resolved.resolvedClip;
 }
 
 function createServerRifleGroup(asset) {
@@ -620,6 +462,49 @@ function updateRiflePose(rig, player) {
   rig.weaponRoot.position.set(...pose.position);
   rig.weaponRoot.rotation.set(...pose.rotation);
   rig.weaponRoot.scale.setScalar(Number(pose.scale ?? 1));
+}
+
+function transitionRigToClip(rig, targetClip, movementPlaybackScale, clipFadeDuration = REMOTE_BASE_CLIP_FADE_DURATION) {
+  if (!rig?.actions?.size) {
+    return null;
+  }
+
+  const nextEntry = rig.actions.get(targetClip) ?? null;
+  if (!nextEntry) {
+    return null;
+  }
+
+  if (rig.activeClip === targetClip) {
+    nextEntry.action.enabled = true;
+    nextEntry.action.paused = false;
+    nextEntry.action.play();
+    return nextEntry;
+  }
+
+  const previousEntry = rig.activeClip ? rig.actions.get(rig.activeClip) ?? null : null;
+  const isImmediateFireTransition = targetClip === CLIPS.fire;
+  if (previousEntry && previousEntry !== nextEntry) {
+    previousEntry.action.enabled = true;
+    previousEntry.action.paused = false;
+    previousEntry.action.play();
+    if (isImmediateFireTransition) {
+      previousEntry.action.stop();
+    } else {
+      previousEntry.action.fadeOut(clipFadeDuration);
+    }
+  }
+
+  nextEntry.action.enabled = true;
+  nextEntry.action.reset();
+  nextEntry.action.setEffectiveTimeScale(nextEntry.playbackSpeed * movementPlaybackScale);
+  nextEntry.action.paused = false;
+  if (isImmediateFireTransition) {
+    nextEntry.action.setEffectiveWeight(1).play();
+  } else {
+    nextEntry.action.setEffectiveWeight(1).fadeIn(clipFadeDuration).play();
+  }
+  rig.activeClip = targetClip;
+  return nextEntry;
 }
 
 async function ensureLeftHandIk(rig) {
@@ -708,7 +593,7 @@ export async function createRemoteHitboxRig() {
     }
     action.play();
     action.paused = true;
-    action.setEffectiveWeight(1);
+    action.setEffectiveWeight(0);
     actions.set(name, { action, playbackSpeed: entry.playbackSpeed });
   }
   const weaponAnchor = new THREE.Group();
@@ -738,6 +623,7 @@ export async function createRemoteHitboxRig() {
     aimBones: null,
     hitboxPoints: createRemoteHitboxPointCache(),
     activeClip: null,
+    clipTransition: createRemoteClipTransitionState(),
     fireTime: 0,
     idleEntryCandidateClip: null,
     idleEntryElapsed: 0,
@@ -761,7 +647,7 @@ export function triggerRemoteHitboxRigFire(rig) {
   if (!rig) {
     return;
   }
-  rig.fireTime = REMOTE_FIRE_ACTION_DURATION;
+  rig.fireTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
 }
 
 export function updateRemoteHitboxRig(rig, player, delta) {
@@ -775,28 +661,36 @@ export function updateRemoteHitboxRig(rig, player, delta) {
     clearRigIdleEntryCarryover(rig);
   }
   rig.lastRawCrouchState = rawCrouchState;
-  const movementClip = resolveRigMovementClipWithIdleEntryDelay(rig, selectMovementClip(player), delta);
-  const targetClip = rig.fireTime > 0 && ['idle', 'scoped-idle'].includes(String(player.presentationState ?? 'idle'))
+  const movementClip = resolveRigMovementClipWithIdleEntryDelay(rig, selectRemoteMovementClip({
+    ...player?.motionState,
+    activeWeaponKey: player?.activeWeaponKey,
+    presentationState: player?.presentationState,
+    isAlive: player?.isAlive,
+  }, player?.presentationState, CLIPS), delta);
+  const targetClip = rig.fireTime > 0 && shouldPlayRemoteFullBodyFire({
+    characterDefinition: {
+      prefersFullBodyRifleFire: true,
+      prefersFullBodyPistolFire: true,
+    },
+    weaponKey: player?.activeWeaponKey,
+    presentationState: player?.presentationState,
+  })
     ? CLIPS.fire
     : movementClip;
   const movementPlaybackScale = getRigMovementPlaybackScale(player, targetClip);
+  stepRemoteClipTransitionState(rig.clipTransition, {
+    nextClip: targetClip,
+    currentClip: rig.activeClip,
+    delta,
+  });
 
-  if (rig.activeClip !== targetClip) {
-    for (const [name, entry] of rig.actions.entries()) {
-      if (name === targetClip) {
-        entry.action.enabled = true;
-        entry.action.reset();
-        entry.action.setEffectiveTimeScale(entry.playbackSpeed * movementPlaybackScale);
-        entry.action.paused = false;
-      } else {
-        entry.action.enabled = false;
-        entry.action.paused = true;
-      }
-    }
-    rig.activeClip = targetClip;
-  }
-
-  const activeEntry = rig.actions.get(rig.activeClip);
+  const activeEntry = transitionRigToClip(
+    rig,
+    targetClip,
+    movementPlaybackScale,
+    rig.clipTransition.duration,
+  )
+    ?? rig.actions.get(rig.activeClip);
   if (!activeEntry) {
     return;
   }
@@ -842,6 +736,9 @@ export function updateRemoteHitboxRig(rig, player, delta) {
     clipTime: Number(activeEntry.action.time ?? 0),
     clipPlaybackSpeed: Number(activeEntry.action.getEffectiveTimeScale?.() ?? activeEntry.playbackSpeed ?? 1),
     fireTime: Number(rig.fireTime ?? 0),
+    clipTransition: {
+      ...rig.clipTransition,
+    },
     points: {
       head: rig.hitboxPoints.head ? { ...rig.hitboxPoints.head } : null,
       neck: rig.hitboxPoints.neck ? { ...rig.hitboxPoints.neck } : null,
@@ -851,5 +748,4 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   };
   restoreAimBoneBasePose(rig);
   rig.container.updateMatrixWorld(true);
-  activeEntry.action.paused = true;
 }

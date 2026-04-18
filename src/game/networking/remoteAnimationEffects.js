@@ -1,4 +1,5 @@
 import { REMOTE_CLIPS } from '../../shared/remoteCharacterConfig.js';
+import { shouldPlayRemoteFullBodyFire } from '../../shared/remotePosePlayback.js';
 import { playRemoteUpperBodyClip, setRemoteCharacterClip } from './remoteAnimationPlayback.js';
 
 export function triggerRemotePlayerFireFlash(
@@ -14,25 +15,17 @@ export function triggerRemotePlayerFireFlash(
   }
 
   visual.flashTime = fireFlashDuration;
-  if (visual.characterDefinition?.prefersFullBodyRifleFire && visual.weaponKey === 'rifle') {
-    if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
-      visual.fullBodyActionClip = REMOTE_CLIPS.fire;
-      visual.fullBodyActionTime = fullBodyFireActionDuration;
-      setRemoteCharacterClip(visual, REMOTE_CLIPS.fire);
-      visual.characterMixer?.update?.(0);
-      captureAimBoneBasePose?.(visual);
-      return;
-    }
-  }
-  if (visual.characterDefinition?.prefersFullBodyPistolFire && visual.weaponKey === 'pistol') {
-    if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
-      visual.fullBodyActionClip = REMOTE_CLIPS.fire;
-      visual.fullBodyActionTime = fullBodyFireActionDuration;
-      setRemoteCharacterClip(visual, REMOTE_CLIPS.fire);
-      visual.characterMixer?.update?.(0);
-      captureAimBoneBasePose?.(visual);
-      return;
-    }
+  if (shouldPlayRemoteFullBodyFire({
+    characterDefinition: visual.characterDefinition,
+    weaponKey: visual.weaponKey,
+    presentationState: visual.presentationState,
+  })) {
+    visual.fullBodyActionClip = REMOTE_CLIPS.fire;
+    visual.fullBodyActionTime = fullBodyFireActionDuration;
+    setRemoteCharacterClip(visual, REMOTE_CLIPS.fire);
+    visual.characterMixer?.update?.(0);
+    captureAimBoneBasePose?.(visual);
+    return;
   }
   playRemoteUpperBodyClip(visual, REMOTE_CLIPS.fire);
   visual.characterMixer?.update?.(0);

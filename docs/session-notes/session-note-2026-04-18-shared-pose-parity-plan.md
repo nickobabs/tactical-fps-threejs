@@ -112,3 +112,64 @@ Before this plan starts, the following are true:
 - current medium-fast crouch behavior is explainable from the trace, but not yet "true parity"
 
 That makes this a good checkpoint for a new branch/pass aimed at shared pose parity rather than another isolated fix.
+
+## Follow-up Note
+
+After the first shared-pose extraction slices:
+
+- shared clip intent now exists for crouch/locomotion/playback scaling
+- shared idle-entry carryover logic now exists too
+- visible improvement is still limited so far, which suggests the highest remaining value is in shared mixer/action blend timing rather than more clip-threshold work
+
+There is also a small known issue to revisit later:
+
+- melee crouch mesh vs authoritative hitbox alignment is still slightly off
+
+That should be treated as a later parity/audit task, not mixed into the current blend-timing extraction unless it clearly shares the same root cause.
+
+## End-Of-Session Update
+
+Two important trace findings landed after the first blend-parity pass:
+
+- rewound root timing is now essentially correct
+- the remaining mismatch is pose, not rewind position
+
+Trace summaries showed:
+
+- rewound root horizontal error was near-zero
+- but rewound pose error was still materially higher:
+  - head horizontal pose error averaged around `4.2 cm`
+  - torso horizontal pose error averaged around `2.9 cm`
+  - pelvis horizontal pose error averaged around `2.2 cm`
+
+That means the visible "falls behind then catches up" behavior during transition churn is not mainly a rewind-time problem anymore. It is a pose-transition parity problem.
+
+### What changed tonight
+
+A shared clip-transition state contract now exists in:
+
+- [remotePosePlayback.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remotePosePlayback.js)
+
+Both sides now carry explicit transition state:
+
+- `fromClip`
+- `toClip`
+- `elapsed`
+- `duration`
+- `alpha`
+- `active`
+
+Consumers:
+
+- [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
+- [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
+
+This does not claim full pose parity yet, but it establishes a shared transition-state contract instead of leaving clip fades as an implicit side effect on each side.
+
+### Next session target
+
+Use the new trace fields and shared transition contract to determine whether the remaining pose lag comes from:
+
+- different source animation data between presenter and authoritative rig
+- transition alpha progressing on equivalent clips but with different underlying poses
+- or a remaining blend-path mismatch that still needs stronger sharing than duration/state alone

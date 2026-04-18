@@ -26,6 +26,7 @@ See also:
 - [session-note-2026-04-18-shared-pose-parity-plan.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-shared-pose-parity-plan.md)
   - next meaningful multiplayer-quality step is shared pose/blend evaluation between visible remote presentation and the authoritative hitbox rig
   - crouch-fatigue, ADAD, and transition hitbox pops are now considered pose-parity problems more than simple threshold problems
+  - latest traces now show rewound root timing is effectively solved, while head/torso/pelvis pose parity still lags during transitions
 
 ## What Is Already In Better Shape
 
@@ -51,6 +52,7 @@ See also:
   - plant-zone helpers are shared
   - movement simulation is shared between client and server in [playerMovement.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js)
   - remote interpolation / rewind helpers are now shared in [remoteTimeline.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteTimeline.js)
+  - remote fire/clip transition timing now has an explicit shared contract in [remotePosePlayback.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remotePosePlayback.js)
 - Audio / tuning surfaces
   - shared audio registration lives in [createGameAudioManager.js](/C:/Users/nicko/tactical-fps-threejs/src/app/createGameAudioManager.js)
   - movement tuning and recoil tuning are now separate runtime tools instead of being hidden inside larger gameplay classes
@@ -122,6 +124,7 @@ See also:
   - they should only be refactored when there is a clear ownership win, not just because they are large
   - the first useful server combat and payload extractions are now done, so future slices should target state-application or event-construction boundaries only if they are equally clear
   - the next clear structural win is likely not another small threshold tweak, but a shared pose/blend-state layer consumed by both `RemotePlayerPresenter` and `remoteHitboxRig`
+  - that work is now partially underway: both sides share clip-transition state, but authoritative pose parity still needs more than shared fade duration/state alone
 - Connection lifecycle in [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
   - future cleanup here must preserve explicit active-room ownership
   - stale async room callbacks are now a known regression risk
@@ -153,6 +156,7 @@ See also:
   - remote presentation / hitbox parity
   - connection lifecycle ownership and stale async callbacks
 - For remote multiplayer polish, prefer shared pose-state extraction over piling on more one-off crouch / transition heuristics
+- Treat rewound root alignment as mostly solved for now; focus next on pose-transition parity, not rewind timing
 - Rebuild after each code refactor slice
 
 ## Practical Next Refactor Order

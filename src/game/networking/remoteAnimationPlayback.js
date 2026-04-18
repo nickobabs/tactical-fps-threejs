@@ -1,4 +1,9 @@
 import { REMOTE_CLIPS } from '../../shared/remoteCharacterConfig.js';
+import {
+  REMOTE_BASE_CLIP_FADE_DURATION,
+  REMOTE_UPPER_BODY_ACTION_DURATION,
+  REMOTE_UPPER_BODY_FADE_DURATION,
+} from '../../shared/remotePosePlayback.js';
 
 export function normalizeRemoteClipName(name) {
   return String(name ?? '')
@@ -26,7 +31,7 @@ export function setRemoteCharacterClip(
   visual,
   clipName,
   {
-    clipFadeDuration = 0.12,
+    clipFadeDuration = REMOTE_BASE_CLIP_FADE_DURATION,
     fireClipName = REMOTE_CLIPS.fire,
   } = {},
 ) {
@@ -71,7 +76,7 @@ export function freezeRemoteCharacterClip(
   clipName,
   {
     captureAimBoneBasePose = null,
-    clipFadeDuration = 0.12,
+    clipFadeDuration = REMOTE_BASE_CLIP_FADE_DURATION,
     fireClipName = REMOTE_CLIPS.fire,
   } = {},
 ) {
@@ -114,8 +119,8 @@ export function playRemoteUpperBodyClip(
   visual,
   clipName,
   {
-    upperBodyFadeDuration = 0.08,
-    upperBodyActionDuration = 0.22,
+    upperBodyFadeDuration = REMOTE_UPPER_BODY_FADE_DURATION,
+    upperBodyActionDuration = REMOTE_UPPER_BODY_ACTION_DURATION,
   } = {},
 ) {
   if (!visual.characterMixer || !visual.characterUpperBodyActions?.size) {
@@ -150,7 +155,7 @@ export function updateRemoteUpperBodyAction(
   visual,
   delta,
   {
-    upperBodyFadeDuration = 0.08,
+    upperBodyFadeDuration = REMOTE_UPPER_BODY_FADE_DURATION,
   } = {},
 ) {
   if (!visual.activeUpperBodyClip) {

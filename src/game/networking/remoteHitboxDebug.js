@@ -37,6 +37,88 @@ const DEBUG_BASIS_RIGHT = new THREE.Vector3();
 const DEBUG_BASIS_UP = new THREE.Vector3();
 const DEBUG_BASIS_FORWARD = new THREE.Vector3();
 
+function cloneVector3Like(value) {
+  if (!value) {
+    return null;
+  }
+  return {
+    x: Number(value.x ?? 0),
+    y: Number(value.y ?? 0),
+    z: Number(value.z ?? 0),
+  };
+}
+
+function getHitboxCenter(hitbox) {
+  if (!hitbox) {
+    return null;
+  }
+  if (hitbox.center) {
+    return cloneVector3Like(hitbox.center);
+  }
+  if (hitbox.start && hitbox.end) {
+    return {
+      x: (Number(hitbox.start.x ?? 0) + Number(hitbox.end.x ?? 0)) * 0.5,
+      y: (Number(hitbox.start.y ?? 0) + Number(hitbox.end.y ?? 0)) * 0.5,
+      z: (Number(hitbox.start.z ?? 0) + Number(hitbox.end.z ?? 0)) * 0.5,
+    };
+  }
+  return null;
+}
+
+function getPoseError(a, b) {
+  if (!a || !b) {
+    return null;
+  }
+  const dx = Number(b.x ?? 0) - Number(a.x ?? 0);
+  const dy = Number(b.y ?? 0) - Number(a.y ?? 0);
+  const dz = Number(b.z ?? 0) - Number(a.z ?? 0);
+  return {
+    delta: { x: dx, y: dy, z: dz },
+    distance: Math.hypot(dx, dy, dz),
+    horizontalDistance: Math.hypot(dx, dz),
+  };
+}
+
+function buildPoseComparisonState(meshSnapshot, latestHitboxes, rewoundHitboxes) {
+  const meshHead = getHitboxCenter(meshSnapshot?.head);
+  const meshTorso = getHitboxCenter(meshSnapshot?.torso);
+  const meshPelvis = getHitboxCenter(meshSnapshot?.pelvis);
+  const latestHead = getHitboxCenter(latestHitboxes?.head);
+  const latestTorso = getHitboxCenter(latestHitboxes?.torso);
+  const latestPelvis = getHitboxCenter(latestHitboxes?.pelvis);
+  const rewoundHead = getHitboxCenter(rewoundHitboxes?.head);
+  const rewoundTorso = getHitboxCenter(rewoundHitboxes?.torso);
+  const rewoundPelvis = getHitboxCenter(rewoundHitboxes?.pelvis);
+
+  return {
+    mesh: {
+      head: meshHead,
+      torso: meshTorso,
+      pelvis: meshPelvis,
+    },
+    latest: {
+      head: latestHead,
+      torso: latestTorso,
+      pelvis: latestPelvis,
+    },
+    rewound: {
+      head: rewoundHead,
+      torso: rewoundTorso,
+      pelvis: rewoundPelvis,
+    },
+    latestError: {
+      head: getPoseError(meshHead, latestHead),
+      torso: getPoseError(meshTorso, latestTorso),
+      pelvis: getPoseError(meshPelvis, latestPelvis),
+    },
+    rewoundError: {
+      head: getPoseError(meshHead, rewoundHead),
+      torso: getPoseError(meshTorso, rewoundTorso),
+      pelvis: getPoseError(meshPelvis, rewoundPelvis),
+    },
+  };
+}
+
 function createRemoteHitCapsuleDebugMesh(color) {
   const material = new THREE.MeshBasicMaterial({
     color,
@@ -281,14 +363,26 @@ function updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, hitboxes) {
 }
 
 function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones, localHitboxSettings) {
-  if (!debugGroup || !hasCompleteRemoteHitBones(bones)) {
+  if (!debugGroup) {
     return false;
+  }
+  const localSnapshot = captureRemoteBoneDrivenSnapshot(bones, localHitboxSettings);
+  if (!localSnapshot) {
+    return false;
+  }
+
+  return updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, localSnapshot);
+}
+
+function captureRemoteBoneDrivenSnapshot(bones, localHitboxSettings) {
+  if (!hasCompleteRemoteHitBones(bones)) {
+    return null;
   }
 
   for (const [key, point] of Object.entries(REMOTE_LOCAL_HITBOX_POINTS)) {
     const bone = bones[key];
     if (!bone?.getWorldPosition) {
-      return false;
+      return null;
     }
     bone.getWorldPosition(REMOTE_HITBOX_WORLD_POINT);
     point.x = REMOTE_HITBOX_WORLD_POINT.x;
@@ -296,7 +390,7 @@ function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones, localHitbo
     point.z = REMOTE_HITBOX_WORLD_POINT.z;
   }
 
-  const localSnapshot = buildRemoteHitboxSnapshotFromPoints({
+  return buildRemoteHitboxSnapshotFromPoints({
     points: REMOTE_LOCAL_HITBOX_POINTS,
     headOffset: localHitboxSettings.headOffset,
     headRadius: localHitboxSettings.headRadius,
@@ -311,8 +405,6 @@ function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones, localHitbo
     legRadius: localHitboxSettings.legRadius,
     legLengthPadding: localHitboxSettings.legLengthPadding,
   }, REMOTE_LOCAL_HITBOX_SNAPSHOT);
-
-  return updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, localSnapshot);
 }
 
 export function createRemoteDebugAttachments() {
@@ -361,6 +453,7 @@ export function syncRemoteHitboxDebug({
   const rewindMs = getLagCompensationRewindMs(debugPingRoundTripMs);
   const rewoundState = interpolateRemotePlayerSnapshotAtTime(authoritativeSnapshots, getTimelineNow() - rewindMs);
   const debugEnabled = showHitVolumeDebug && !hideForSpectator;
+  const localBoneDrivenSnapshot = captureRemoteBoneDrivenSnapshot(visual.characterHitBones, localHitboxSettings);
 
   visual.hitVolumeDebugGroup.group.visible = debugEnabled && hitboxDebugSettings.showLatestHitboxes;
   visual.positionDebugGroup.group.visible = debugEnabled && hitboxDebugSettings.showLatestMarkers && Boolean(authoritativeState?.position);
@@ -412,6 +505,9 @@ export function syncRemoteHitboxDebug({
           upperBodyActionTime: Number(visual.animationDebugState.upperBodyActionTime ?? 0),
           fullBodyActionTime: Number(visual.animationDebugState.fullBodyActionTime ?? 0),
           fireBaseLocked: Boolean(visual.animationDebugState.fireBaseLocked),
+          clipTransition: visual.animationDebugState.clipTransition
+            ? { ...visual.animationDebugState.clipTransition }
+            : null,
           freezePose: Boolean(visual.animationDebugState.freezePose),
         }
         : null,
@@ -426,6 +522,11 @@ export function syncRemoteHitboxDebug({
         activeWeaponKey: String(authoritativeState?.activeWeaponKey ?? player.activeWeaponKey ?? 'rifle'),
         presentationState: String(player.presentationState ?? authoritativeState?.presentationState ?? 'idle'),
       },
+      pose: buildPoseComparisonState(
+        localBoneDrivenSnapshot,
+        authoritativeState?.hitboxes,
+        rewoundState?.hitboxes,
+      ),
     };
   } else {
     visual.latestDebugState = null;
@@ -541,6 +642,7 @@ export function collectRemoteHitboxDebugState(remotePlayerMeshes, showHitVolumeD
     rewindMs: focus?.rewindMs ?? 0,
     animation: focus?.animation ?? null,
     playerState: focus?.playerState ?? null,
+    pose: focus?.pose ?? null,
     settings: { ...hitboxDebugSettings },
   };
 }

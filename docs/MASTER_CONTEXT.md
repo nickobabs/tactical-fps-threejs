@@ -492,9 +492,16 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - visible remote presentation currently interpolates/blends between animation states
     - authoritative hitbox evaluation still uses mostly discrete state switches
     - that gap is now the main explanation for crouch-fatigue mismatch, ADAD hitbox pops, and fast transition pose shifts
-  - temporary remote animation trace capture now exists on `F11`
-    - capture is stored in browser `localStorage` under `tactical-fps-threejs-remote-animation-trace`
-    - the same payload is also written through the server to `debug/remote-animation-traces/`
+- temporary remote animation trace capture now exists on `F11`
+  - capture is stored in browser `localStorage` under `tactical-fps-threejs-remote-animation-trace`
+  - the same payload is also written through the server to `debug/remote-animation-traces/`
+  - recent trace upgrades now include:
+    - transition change flags for `target/base/active/upper/full`
+    - latest vs rewound root error summaries
+    - mesh-vs-authoritative pose error for `head`, `torso`, and `pelvis`
+  - current read from those traces:
+    - rewound root timing is effectively aligned
+    - remaining mismatch is pose parity during transitions, not rewind timestamp selection
     - current samples include focused remote clip state, crouch/current-height state, and latest/rewound debug positions
 - The top active multiplayer movement blocker after the latest pass is wall/slope contact jitter under authority/correction.
 - Narrow ledge support on `Dust2 Test` is also still imperfect:

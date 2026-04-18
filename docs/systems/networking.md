@@ -255,6 +255,13 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - `F11` toggles remote animation trace capture
   - trace is stored in browser `localStorage` under `tactical-fps-threejs-remote-animation-trace`
   - trace is also written to `debug/remote-animation-traces/`
+  - recent trace payloads also include:
+    - transition change flags for remote clip state
+    - latest vs rewound root error summaries
+    - mesh-vs-authoritative pose error for `head`, `torso`, and `pelvis`
+  - current read:
+    - rewound root timing is now effectively aligned
+    - the remaining hitbox-vs-mesh gap is primarily pose-transition parity
   - current trace payload includes focused remote clip state, crouch/current-height state, and latest/rewound debug positions
 - Current live ping diagnostics include:
   - `server_url`
