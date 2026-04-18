@@ -21,7 +21,7 @@ const FLOOR_FOOTSTEP_FILES = [
 
 const GAME_AUDIO_REGISTRATIONS = [
   ['rifle-fire', '/audio/guns/m4a1_silencer_01.mp3', { playback: 'interrupt' }],
-  ['pistol-fire', '/audio/guns/pistolshot.mp3', { playback: 'interrupt', baseVolume: 0.81 }],
+  ['pistol-fire', '/audio/guns/pistolshot.mp3', { playback: 'interrupt', baseVolume: 0.8 }],
   ['rifle-equip', '/audio/guns/rifleequip.mp3', { playback: 'interrupt', baseVolume: 0.6 }],
   ['pistol-equip', '/audio/guns/pistolequip.mp3', { playback: 'interrupt', baseVolume: 0.7 }],
   ['sniper-fire', '/audio/guns/awp-shoot-sound-effect-cs_go.mp3', { playback: 'interrupt' }],
