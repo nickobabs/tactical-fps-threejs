@@ -102,10 +102,27 @@ function setPoint(target, x, y, z) {
   target.z = z;
 }
 
+function lerpNumber(start, end, alpha) {
+  return Number(start ?? 0) + ((Number(end ?? 0) - Number(start ?? 0)) * alpha);
+}
+
 function copyPoint(target, source) {
   target.x = Number(source?.x ?? 0);
   target.y = Number(source?.y ?? 0);
   target.z = Number(source?.z ?? 0);
+}
+
+function lerpPoint(target, start, end, alpha) {
+  target.x = lerpNumber(start?.x, end?.x, alpha);
+  target.y = lerpNumber(start?.y, end?.y, alpha);
+  target.z = lerpNumber(start?.z, end?.z, alpha);
+}
+
+function lerpVector3(target, start, end, alpha, fallback) {
+  target.x = lerpNumber(start?.x, end?.x, alpha);
+  target.y = lerpNumber(start?.y, end?.y, alpha);
+  target.z = lerpNumber(start?.z, end?.z, alpha);
+  return normalizeVector(target, fallback);
 }
 
 function translatePoint(target, source, offset) {
@@ -259,6 +276,48 @@ export function createRemoteHitboxSnapshot() {
       radius: REMOTE_HITBOX_RADII.leg,
     })),
   };
+}
+
+export function interpolateRemoteHitboxSnapshots(startSnapshot, endSnapshot, alpha, target = createRemoteHitboxSnapshot()) {
+  const start = ensureRemoteHitboxSnapshotShape(startSnapshot);
+  const end = ensureRemoteHitboxSnapshotShape(endSnapshot);
+  const snapshot = ensureRemoteHitboxSnapshotShape(target);
+  const t = Math.max(0, Math.min(1, Number(alpha ?? 0)));
+
+  lerpPoint(snapshot.head.center, start.head.center, end.head.center, t);
+  snapshot.head.radius = lerpNumber(start.head.radius, end.head.radius, t);
+  snapshot.head.size.x = lerpNumber(start.head.size.x, end.head.size.x, t);
+  snapshot.head.size.y = lerpNumber(start.head.size.y, end.head.size.y, t);
+  snapshot.head.size.z = lerpNumber(start.head.size.z, end.head.size.z, t);
+  lerpVector3(snapshot.head.right, start.head.right, end.head.right, t, HEAD_RIGHT);
+  lerpVector3(snapshot.head.up, start.head.up, end.head.up, t, HEAD_UP);
+  lerpVector3(snapshot.head.forward, start.head.forward, end.head.forward, t, HEAD_FORWARD);
+
+  const segmentGroups = ['torso', 'pelvis'];
+  for (const key of segmentGroups) {
+    lerpPoint(snapshot[key].start, start[key].start, end[key].start, t);
+    lerpPoint(snapshot[key].end, start[key].end, end[key].end, t);
+    snapshot[key].radius = lerpNumber(start[key].radius, end[key].radius, t);
+  }
+
+  for (let index = 0; index < snapshot.arms.length; index += 1) {
+    lerpPoint(snapshot.arms[index].start, start.arms[index].start, end.arms[index].start, t);
+    lerpPoint(snapshot.arms[index].end, start.arms[index].end, end.arms[index].end, t);
+    snapshot.arms[index].radius = lerpNumber(start.arms[index].radius, end.arms[index].radius, t);
+  }
+
+  for (let index = 0; index < snapshot.hands.length; index += 1) {
+    lerpPoint(snapshot.hands[index].center, start.hands[index].center, end.hands[index].center, t);
+    snapshot.hands[index].radius = lerpNumber(start.hands[index].radius, end.hands[index].radius, t);
+  }
+
+  for (let index = 0; index < snapshot.legs.length; index += 1) {
+    lerpPoint(snapshot.legs[index].start, start.legs[index].start, end.legs[index].start, t);
+    lerpPoint(snapshot.legs[index].end, start.legs[index].end, end.legs[index].end, t);
+    snapshot.legs[index].radius = lerpNumber(start.legs[index].radius, end.legs[index].radius, t);
+  }
+
+  return snapshot;
 }
 
 export function buildRemoteHitboxSnapshotFromPoints({

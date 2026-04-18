@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pickKnifeSlashSoundKey } from '../../shared/audioEvents.js';
 const SHOT_OFFSET = new THREE.Vector2();
 const FAR_POINT = new THREE.Vector3();
 const KNIFE_HIT_POINT = new THREE.Vector3();
@@ -10,12 +11,26 @@ export function createFireContext() {
   };
 }
 
+function resolveWeaponFireSoundKey(weaponKey, weapon) {
+  const fireSound = String(weapon?.fireSound ?? '');
+  if (!fireSound) {
+    return null;
+  }
+
+  if (weaponKey === 'knife' && fireSound === 'knife-slash') {
+    return pickKnifeSlashSoundKey();
+  }
+
+  return fireSound;
+}
+
 export function playWeaponAudio(audioManager, weaponKey, weapon) {
-  if (!weapon.fireSound) {
+  const soundKey = resolveWeaponFireSoundKey(weaponKey, weapon);
+  if (!soundKey) {
     return;
   }
 
-  audioManager?.play(weapon.fireSound, {
+  audioManager?.play(soundKey, {
     baseVolume: weaponKey === 'sniper' ? 0.4 : weaponKey === 'knife' ? 0.5 : weaponKey === 'pistol' ? 0.5 : 0.6,
     pitchMin: weaponKey === 'sniper' ? 0.992 : weaponKey === 'knife' ? 0.94 : weaponKey === 'pistol' ? 1.02 : 0.95,
     pitchMax: weaponKey === 'sniper' ? 1.008 : weaponKey === 'knife' ? 1.08 : weaponKey === 'pistol' ? 1.08 : 1.06,

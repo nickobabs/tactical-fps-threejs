@@ -55,6 +55,7 @@ import {
   REMOTE_FOOTSTEP_STRIDE_DISTANCE_CROUCH,
   REMOTE_FOOTSTEP_STRIDE_DISTANCE_WALK,
   REMOTE_UTILITY_AUDIO,
+  pickRemoteWeaponAudioSoundKey,
   REMOTE_WEAPON_AUDIO,
 } from '../../../src/shared/audioEvents.js';
 import { RoundManager } from '../../../src/game/rounds/RoundManager.js';
@@ -62,6 +63,7 @@ import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../../sr
 import {
   buildRemoteHitboxSnapshotFromPoints,
   createRemoteHitboxSnapshot,
+  interpolateRemoteHitboxSnapshots,
   REMOTE_HITBOX_HEAD_OFFSET,
   REMOTE_HITBOX_RADII,
 } from '../../../src/shared/remoteHitboxes.js';
@@ -307,14 +309,37 @@ function getLagCompensatedHitboxes(target, rewindTimestamp) {
     return target?.authoritativeHitboxes ?? null;
   }
 
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const snapshot = history[index];
-    if (Number(snapshot?.recordedAt ?? 0) <= rewindTimestamp) {
-      return snapshot.hitboxes ?? target?.authoritativeHitboxes ?? null;
+  if (history.length === 1) {
+    return history[0]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
+  }
+
+  if (rewindTimestamp <= Number(history[0]?.recordedAt ?? 0)) {
+    return history[0]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
+  }
+
+  const latestIndex = history.length - 1;
+  if (rewindTimestamp >= Number(history[latestIndex]?.recordedAt ?? 0)) {
+    return history[latestIndex]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
+  }
+
+  for (let index = 1; index < history.length; index += 1) {
+    const previousSnapshot = history[index - 1];
+    const nextSnapshot = history[index];
+    const previousRecordedAt = Number(previousSnapshot?.recordedAt ?? 0);
+    const nextRecordedAt = Number(nextSnapshot?.recordedAt ?? 0);
+    if (rewindTimestamp <= nextRecordedAt) {
+      const range = Math.max(nextRecordedAt - previousRecordedAt, 1e-6);
+      const alpha = Math.max(0, Math.min(1, (rewindTimestamp - previousRecordedAt) / range));
+      return interpolateRemoteHitboxSnapshots(
+        previousSnapshot?.hitboxes,
+        nextSnapshot?.hitboxes,
+        alpha,
+        createRemoteHitboxSnapshot(),
+      ) ?? nextSnapshot?.hitboxes ?? target?.authoritativeHitboxes ?? null;
     }
   }
 
-  return history[0]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
+  return history[latestIndex]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
 }
 
 function getLagCompensationRewindMs(shooter) {
@@ -2133,11 +2158,13 @@ export class TacticalRoom extends Room {
       return;
     }
 
+    const soundKey = pickRemoteWeaponAudioSoundKey(config);
+
     this.broadcastAudioEvent({
       type: 'weapon-fire',
       sourcePlayerId: player.playerId,
       mapId: player.mapId,
-      soundKey: config.soundKey,
+      soundKey,
       position: {
         x: Number(origin.x ?? 0),
         y: Number(origin.y ?? 0),

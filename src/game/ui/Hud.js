@@ -43,6 +43,7 @@ export function createHud({
   weaponManager,
   utilityManager,
   networkClient,
+  remotePlayerPresenter,
   playerController,
   getDamageVignette,
   getDamageIndicators,
@@ -849,6 +850,7 @@ export function createHud({
         authoritativeUpdatesPerSecond: 0,
         pendingJumpSend: false,
       };
+      const remoteDebug = remotePlayerPresenter?.getDebugState?.() ?? null;
       displaySpeed += (movement.speed - displaySpeed) * 0.18;
       const utilityHudState = utilityManager?.getHudState?.() ?? null;
       const objectiveState = networkClient?.getObjectiveState?.() ?? null;
@@ -1228,6 +1230,7 @@ export function createHud({
         visible: showNetDebug,
         networkDebug,
         movement,
+        remoteDebug,
         markDebugSnapshotRequested,
         fps: getFps?.() ?? 0,
         ignoreLocalCorrections: Boolean(getIgnoreLocalCorrections?.()),

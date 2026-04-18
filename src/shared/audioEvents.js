@@ -26,7 +26,7 @@ export const REMOTE_WEAPON_AUDIO = {
     rolloffExponent: 1.02,
   },
   pistol: {
-    soundKey: 'rifle-fire',
+    soundKey: 'pistol-fire',
     baseVolume: 0.5,
     minDistance: 2,
     maxDistance: 19,
@@ -40,7 +40,8 @@ export const REMOTE_WEAPON_AUDIO = {
     rolloffExponent: 1.0,
   },
   knife: {
-    soundKey: 'knife-slash',
+    soundPrefix: 'knife-slash-',
+    sampleCount: 3,
     baseVolume: 0.5,
     minDistance: 1.2,
     maxDistance: 10,
@@ -84,6 +85,34 @@ export const REMOTE_FOOTSTEP_AUDIBLE_SPEED_FLOOR = 0.1;
 export const REMOTE_FOOTSTEP_STRIDE_DISTANCE_WALK = 1.995;
 export const REMOTE_FOOTSTEP_STRIDE_DISTANCE_CROUCH = 2.57;
 export const REMOTE_FOOTSTEP_MIN_HORIZONTAL_SPEED = 0.45;
+
+export function pickKnifeSlashSoundKey() {
+  const roll = Math.random();
+  if (roll < 0.5) {
+    return 'knife-slash-1';
+  }
+  if (roll < 0.75) {
+    return 'knife-slash-2';
+  }
+  return 'knife-slash-3';
+}
+
+export function pickRemoteWeaponAudioSoundKey(config) {
+  if (!config) {
+    return null;
+  }
+
+  if (config.soundPrefix === 'knife-slash-') {
+    return pickKnifeSlashSoundKey();
+  }
+
+  const sampleCount = Math.max(0, Number(config.sampleCount ?? 0));
+  if (config.soundPrefix && sampleCount > 0) {
+    return `${String(config.soundPrefix)}${Math.floor(Math.random() * sampleCount) + 1}`;
+  }
+
+  return config.soundKey ? String(config.soundKey) : null;
+}
 
 export function createRemoteAudioEvent(event = {}) {
   return {

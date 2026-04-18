@@ -4,6 +4,7 @@ import {
   buildRemoteHitboxSnapshotFromPoints,
   createRemoteHitboxPointCache,
   createRemoteHitboxSnapshot,
+  interpolateRemoteHitboxSnapshots,
   REMOTE_HITBOX_HEAD_OFFSET,
 } from '../../shared/remoteHitboxes.js';
 import {
@@ -28,6 +29,10 @@ import {
   shouldUseRemoteWalkClip,
   usesRemoteMeleeClipSet,
 } from '../../shared/remoteCharacterConfig.js';
+import {
+  NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
+  NETCODE_REMOTE_INTERPOLATION_DELAY_MS,
+} from '../../shared/netcode.js';
 import {
   getDefaultRemoteCharacterDefinition,
   getFallbackRemoteCharacterDefinition,
@@ -95,6 +100,14 @@ const DEFAULT_REMOTE_DEBUG_SETTINGS = {
   freezeClip: REMOTE_CLIPS.idle,
   localHitboxDebug: false,
 };
+const DEFAULT_REMOTE_HITBOX_DEBUG_SETTINGS = {
+  enabled: false,
+  showLatestHitboxes: true,
+  showLatestMarkers: true,
+  showRewoundHitboxes: false,
+  showRewoundMarkers: false,
+};
+const MIN_ONE_WAY_NETWORK_MS = 0;
 
 const REMOTE_CHARACTER_BOX = new THREE.Box3();
 const REMOTE_CHARACTER_SIZE = new THREE.Vector3();
@@ -118,6 +131,9 @@ const REMOTE_HITBOX_UP_AXIS = new THREE.Vector3(0, 1, 0);
 const REMOTE_HITBOX_LAYOUT = createPlayerHitboxLayout();
 const REMOTE_HITBOX_WORLD_POINT_A = new THREE.Vector3();
 const REMOTE_HITBOX_WORLD_POINT_B = new THREE.Vector3();
+const REMOTE_DEBUG_RENDERED_POSITION = new THREE.Vector3();
+const REMOTE_DEBUG_AUTHORITATIVE_POSITION = new THREE.Vector3();
+const REMOTE_DEBUG_POSITION_DELTA = new THREE.Vector3();
 const REMOTE_TRACER_ORIGIN = new THREE.Vector3();
 const REMOTE_BLOOD_ORIGIN = new THREE.Vector3();
 const REMOTE_BLOOD_OUTWARD = new THREE.Vector3();
@@ -827,30 +843,30 @@ function updateRemoteHitCapsuleDebugMesh(debugMesh, segment) {
   debugMesh.bottom.scale.setScalar(segment.radius);
 }
 
-function createRemoteHitVolumeDebugGroup() {
+function createRemoteHitVolumeDebugGroup(colors = {}) {
   const group = new THREE.Group();
   group.renderOrder = 1200;
 
-  const head = createRemoteHitSphereDebugMesh(0xff5d5d);
-  const torso = createRemoteHitCapsuleDebugMesh(0x6bd3ff);
-  const pelvis = createRemoteHitCapsuleDebugMesh(0x8cff7a);
+  const head = createRemoteHitSphereDebugMesh(colors.head ?? 0xff5d5d);
+  const torso = createRemoteHitCapsuleDebugMesh(colors.torso ?? 0x6bd3ff);
+  const pelvis = createRemoteHitCapsuleDebugMesh(colors.pelvis ?? 0x8cff7a);
   const arms = [
-    createRemoteHitCapsuleDebugMesh(0xffd166),
-    createRemoteHitCapsuleDebugMesh(0xffd166),
-    createRemoteHitCapsuleDebugMesh(0xffd166),
-    createRemoteHitCapsuleDebugMesh(0xffd166),
-    createRemoteHitCapsuleDebugMesh(0xffd166),
-    createRemoteHitCapsuleDebugMesh(0xffd166),
+    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
+    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
+    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
+    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
+    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
+    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
   ];
   const hands = [
-    createRemoteHitSphereDebugMesh(0xffd166),
-    createRemoteHitSphereDebugMesh(0xffd166),
+    createRemoteHitSphereDebugMesh(colors.hands ?? colors.arms ?? 0xffd166),
+    createRemoteHitSphereDebugMesh(colors.hands ?? colors.arms ?? 0xffd166),
   ];
   const legs = [
-    createRemoteHitCapsuleDebugMesh(0xc792ff),
-    createRemoteHitCapsuleDebugMesh(0xc792ff),
-    createRemoteHitCapsuleDebugMesh(0xc792ff),
-    createRemoteHitCapsuleDebugMesh(0xc792ff),
+    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
+    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
+    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
+    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
   ];
 
   group.add(
@@ -1024,6 +1040,141 @@ function pickAuditCoreSnapshot(snapshot) {
   };
 }
 
+function getRemoteDebugNow() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+
+  return Date.now();
+}
+
+function lerpNumber(start, end, alpha) {
+  return Number(start ?? 0) + ((Number(end ?? 0) - Number(start ?? 0)) * alpha);
+}
+
+function interpolateAngle(start, end, alpha) {
+  let delta = end - start;
+
+  while (delta > Math.PI) {
+    delta -= Math.PI * 2;
+  }
+
+  while (delta < -Math.PI) {
+    delta += Math.PI * 2;
+  }
+
+  return start + (delta * alpha);
+}
+
+function getLagCompensationRewindMs(roundTripMs) {
+  const reportedRoundTripMs = Math.max(0, Number(roundTripMs ?? 0));
+  const estimatedOneWayMs = Math.max(MIN_ONE_WAY_NETWORK_MS, reportedRoundTripMs * 0.5);
+  return Math.max(
+    0,
+    Math.min(
+      NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
+      NETCODE_REMOTE_INTERPOLATION_DELAY_MS + estimatedOneWayMs,
+    ),
+  );
+}
+
+function getLagCompensatedSnapshot(snapshots, rewindTimestamp) {
+  if (!Array.isArray(snapshots) || snapshots.length === 0) {
+    return null;
+  }
+
+  if (snapshots.length === 1) {
+    return snapshots[0] ?? null;
+  }
+
+  if (rewindTimestamp <= Number(snapshots[0]?.receivedAt ?? 0)) {
+    return snapshots[0] ?? null;
+  }
+
+  const latestIndex = snapshots.length - 1;
+  if (rewindTimestamp >= Number(snapshots[latestIndex]?.receivedAt ?? 0)) {
+    return snapshots[latestIndex] ?? null;
+  }
+
+  for (let index = 1; index < snapshots.length; index += 1) {
+    const previousSnapshot = snapshots[index - 1];
+    const nextSnapshot = snapshots[index];
+    const previousReceivedAt = Number(previousSnapshot?.receivedAt ?? 0);
+    const nextReceivedAt = Number(nextSnapshot?.receivedAt ?? 0);
+    if (rewindTimestamp <= nextReceivedAt) {
+      const range = Math.max(nextReceivedAt - previousReceivedAt, 1e-6);
+      const alpha = Math.max(0, Math.min(1, (rewindTimestamp - previousReceivedAt) / range));
+      return {
+        ...nextSnapshot,
+        position: {
+          x: lerpNumber(previousSnapshot?.position?.x, nextSnapshot?.position?.x, alpha),
+          y: lerpNumber(previousSnapshot?.position?.y, nextSnapshot?.position?.y, alpha),
+          z: lerpNumber(previousSnapshot?.position?.z, nextSnapshot?.position?.z, alpha),
+        },
+        yaw: interpolateAngle(Number(previousSnapshot?.yaw ?? 0), Number(nextSnapshot?.yaw ?? 0), alpha),
+        pitch: lerpNumber(previousSnapshot?.pitch, nextSnapshot?.pitch, alpha),
+        currentHeight: lerpNumber(previousSnapshot?.currentHeight, nextSnapshot?.currentHeight, alpha),
+        hitboxes: interpolateRemoteHitboxSnapshots(
+          previousSnapshot?.hitboxes,
+          nextSnapshot?.hitboxes,
+          alpha,
+          createRemoteHitboxSnapshot(),
+        ),
+        receivedAt: rewindTimestamp,
+      };
+    }
+  }
+
+  return snapshots[latestIndex] ?? null;
+}
+
+function createRemotePositionDebugGroup() {
+  const group = new THREE.Group();
+  const renderedMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.075, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0x32d17c, depthTest: false, transparent: true, opacity: 0.95 }),
+  );
+  const authoritativeMarker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.075, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff5b5b, depthTest: false, transparent: true, opacity: 0.95 }),
+  );
+  const lineGeometry = new THREE.BufferGeometry();
+  lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+  const connector = new THREE.Line(
+    lineGeometry,
+    new THREE.LineBasicMaterial({ color: 0xffd54d, depthTest: false, transparent: true, opacity: 0.9 }),
+  );
+  connector.renderOrder = 999;
+  renderedMarker.renderOrder = 999;
+  authoritativeMarker.renderOrder = 999;
+  group.add(connector, renderedMarker, authoritativeMarker);
+  return {
+    group,
+    renderedMarker,
+    authoritativeMarker,
+    connector,
+  };
+}
+
+function updateRemotePositionDebugGroup(debugGroup, renderedPosition, authoritativePosition) {
+  if (!debugGroup || !renderedPosition || !authoritativePosition) {
+    return;
+  }
+
+  debugGroup.renderedMarker.position.set(renderedPosition.x, renderedPosition.y + 0.05, renderedPosition.z);
+  debugGroup.authoritativeMarker.position.set(authoritativePosition.x, authoritativePosition.y + 0.05, authoritativePosition.z);
+
+  const positions = debugGroup.connector.geometry.attributes.position.array;
+  positions[0] = renderedPosition.x;
+  positions[1] = renderedPosition.y + 0.05;
+  positions[2] = renderedPosition.z;
+  positions[3] = authoritativePosition.x;
+  positions[4] = authoritativePosition.y + 0.05;
+  positions[5] = authoritativePosition.z;
+  debugGroup.connector.geometry.attributes.position.needsUpdate = true;
+  debugGroup.connector.geometry.computeBoundingSphere();
+}
+
 function createRemotePlayerVisual(displayName, bodyMaterial) {
   const root = new THREE.Group();
 
@@ -1063,6 +1214,22 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
 
   const hitVolumeDebugGroup = createRemoteHitVolumeDebugGroup();
   hitVolumeDebugGroup.group.visible = false;
+  const positionDebugGroup = createRemotePositionDebugGroup();
+  positionDebugGroup.group.visible = false;
+  const rewoundHitVolumeDebugGroup = createRemoteHitVolumeDebugGroup({
+    head: 0xffb36b,
+    torso: 0xffc874,
+    pelvis: 0xffdf8b,
+    arms: 0xffcf76,
+    hands: 0xffcf76,
+    legs: 0xe1a95f,
+  });
+  rewoundHitVolumeDebugGroup.group.visible = false;
+  const rewoundPositionDebugGroup = createRemotePositionDebugGroup();
+  rewoundPositionDebugGroup.renderedMarker.material.color.setHex(0x67d7ff);
+  rewoundPositionDebugGroup.authoritativeMarker.material.color.setHex(0xffb347);
+  rewoundPositionDebugGroup.connector.material.color.setHex(0xffb347);
+  rewoundPositionDebugGroup.group.visible = false;
 
   return {
     root,
@@ -1075,7 +1242,11 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     weaponMesh: null,
     weaponKey: null,
     hitVolumeDebugGroup,
+    positionDebugGroup,
+    rewoundHitVolumeDebugGroup,
+    rewoundPositionDebugGroup,
     showHitVolumeDebug: false,
+    latestDebugState: null,
     flashTime: 0,
     hitReactionTime: 0,
     deathTransitionTime: 0,
@@ -2004,31 +2175,6 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
 
   updateRemoteLeftHandIk(visual);
 
-  visual.hitVolumeDebugGroup.group.visible = visual.showHitVolumeDebug === true;
-  if (visual.showHitVolumeDebug) {
-    const debugSettings = getRemoteDebugSettings();
-    const preferLocalHitboxDebug = Boolean(debugSettings.localHitboxDebug);
-    const usedAuthoritativeHitboxes = !preferLocalHitboxDebug && updateRemoteAuthoritativeHitVolumeDebugGroup(
-      visual.hitVolumeDebugGroup,
-      authoritativeState?.hitboxes,
-    );
-    if (!usedAuthoritativeHitboxes) {
-      const usedBoneDrivenHitboxes = updateRemoteBoneDrivenHitVolumeDebugGroup(
-        visual.hitVolumeDebugGroup,
-        visual.characterHitBones,
-      );
-      if (!usedBoneDrivenHitboxes) {
-        updateRemoteHitVolumeDebugGroup(visual.hitVolumeDebugGroup, {
-          position: player.position,
-          yaw: player.yaw,
-          currentHeight: player.currentHeight ?? authoritativeState?.currentHeight,
-          isCrouched: player.isCrouched ?? authoritativeState?.isCrouched,
-          activeWeaponKey: authoritativeState?.activeWeaponKey ?? player.activeWeaponKey,
-        });
-      }
-    }
-  }
-
   if (visual.flashTime > 0) {
     visual.flashTime = Math.max(0, visual.flashTime - delta);
   }
@@ -2049,6 +2195,18 @@ function disposeRemotePlayerVisual(visual) {
     child.geometry?.dispose?.();
     child.material?.dispose?.();
   });
+  visual.positionDebugGroup?.group?.traverse((child) => {
+    child.geometry?.dispose?.();
+    child.material?.dispose?.();
+  });
+  visual.rewoundHitVolumeDebugGroup?.group?.traverse((child) => {
+    child.geometry?.dispose?.();
+    child.material?.dispose?.();
+  });
+  visual.rewoundPositionDebugGroup?.group?.traverse((child) => {
+    child.geometry?.dispose?.();
+    child.material?.dispose?.();
+  });
   visual.bodyCylinder.geometry.dispose();
   visual.bodyTop.geometry.dispose();
   visual.bodyBottom.geometry.dispose();
@@ -2063,8 +2221,10 @@ export class RemotePlayerPresenter {
       ? options.sendHitboxAudit
       : null;
     this.remotePlayerMeshes = new Map();
-    this.showHitVolumeDebug = false;
+    this.hitboxDebugSettings = { ...DEFAULT_REMOTE_HITBOX_DEBUG_SETTINGS };
+    this.showHitVolumeDebug = this.hitboxDebugSettings.enabled;
     this.spectatorTargetPlayerId = null;
+    this.debugPingRoundTripMs = 0;
     this.weaponTuningPanel = createRemoteWeaponTuningPanel();
     this.characterTuningPanel = createRemoteCharacterTuningPanel();
     this.remotePlayerMaterial = new THREE.MeshStandardMaterial({
@@ -2156,9 +2316,13 @@ export class RemotePlayerPresenter {
 
   toggleHitVolumeDebug() {
     this.showHitVolumeDebug = !this.showHitVolumeDebug;
+    this.hitboxDebugSettings.enabled = this.showHitVolumeDebug;
     for (const visual of this.remotePlayerMeshes.values()) {
       visual.showHitVolumeDebug = this.showHitVolumeDebug;
       visual.hitVolumeDebugGroup.group.visible = this.showHitVolumeDebug;
+      visual.positionDebugGroup.group.visible = this.showHitVolumeDebug;
+      visual.rewoundHitVolumeDebugGroup.group.visible = this.showHitVolumeDebug;
+      visual.rewoundPositionDebugGroup.group.visible = this.showHitVolumeDebug;
     }
     return this.showHitVolumeDebug;
   }
@@ -2178,28 +2342,22 @@ export class RemotePlayerPresenter {
         this.remotePlayerMeshes.set(player.playerId, visual);
         this.scene.add(visual.root);
         this.scene.add(visual.hitVolumeDebugGroup.group);
+        this.scene.add(visual.positionDebugGroup.group);
+        this.scene.add(visual.rewoundHitVolumeDebugGroup.group);
+        this.scene.add(visual.rewoundPositionDebugGroup.group);
         visual.showHitVolumeDebug = this.showHitVolumeDebug;
         visual.hitVolumeDebugGroup.group.visible = this.showHitVolumeDebug;
+        visual.positionDebugGroup.group.visible = this.showHitVolumeDebug;
+        visual.rewoundHitVolumeDebugGroup.group.visible = this.showHitVolumeDebug;
+        visual.rewoundPositionDebugGroup.group.visible = this.showHitVolumeDebug;
         ensureRemoteCharacterModel(visual);
       }
 
-      const authoritativeState = authoritativeBuffers.get(player.playerId)?.at?.(-1) ?? null;
-      const renderPlayer = this.showHitVolumeDebug && authoritativeState
-        ? {
-          playerId: player.playerId,
-          displayName: player.displayName ?? authoritativeState.displayName ?? player.playerId,
-          position: { ...authoritativeState.position },
-          yaw: authoritativeState.yaw,
-          pitch: authoritativeState.pitch,
-          currentHeight: authoritativeState.currentHeight,
-          isCrouched: authoritativeState.isCrouched,
-          team: authoritativeState.team,
-          activeWeaponKey: authoritativeState.activeWeaponKey,
-          isScoped: authoritativeState.isScoped,
-          presentationState: authoritativeState.presentationState,
-          isAlive: authoritativeState.isAlive,
-        }
-        : player;
+      const authoritativeSnapshots = authoritativeBuffers.get(player.playerId) ?? [];
+      const authoritativeState = authoritativeSnapshots.at?.(-1) ?? null;
+      const rewindMs = getLagCompensationRewindMs(this.debugPingRoundTripMs);
+      const rewoundState = getLagCompensatedSnapshot(authoritativeSnapshots, getRemoteDebugNow() - rewindMs);
+      const renderPlayer = player;
       visual.team = renderPlayer.team ?? authoritativeState?.team ?? null;
       ensureRemoteCharacterModel(visual);
       setRemotePlayerWeapon(visual, authoritativeState?.activeWeaponKey ?? renderPlayer.activeWeaponKey);
@@ -2209,7 +2367,125 @@ export class RemotePlayerPresenter {
       });
       const hideForSpectator = this.spectatorTargetPlayerId != null && player.playerId === this.spectatorTargetPlayerId;
       visual.root.visible = !hideForSpectator;
-      visual.hitVolumeDebugGroup.group.visible = this.showHitVolumeDebug && !hideForSpectator;
+      const debugEnabled = this.showHitVolumeDebug && !hideForSpectator;
+      visual.hitVolumeDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showLatestHitboxes;
+      visual.positionDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showLatestMarkers && Boolean(authoritativeState?.position);
+      visual.rewoundHitVolumeDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showRewoundHitboxes;
+      visual.rewoundPositionDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showRewoundMarkers && Boolean(rewoundState?.position);
+      if (this.showHitVolumeDebug && !hideForSpectator && authoritativeState?.position) {
+        REMOTE_DEBUG_RENDERED_POSITION.copy(visual.root.position);
+        REMOTE_DEBUG_AUTHORITATIVE_POSITION.set(
+          Number(authoritativeState.position.x ?? 0),
+          Number(authoritativeState.position.y ?? 0),
+          Number(authoritativeState.position.z ?? 0),
+        );
+        REMOTE_DEBUG_POSITION_DELTA.subVectors(REMOTE_DEBUG_AUTHORITATIVE_POSITION, REMOTE_DEBUG_RENDERED_POSITION);
+        updateRemotePositionDebugGroup(
+          visual.positionDebugGroup,
+          REMOTE_DEBUG_RENDERED_POSITION,
+          REMOTE_DEBUG_AUTHORITATIVE_POSITION,
+        );
+        visual.latestDebugState = {
+          playerId: player.playerId,
+          displayName: player.displayName ?? authoritativeState.displayName ?? player.playerId,
+          renderedPosition: {
+            x: REMOTE_DEBUG_RENDERED_POSITION.x,
+            y: REMOTE_DEBUG_RENDERED_POSITION.y,
+            z: REMOTE_DEBUG_RENDERED_POSITION.z,
+          },
+          authoritativePosition: {
+            x: REMOTE_DEBUG_AUTHORITATIVE_POSITION.x,
+            y: REMOTE_DEBUG_AUTHORITATIVE_POSITION.y,
+            z: REMOTE_DEBUG_AUTHORITATIVE_POSITION.z,
+          },
+          delta: {
+            x: REMOTE_DEBUG_POSITION_DELTA.x,
+            y: REMOTE_DEBUG_POSITION_DELTA.y,
+            z: REMOTE_DEBUG_POSITION_DELTA.z,
+          },
+          distance: REMOTE_DEBUG_POSITION_DELTA.length(),
+          horizontalDistance: Math.hypot(REMOTE_DEBUG_POSITION_DELTA.x, REMOTE_DEBUG_POSITION_DELTA.z),
+          snapshotAgeMs: Number.isFinite(authoritativeState.receivedAt) ? Math.max(0, getRemoteDebugNow() - authoritativeState.receivedAt) : null,
+        };
+      } else {
+        visual.latestDebugState = null;
+      }
+      if (debugEnabled && this.hitboxDebugSettings.showLatestHitboxes) {
+        const debugSettings = getRemoteDebugSettings();
+        const preferLocalHitboxDebug = Boolean(debugSettings.localHitboxDebug);
+        const usedAuthoritativeHitboxes = !preferLocalHitboxDebug && updateRemoteAuthoritativeHitVolumeDebugGroup(
+          visual.hitVolumeDebugGroup,
+          authoritativeState?.hitboxes,
+        );
+        if (!usedAuthoritativeHitboxes) {
+          const usedBoneDrivenHitboxes = updateRemoteBoneDrivenHitVolumeDebugGroup(
+            visual.hitVolumeDebugGroup,
+            visual.characterHitBones,
+          );
+          if (!usedBoneDrivenHitboxes) {
+            updateRemoteHitVolumeDebugGroup(visual.hitVolumeDebugGroup, {
+              position: player.position,
+              yaw: player.yaw,
+              currentHeight: player.currentHeight ?? authoritativeState?.currentHeight,
+              isCrouched: player.isCrouched ?? authoritativeState?.isCrouched,
+              activeWeaponKey: authoritativeState?.activeWeaponKey ?? player.activeWeaponKey,
+            });
+          }
+        }
+      }
+      if (debugEnabled && this.hitboxDebugSettings.showRewoundHitboxes) {
+        updateRemoteAuthoritativeHitVolumeDebugGroup(
+          visual.rewoundHitVolumeDebugGroup,
+          rewoundState?.hitboxes,
+        );
+      }
+      if (debugEnabled && this.hitboxDebugSettings.showRewoundMarkers && rewoundState?.position) {
+        REMOTE_DEBUG_RENDERED_POSITION.copy(visual.root.position);
+        REMOTE_DEBUG_AUTHORITATIVE_POSITION.set(
+          Number(rewoundState.position.x ?? 0),
+          Number(rewoundState.position.y ?? 0),
+          Number(rewoundState.position.z ?? 0),
+        );
+        updateRemotePositionDebugGroup(
+          visual.rewoundPositionDebugGroup,
+          REMOTE_DEBUG_RENDERED_POSITION,
+          REMOTE_DEBUG_AUTHORITATIVE_POSITION,
+        );
+      }
+      if (visual.latestDebugState) {
+        if (rewoundState?.position) {
+          REMOTE_DEBUG_RENDERED_POSITION.copy(visual.root.position);
+          REMOTE_DEBUG_AUTHORITATIVE_POSITION.set(
+            Number(rewoundState.position.x ?? 0),
+            Number(rewoundState.position.y ?? 0),
+            Number(rewoundState.position.z ?? 0),
+          );
+          REMOTE_DEBUG_POSITION_DELTA.subVectors(REMOTE_DEBUG_AUTHORITATIVE_POSITION, REMOTE_DEBUG_RENDERED_POSITION);
+          visual.latestDebugState.rewoundPosition = {
+            x: REMOTE_DEBUG_AUTHORITATIVE_POSITION.x,
+            y: REMOTE_DEBUG_AUTHORITATIVE_POSITION.y,
+            z: REMOTE_DEBUG_AUTHORITATIVE_POSITION.z,
+          };
+          visual.latestDebugState.rewoundDelta = {
+            x: REMOTE_DEBUG_POSITION_DELTA.x,
+            y: REMOTE_DEBUG_POSITION_DELTA.y,
+            z: REMOTE_DEBUG_POSITION_DELTA.z,
+          };
+          visual.latestDebugState.rewoundDistance = REMOTE_DEBUG_POSITION_DELTA.length();
+          visual.latestDebugState.rewoundHorizontalDistance = Math.hypot(REMOTE_DEBUG_POSITION_DELTA.x, REMOTE_DEBUG_POSITION_DELTA.z);
+          visual.latestDebugState.rewindMs = rewindMs;
+          visual.latestDebugState.rewoundSnapshotAgeMs = Number.isFinite(rewoundState.receivedAt)
+            ? Math.max(0, getRemoteDebugNow() - rewoundState.receivedAt)
+            : null;
+        } else {
+          visual.latestDebugState.rewoundPosition = null;
+          visual.latestDebugState.rewoundDelta = null;
+          visual.latestDebugState.rewoundDistance = 0;
+          visual.latestDebugState.rewoundHorizontalDistance = 0;
+          visual.latestDebugState.rewindMs = rewindMs;
+          visual.latestDebugState.rewoundSnapshotAgeMs = null;
+        }
+      }
       this.maybeSendHitboxAudit(visual, renderPlayer, authoritativeState);
     }
 
@@ -2220,6 +2496,9 @@ export class RemotePlayerPresenter {
 
       this.scene.remove(visual.root);
       this.scene.remove(visual.hitVolumeDebugGroup.group);
+      this.scene.remove(visual.positionDebugGroup.group);
+      this.scene.remove(visual.rewoundHitVolumeDebugGroup.group);
+      this.scene.remove(visual.rewoundPositionDebugGroup.group);
       disposeRemotePlayerVisual(visual);
       this.remotePlayerMeshes.delete(playerId);
     }
@@ -2229,6 +2508,9 @@ export class RemotePlayerPresenter {
     for (const visual of this.remotePlayerMeshes.values()) {
       this.scene.remove(visual.root);
       this.scene.remove(visual.hitVolumeDebugGroup.group);
+      this.scene.remove(visual.positionDebugGroup.group);
+      this.scene.remove(visual.rewoundHitVolumeDebugGroup.group);
+      this.scene.remove(visual.rewoundPositionDebugGroup.group);
       disposeRemotePlayerVisual(visual);
     }
 
@@ -2253,6 +2535,61 @@ export class RemotePlayerPresenter {
 
   setSpectatorTargetPlayerId(playerId) {
     this.spectatorTargetPlayerId = playerId ? String(playerId) : null;
+  }
+
+  setLagCompensationDebug({ pingRoundTripMs = 0 } = {}) {
+    this.debugPingRoundTripMs = Math.max(0, Number(pingRoundTripMs ?? 0));
+  }
+
+  getHitboxDebugSettings() {
+    return { ...this.hitboxDebugSettings };
+  }
+
+  setHitboxDebugEnabled(enabled) {
+    this.showHitVolumeDebug = Boolean(enabled);
+    this.hitboxDebugSettings.enabled = this.showHitVolumeDebug;
+  }
+
+  setHitboxDebugSetting(key, value) {
+    if (!(key in this.hitboxDebugSettings)) {
+      return;
+    }
+    this.hitboxDebugSettings[key] = Boolean(value);
+    if (key === 'enabled') {
+      this.showHitVolumeDebug = this.hitboxDebugSettings.enabled;
+    }
+  }
+
+  getDebugState() {
+    let focus = null;
+    for (const visual of this.remotePlayerMeshes.values()) {
+      if (!visual?.latestDebugState) {
+        continue;
+      }
+      if (!focus || Number(visual.latestDebugState.horizontalDistance ?? 0) > Number(focus.horizontalDistance ?? 0)) {
+        focus = visual.latestDebugState;
+      }
+    }
+
+    return {
+      showHitVolumeDebug: this.showHitVolumeDebug,
+      trackedRemoteCount: this.remotePlayerMeshes.size,
+      focusPlayerId: focus?.playerId ?? null,
+      focusDisplayName: focus?.displayName ?? null,
+      renderedPosition: focus?.renderedPosition ?? null,
+      authoritativePosition: focus?.authoritativePosition ?? null,
+      delta: focus?.delta ?? null,
+      distance: focus?.distance ?? 0,
+      horizontalDistance: focus?.horizontalDistance ?? 0,
+      snapshotAgeMs: focus?.snapshotAgeMs ?? null,
+      rewoundPosition: focus?.rewoundPosition ?? null,
+      rewoundDelta: focus?.rewoundDelta ?? null,
+      rewoundDistance: focus?.rewoundDistance ?? 0,
+      rewoundHorizontalDistance: focus?.rewoundHorizontalDistance ?? 0,
+      rewoundSnapshotAgeMs: focus?.rewoundSnapshotAgeMs ?? null,
+      rewindMs: focus?.rewindMs ?? 0,
+      settings: this.getHitboxDebugSettings(),
+    };
   }
 
   maybeSendHitboxAudit(visual, renderPlayer, authoritativeState) {

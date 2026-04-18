@@ -2,6 +2,7 @@ import {
   DEBUG_MENU_EVENT_TOGGLE_HUD_LAYOUT_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_MOVEMENT_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING,
+  DEBUG_MENU_EVENT_TOGGLE_REMOTE_HITBOX_DEBUG,
   DEBUG_MENU_EVENT_TOGGLE_RECOIL_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING,
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING,
@@ -134,6 +135,11 @@ export function createDebugMenu({
           label: 'Remote Audio Tuning',
           description: 'Tune remote footstep attenuation live on the client and read back exact values.',
           onClick: () => dispatchDebugMenuEvent(DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING),
+        },
+        {
+          label: 'Remote Hitbox Debug',
+          description: 'Control remote hitbox overlays, latest-vs-rewound markers, and lag-comp debug views.',
+          onClick: () => dispatchDebugMenuEvent(DEBUG_MENU_EVENT_TOGGLE_REMOTE_HITBOX_DEBUG),
         },
         {
           label: 'Remote Body Tuning',

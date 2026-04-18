@@ -20,6 +20,7 @@ import { GameSessionController } from './GameSessionController.js';
 import { createDebugMenu } from './createDebugMenu.js';
 import { createMovementTuningPanel } from '../game/player/createMovementTuningPanel.js';
 import { createRemoteAudioTuningPanel } from '../game/audio/createRemoteAudioTuningPanel.js';
+import { createRemoteHitboxDebugPanel } from '../game/networking/createRemoteHitboxDebugPanel.js';
 import { REMOTE_AUDIO_TUNING } from '../game/audio/remoteAudioTuning.js';
 import { createHudLayoutTuningPanel } from '../game/ui/createHudLayoutTuningPanel.js';
 import { HUD_LAYOUT_TUNING, applyHudLayoutTuningToRoot, loadHudLayoutTuning } from '../game/ui/hudLayoutTuning.js';
@@ -271,6 +272,9 @@ export class GameApp {
     this.hudLayoutTuningPanel = createHudLayoutTuningPanel();
     this.movementTuningPanel = createMovementTuningPanel();
     this.remoteAudioTuningPanel = createRemoteAudioTuningPanel();
+    this.remoteHitboxDebugPanel = createRemoteHitboxDebugPanel({
+      remotePlayerPresenter: this.remotePlayerPresenter,
+    });
     this.pauseController = new GamePauseController({
       renderer: this.renderer,
       audioManager: this.audioManager,
@@ -354,6 +358,7 @@ export class GameApp {
     this.hudLayoutTuningPanel?.destroy?.();
     this.movementTuningPanel?.destroy?.();
     this.remoteAudioTuningPanel?.destroy?.();
+    this.remoteHitboxDebugPanel?.destroy?.();
     this.renderer.dispose();
   }
 
@@ -366,6 +371,7 @@ export class GameApp {
       weaponManager: this.runtime?.weaponManager ?? null,
       utilityManager: this.runtime?.utilityManager ?? null,
       networkClient: this.networkClient,
+      remotePlayerPresenter: this.remotePlayerPresenter,
       playerController: this.runtime?.playerController ?? null,
       getDamageVignette: () => this.damageVignette,
       getDamageIndicators: () => this.damageIndicators,
@@ -1421,6 +1427,9 @@ export class GameApp {
   updateRemotePlayers(delta) {
     this.remotePlayerPresenter.setEffectsManager(this.runtime?.effectsManager ?? null);
     this.remotePlayerPresenter.setLocalPlayerId(this.networkClient.playerId ?? null);
+    this.remotePlayerPresenter.setLagCompensationDebug({
+      pingRoundTripMs: this.networkClient.getDebugState?.().pingAverageMs ?? 0,
+    });
     this.remotePlayerPresenter.setSpectatorTargetPlayerId(this.spectatorMode === 'teammate' ? this.spectatorTargetPlayerId : null);
     if (this.authoritativeNetworkingEnabled) {
       this.remotePlayerPresenter.syncPlayers(
@@ -1428,10 +1437,12 @@ export class GameApp {
         this.networkClient.remotePlayerBuffers,
         delta,
       );
+      this.remoteHitboxDebugPanel?.sync?.();
       return;
     }
 
     this.remotePlayerPresenter.clear();
+    this.remoteHitboxDebugPanel?.sync?.();
   }
 
   updateGameplayFrame(delta, frameInput) {

@@ -30,7 +30,15 @@ function getSafeRate(value, divisor) {
   return value / divisor;
 }
 
-function buildDebugText(networkDebug, movement, { ignoreLocalCorrections = false } = {}) {
+function formatPoint(point) {
+  if (!point) {
+    return 'n/a';
+  }
+
+  return `${Number(point.x ?? 0).toFixed(2)}, ${Number(point.y ?? 0).toFixed(2)}, ${Number(point.z ?? 0).toFixed(2)}`;
+}
+
+function buildDebugText(networkDebug, movement, { ignoreLocalCorrections = false, remoteDebug = null } = {}) {
   const correctionXZPerSnapshotMs = getSafeRate(
     movement.correctionDistanceXZ ?? 0,
     Math.max(0, networkDebug.snapshotAgeMs),
@@ -67,6 +75,12 @@ function buildDebugText(networkDebug, movement, { ignoreLocalCorrections = false
     `cur_pos=${movement.currentPositionDetailText ?? '0.00, 0.00, 0.00'}`,
     `auth_pos=${movement.authoritativePositionText ?? '0.00, 0.00, 0.00'}`,
     `replay_pos=${movement.replayPositionText ?? '0.00, 0.00, 0.00'}`,
+    `remote_dbg=${remoteDebug?.showHitVolumeDebug ? 'on' : 'off'} tracked=${remoteDebug?.trackedRemoteCount ?? 0} focus=${remoteDebug?.focusDisplayName ?? remoteDebug?.focusPlayerId ?? 'none'}`,
+    `remote_render_pos=${formatPoint(remoteDebug?.renderedPosition)}`,
+    `remote_latest_pos=${formatPoint(remoteDebug?.authoritativePosition)}`,
+    `remote_latest_delta=${formatPoint(remoteDebug?.delta)} remote_latest_dist=${Number(remoteDebug?.distance ?? 0).toFixed(3)} remote_latest_xz=${Number(remoteDebug?.horizontalDistance ?? 0).toFixed(3)} remote_latest_age_ms=${remoteDebug?.snapshotAgeMs ?? -1}`,
+    `remote_rewind_pos=${formatPoint(remoteDebug?.rewoundPosition)}`,
+    `remote_rewind_delta=${formatPoint(remoteDebug?.rewoundDelta)} remote_rewind_dist=${Number(remoteDebug?.rewoundDistance ?? 0).toFixed(3)} remote_rewind_xz=${Number(remoteDebug?.rewoundHorizontalDistance ?? 0).toFixed(3)} remote_rewind_age_ms=${remoteDebug?.rewoundSnapshotAgeMs ?? -1} rewind_ms=${Number(remoteDebug?.rewindMs ?? 0).toFixed(1)}`,
     footstepAudio
       ? `audio_footstep dist=${footstepAudio.distance.toFixed(2)} base=${footstepAudio.baseVolume.toFixed(3)} manual=${footstepAudio.manualVolume.toFixed(3)} spatial=${footstepAudio.spatialVolumeMultiplier.toFixed(3)} final=${footstepAudio.finalVolume.toFixed(3)} age_ms=${Math.round(footstepAudio.ageMs ?? 0)}`
       : 'audio_footstep none',
@@ -202,6 +216,7 @@ export function createHudDebugPanelsController({
       visible,
       networkDebug,
       movement,
+      remoteDebug = null,
       markDebugSnapshotRequested = false,
       fps = 0,
       ignoreLocalCorrections = false,
@@ -246,7 +261,7 @@ export function createHudDebugPanelsController({
       }
 
       if (visible) {
-        const debugText = buildDebugText(networkDebug, movement, { ignoreLocalCorrections });
+        const debugText = buildDebugText(networkDebug, movement, { ignoreLocalCorrections, remoteDebug });
 
         if (debugText !== lastNetDebugText) {
           netDebugEl.textContent = debugText;
@@ -258,7 +273,7 @@ export function createHudDebugPanelsController({
       }
 
       if (markDebugSnapshotRequested) {
-        currentNetDebugText = buildDebugText(networkDebug, movement, { ignoreLocalCorrections });
+        currentNetDebugText = buildDebugText(networkDebug, movement, { ignoreLocalCorrections, remoteDebug });
         console.log(buildDebugSummary());
       }
 

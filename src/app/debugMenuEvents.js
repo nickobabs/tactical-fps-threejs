@@ -5,6 +5,7 @@ export const DEBUG_MENU_EVENT_TOGGLE_HUD_LAYOUT_TUNING = 'tactical-fps:toggle-hu
 export const DEBUG_MENU_EVENT_TOGGLE_REMOTE_BODY_TUNING = 'tactical-fps:toggle-remote-body-tuning';
 export const DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING = 'tactical-fps:toggle-remote-weapon-tuning';
 export const DEBUG_MENU_EVENT_TOGGLE_REMOTE_AUDIO_TUNING = 'tactical-fps:toggle-remote-audio-tuning';
+export const DEBUG_MENU_EVENT_TOGGLE_REMOTE_HITBOX_DEBUG = 'tactical-fps:toggle-remote-hitbox-debug';
 
 export function dispatchDebugMenuEvent(eventName) {
   if (typeof window === 'undefined') {
