@@ -61,6 +61,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Shared netcode timing constants in `src/shared/netcode.js`
 - Shared protocol normalization/helpers in `src/shared/netcodeProtocol.js`
 - Shared authoritative map collision layouts in `src/shared/maps/`
+- Server combat helpers in `server/src/combat/`
 
 ## Key Design Decisions
 
@@ -92,6 +93,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - local weapon presentation stays immediate
   - the server owns PvP hit validation, damage, death, and respawn timing
   - the client consumes replicated combat state and feedback events
+  - the server combat implementation is now partially split by ownership:
+    - lag-compensation and hitbox-history helpers live in `server/src/combat/lagCompensation.js`
+    - shot/hit geometry helpers live in `server/src/combat/shotValidation.js`
+    - shot sanitization and target-selection flow live in `server/src/combat/fireResolution.js`
+    - `TacticalRoom` still owns rate limiting, damage application, kill/respawn side effects, and combat-event broadcast sequencing
 - Remote players are intentionally rendered slightly behind live authority for smoother interpolation, while PvP hit validation now compensates for that timeline gap on the server:
   - current remote interpolation delay is `67 ms`
   - the room keeps a short recent history of authoritative target hitboxes
@@ -212,6 +218,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - shared constants now exist in `src/shared/remoteCharacterConfig.js`
   - shared hitbox snapshot construction now exists in `src/shared/remoteHitboxes.js`
   - the server owns a dedicated remote skeleton evaluator in `server/src/remoteHitboxRig.js`
+  - the server lag-comp/history side of that path now also has its own helper module in `server/src/combat/lagCompensation.js`
   - `F3` can render remote hit volumes for inspection
   - hit validation now prefers the authoritative segmented hitbox snapshot path
   - left-hand IK is intentionally disabled in the authoritative rig because it caused upper-body pose drift relative to the visible remote mesh
@@ -312,6 +319,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - building useful authoritative volumes from the remote skeleton is possible
   - parity improved once the authoritative rig was simplified instead of trying to preserve every experimental upper-body post-process
   - left-hand IK was the major pose-parity failure in this branch
+- More recent refactor lesson:
+  - extracting server combat helpers is useful when the boundary is purely geometric or rewind-related
+  - `TacticalRoom` should still remain the place where authoritative state mutation and broadcast sequencing are decided
 
 ## Tried And Observed
 

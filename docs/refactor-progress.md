@@ -11,6 +11,9 @@ See also:
 - [session-note-2026-04-18-networking-refactor-guardrails.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-networking-refactor-guardrails.md)
   - shared timeline math extraction was a good win
   - but networking lifecycle refactors must preserve explicit active-room ownership and stale-callback guards
+- [session-note-2026-04-18-server-combat-refactor.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-server-combat-refactor.md)
+  - server combat extraction is now underway in narrow, ownership-driven slices
+  - the room still owns side effects and broadcast sequencing
 
 ## What Is Already In Better Shape
 
@@ -41,6 +44,11 @@ See also:
   - movement tuning and recoil tuning are now separate runtime tools instead of being hidden inside larger gameplay classes
 - Server room broadcast flow
   - authoritative room broadcast behavior now uses the dirtied/end-of-tick flush model rather than scattered immediate broadcasts
+- Server combat helpers
+  - server lag-comp / hitbox-history logic now lives in [lagCompensation.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/lagCompensation.js)
+  - server shot/hit geometry now lives in [shotValidation.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/shotValidation.js)
+  - server shot target resolution now lives in [fireResolution.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/fireResolution.js)
+  - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js) is now more of an authoritative combat orchestrator than a geometry helper dump
 
 ## Main Remaining Hotspots
 
@@ -68,6 +76,7 @@ See also:
   - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
   - these are functionally important and still fairly dense
   - they should only be refactored when there is a clear ownership win, not just because they are large
+  - the first useful server combat extractions are now done, so future slices should target state-application or event-construction boundaries only if they are equally clear
 - Connection lifecycle in [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
   - future cleanup here must preserve explicit active-room ownership
   - stale async room callbacks are now a known regression risk
@@ -104,5 +113,5 @@ See also:
 
 1. Leave `FirstPersonController` alone unless there is a concrete need around one of the remaining dense methods.
 2. If remote presentation work resumes, take the next slice out of `RemotePlayerPresenter` in a very narrow module boundary.
-3. Only touch server room/hitbox structure when gameplay authority work forces it.
+3. If server combat work continues, keep extracting only narrow authority-adjacent helpers from `TacticalRoom` without moving state mutation/broadcast sequencing prematurely.
 4. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.

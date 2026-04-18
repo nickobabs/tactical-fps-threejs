@@ -721,6 +721,18 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 
 ## Near-Term Direction
 
+- Current refactor checkpoint:
+  - shared remote timeline math now lives in `src/shared/remoteTimeline.js`
+  - `NetworkClient` now guards active-room ownership with room tokens to prevent stale reconnect/join churn
+  - server combat extraction is underway in narrow slices:
+    - `server/src/combat/lagCompensation.js`
+    - `server/src/combat/shotValidation.js`
+    - `server/src/combat/fireResolution.js`
+  - `server/src/rooms/TacticalRoom.js` still owns authoritative side effects and broadcast sequencing
+  - immediate review after each slice has already caught real issues, including:
+    - stale room callback reconnect churn
+    - a lag-comp RTT argument regression
+    - fallback hitbox aliasing in the coarse path
 - Keep building on the imported-map pipeline instead of reverting to graybox-only assumptions.
 - Formalize gameplay metadata export for imported maps later, likely from Blender or a similar DCC path.
 - Keep baked navmesh as the preferred runtime model.
@@ -757,6 +769,9 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
       - continue socket-relative rifle pose tuning and per-weapon hand offsets / pose adjustments
 - Movement implementation notes for the next pass now live in `docs/movement-acceleration-plan.md`
 - Ledge-support investigation notes now also live in `docs/session-notes/session-note-2026-04-17-dust2-ledge-support.md`
+- Refactor/session checkpoints for the latest networking/combat work now also live in:
+  - `docs/session-notes/session-note-2026-04-18-networking-refactor-guardrails.md`
+  - `docs/session-notes/session-note-2026-04-18-server-combat-refactor.md`
 
 ## Current Remote Aim / Animation Checkpoint
 

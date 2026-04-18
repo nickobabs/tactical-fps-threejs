@@ -368,6 +368,7 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 ## Current Notes / Limitations
 
 - Older imported-map Dust2 grounding/support investigation notes are kept under `docs/session-notes/` for reference, but should not be treated as the current top-level blocker without fresh repro.
+- The latest refactor checkpoint extracted shared remote timeline math plus the first server combat helper modules; see `docs/refactor-progress.md` and the April 18 session notes for the current ownership split.
 - Remote-audio directionality is now in place, but footstep hearing range and loudness still need more multiplayer tuning.
 - Footsteps do not yet switch by detected surface type.
 - Audio does not yet have separate buses for weapons, footsteps, ambience, or UI.

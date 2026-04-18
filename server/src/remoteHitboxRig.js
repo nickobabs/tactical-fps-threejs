@@ -602,6 +602,7 @@ function updateLeftHandIk(rig, player) {
   rig.leftHandIkSolver.update();
 }
 
+
 export async function createRemoteHitboxRig() {
   const asset = await loadRemoteRigAsset();
   const container = new THREE.Group();

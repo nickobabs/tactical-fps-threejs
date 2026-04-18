@@ -11,12 +11,7 @@ import {
 import {
   NETCODE_SIMULATION_RATE,
   NETCODE_SIMULATION_STEP,
-  NETCODE_SERVER_HITBOX_HISTORY_MS,
 } from '../../../src/shared/netcode.js';
-import {
-  getLagCompensationRewindMs,
-  interpolateRemoteHitboxHistoryAtTime,
-} from '../../../src/shared/remoteTimeline.js';
 import {
   createBuyRequestMessage,
   createChatMessage,
@@ -61,47 +56,27 @@ import {
   REMOTE_WEAPON_AUDIO,
 } from '../../../src/shared/audioEvents.js';
 import { RoundManager } from '../../../src/game/rounds/RoundManager.js';
-import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../../src/shared/playerHitboxes.js';
-import {
-  buildRemoteHitboxSnapshotFromPoints,
-  createRemoteHitboxSnapshot,
-  interpolateRemoteHitboxSnapshots,
-  REMOTE_HITBOX_HEAD_OFFSET,
-  REMOTE_HITBOX_RADII,
-} from '../../../src/shared/remoteHitboxes.js';
-import { getMissingRemoteHitBoneKeys } from '../../../src/shared/remoteSkeleton.js';
 import {
   createRemoteHitboxRig,
   triggerRemoteHitboxRigFire,
   updateRemoteHitboxRig,
 } from '../remoteHitboxRig.js';
 import {
-  REMOTE_CHARACTER_HITBOX_SETTINGS,
-  REMOTE_CLIPS,
-} from '../../../src/shared/remoteCharacterConfig.js';
+  buildAuthoritativeHitboxes,
+  clearPlayerHitboxHistory,
+  getLagCompensatedHitboxes,
+  recordPlayerHitboxHistory,
+} from '../combat/lagCompensation.js';
+import {
+  getDeathClipForShot,
+  getWeaponDamageForHitZone,
+} from '../combat/shotValidation.js';
+import { resolvePlayerFire } from '../combat/fireResolution.js';
 
 const SERVER_MOVE_POSITION = new THREE.Vector3();
-const SHOT_ORIGIN = new THREE.Vector3();
-const SHOT_DIRECTION = new THREE.Vector3();
-const SHOT_TRACE_END = new THREE.Vector3();
-const PLAYER_EYE = new THREE.Vector3();
-const TARGET_SEGMENT = new THREE.Line3();
-const CLOSEST_POINT_ON_RAY = new THREE.Vector3();
-const CLOSEST_POINT_ON_SEGMENT = new THREE.Vector3();
-const TARGET_POINT = new THREE.Vector3();
-const TARGET_RIGHT = new THREE.Vector3();
-const TARGET_FORWARD = new THREE.Vector3();
-const TARGET_SHOULDER = new THREE.Vector3();
-const TARGET_HAND = new THREE.Vector3();
-const TARGET_LEG_START = new THREE.Vector3();
-const TARGET_LEG_END = new THREE.Vector3();
-const TARGET_DEATH_FORWARD = new THREE.Vector3();
-const TARGET_TEST_VECTOR = new THREE.Vector3();
 const OBJECTIVE_TO_BOMB = new THREE.Vector3();
 const OBJECTIVE_DIRECTION = new THREE.Vector3();
-const SHOT_RAY = new THREE.Ray();
 const PLAYER_MOVE_SPEED_EPSILON = 0.1;
-const TARGET_HITBOX_LAYOUT = createPlayerHitboxLayout();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const REMOTE_HITBOX_AUDIT_LOG_PATH = path.resolve(__dirname, '../../../debug/remote-hitbox-audit.log');
@@ -160,443 +135,6 @@ function shuffleArray(values) {
 async function appendRemoteHitboxAudit(entry) {
   await fs.mkdir(path.dirname(REMOTE_HITBOX_AUDIT_LOG_PATH), { recursive: true });
   await fs.appendFile(REMOTE_HITBOX_AUDIT_LOG_PATH, `${JSON.stringify(entry)}\n`, 'utf8');
-}
-
-function buildAuthoritativeHitboxes(player) {
-  const bones = player.hitboxRig?.bones;
-  const hitboxPoints = player.hitboxRig?.hitboxPoints ?? null;
-  const missingBoneKeys = getMissingRemoteHitBoneKeys(bones);
-  if (missingBoneKeys.length > 0) {
-    if (!player.missingHitboxBonesLogged) {
-      console.warn(`[TacticalRoom] Falling back to coarse hitboxes for ${player.playerId}; missing bones: ${missingBoneKeys.join(', ')}`);
-      player.missingHitboxBonesLogged = true;
-    }
-    const layout = computePlayerHitboxLayout({
-      position: player.motionState.position,
-      yaw: player.motionState?.yaw ?? 0,
-      currentHeight: player.motionState?.currentHeight ?? 1.72,
-      isCrouched: player.motionState?.isCrouched ?? false,
-      activeWeaponKey: player.activeWeaponKey ?? 'rifle',
-    }, createPlayerHitboxLayout());
-    return {
-      head: layout.head,
-      torso: layout.torso,
-      pelvis: layout.pelvis,
-      arms: layout.arms,
-      hands: [],
-      legs: layout.legs,
-    };
-  }
-
-  return buildRemoteHitboxSnapshotFromPoints({
-    points: hitboxPoints,
-    headOffset: REMOTE_CHARACTER_HITBOX_SETTINGS.headOffset ?? REMOTE_HITBOX_HEAD_OFFSET,
-    headRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.headRadius,
-    headSize: REMOTE_CHARACTER_HITBOX_SETTINGS.headSize,
-    torsoRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoRadius,
-    torsoLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoLengthPadding,
-    pelvisRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisRadius,
-    pelvisLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisLengthPadding,
-    armRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.armRadius,
-    armLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.armLengthPadding,
-    handRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.handRadius,
-    legRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.legRadius,
-    legLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.legLengthPadding,
-  }, player.authoritativeHitboxes ?? createRemoteHitboxSnapshot());
-}
-
-function clonePoint(point) {
-  if (!point) {
-    return null;
-  }
-
-  return {
-    x: Number(point.x ?? 0),
-    y: Number(point.y ?? 0),
-    z: Number(point.z ?? 0),
-  };
-}
-
-function cloneVector(vector) {
-  if (!vector) {
-    return null;
-  }
-
-  return {
-    x: Number(vector.x ?? 0),
-    y: Number(vector.y ?? 0),
-    z: Number(vector.z ?? 0),
-  };
-}
-
-function cloneSegment(segment) {
-  if (!segment?.start || !segment?.end) {
-    return null;
-  }
-
-  return {
-    start: clonePoint(segment.start),
-    end: clonePoint(segment.end),
-    radius: Number(segment.radius ?? 0),
-  };
-}
-
-function cloneSphere(sphere) {
-  if (!sphere?.center) {
-    return null;
-  }
-
-  return {
-    center: clonePoint(sphere.center),
-    radius: Number(sphere.radius ?? 0),
-  };
-}
-
-function cloneHead(head) {
-  if (!head?.center) {
-    return null;
-  }
-
-  return {
-    center: clonePoint(head.center),
-    radius: Number(head.radius ?? 0),
-    size: cloneVector(head.size),
-    right: cloneVector(head.right),
-    up: cloneVector(head.up),
-    forward: cloneVector(head.forward),
-  };
-}
-
-function cloneHitboxSnapshot(hitboxes) {
-  if (!hitboxes?.head || !hitboxes?.torso || !hitboxes?.pelvis) {
-    return null;
-  }
-
-  return {
-    head: cloneHead(hitboxes.head),
-    torso: cloneSegment(hitboxes.torso),
-    pelvis: cloneSegment(hitboxes.pelvis),
-    arms: Array.isArray(hitboxes.arms) ? hitboxes.arms.map(cloneSegment).filter(Boolean) : [],
-    hands: Array.isArray(hitboxes.hands) ? hitboxes.hands.map(cloneSphere).filter(Boolean) : [],
-    legs: Array.isArray(hitboxes.legs) ? hitboxes.legs.map(cloneSegment).filter(Boolean) : [],
-  };
-}
-
-function recordPlayerHitboxHistory(player, now) {
-  if (!player?.authoritativeHitboxes) {
-    return;
-  }
-
-  const snapshot = cloneHitboxSnapshot(player.authoritativeHitboxes);
-  if (!snapshot) {
-    return;
-  }
-
-  const history = player.hitboxHistory ?? (player.hitboxHistory = []);
-  history.push({
-    recordedAt: Number(now ?? Date.now()),
-    hitboxes: snapshot,
-  });
-
-  const cutoff = Number(now ?? Date.now()) - NETCODE_SERVER_HITBOX_HISTORY_MS;
-  while (history.length > 0 && Number(history[0]?.recordedAt ?? 0) < cutoff) {
-    history.shift();
-  }
-}
-
-function getLagCompensatedHitboxes(target, rewindTimestamp) {
-  const history = target?.hitboxHistory ?? null;
-  if (!Array.isArray(history) || history.length === 0) {
-    return target?.authoritativeHitboxes ?? null;
-  }
-  return interpolateRemoteHitboxHistoryAtTime(history, rewindTimestamp)
-    ?? target?.authoritativeHitboxes
-    ?? null;
-}
-
-function getRayDistanceAlong(ray, point) {
-  return TARGET_TEST_VECTOR.copy(point).sub(ray.origin).dot(ray.direction);
-}
-
-function getRaySphereHitDistance(ray, center, radius, maxDistance) {
-  const projectedDistance = getRayDistanceAlong(ray, center);
-  if (projectedDistance < -radius || projectedDistance >= maxDistance + radius) {
-    return Infinity;
-  }
-
-  const distanceSq = ray.distanceSqToPoint(center);
-  if (distanceSq > radius * radius) {
-    return Infinity;
-  }
-
-  return Math.max(0, projectedDistance);
-}
-
-function getRayEllipsoidHitDistance(ray, ellipsoid, maxDistance) {
-  const center = ellipsoid?.center ?? null;
-  const size = ellipsoid?.size ?? null;
-  const right = ellipsoid?.right ?? null;
-  const up = ellipsoid?.up ?? null;
-  const forward = ellipsoid?.forward ?? null;
-  if (!center || !size || !right || !up || !forward) {
-    return Infinity;
-  }
-
-  const halfX = Math.max(1e-6, Number(size.x ?? 0) * 0.5);
-  const halfY = Math.max(1e-6, Number(size.y ?? 0) * 0.5);
-  const halfZ = Math.max(1e-6, Number(size.z ?? 0) * 0.5);
-  TARGET_TEST_VECTOR.set(
-    Number(ray.origin.x ?? 0) - Number(center.x ?? 0),
-    Number(ray.origin.y ?? 0) - Number(center.y ?? 0),
-    Number(ray.origin.z ?? 0) - Number(center.z ?? 0),
-  );
-  TARGET_RIGHT.set(Number(right.x ?? 1), Number(right.y ?? 0), Number(right.z ?? 0)).normalize();
-  TARGET_FORWARD.set(Number(up.x ?? 0), Number(up.y ?? 1), Number(up.z ?? 0)).normalize();
-  TARGET_SHOULDER.set(Number(forward.x ?? 0), Number(forward.y ?? 0), Number(forward.z ?? -1)).normalize();
-
-  const originX = TARGET_TEST_VECTOR.dot(TARGET_RIGHT) / halfX;
-  const originY = TARGET_TEST_VECTOR.dot(TARGET_FORWARD) / halfY;
-  const originZ = TARGET_TEST_VECTOR.dot(TARGET_SHOULDER) / halfZ;
-  const directionX = ray.direction.dot(TARGET_RIGHT) / halfX;
-  const directionY = ray.direction.dot(TARGET_FORWARD) / halfY;
-  const directionZ = ray.direction.dot(TARGET_SHOULDER) / halfZ;
-
-  const a = (directionX * directionX) + (directionY * directionY) + (directionZ * directionZ);
-  const b = 2 * ((originX * directionX) + (originY * directionY) + (originZ * directionZ));
-  const c = (originX * originX) + (originY * originY) + (originZ * originZ) - 1;
-  const discriminant = (b * b) - (4 * a * c);
-  if (a <= 1e-8 || discriminant < 0) {
-    return Infinity;
-  }
-
-  const sqrtDiscriminant = Math.sqrt(discriminant);
-  const nearDistance = (-b - sqrtDiscriminant) / (2 * a);
-  const farDistance = (-b + sqrtDiscriminant) / (2 * a);
-  const hitDistance = nearDistance >= 0 ? nearDistance : farDistance;
-  if (!Number.isFinite(hitDistance) || hitDistance < 0 || hitDistance >= maxDistance) {
-    return Infinity;
-  }
-  return hitDistance;
-}
-
-function getRayCapsuleHitDistance(ray, start, end, radius, maxDistance) {
-  const distanceSq = ray.distanceSqToSegment(
-    start,
-    end,
-    CLOSEST_POINT_ON_RAY,
-    CLOSEST_POINT_ON_SEGMENT,
-  );
-  if (distanceSq > radius * radius) {
-    return Infinity;
-  }
-
-  const hitDistance = getRayDistanceAlong(ray, CLOSEST_POINT_ON_RAY);
-  if (hitDistance < 0 || hitDistance >= maxDistance) {
-    return Infinity;
-  }
-
-  return hitDistance;
-}
-
-function getWeaponDamageForHitZone(weapon, hitZone = 'body') {
-  const damageByHitZone = weapon?.damageByHitZone ?? null;
-  if (!damageByHitZone) {
-    return Number(weapon?.damage ?? 0);
-  }
-
-  if (hitZone === 'head') {
-    return Number(damageByHitZone.head ?? weapon.damage ?? 0);
-  }
-
-  if (hitZone === 'arms') {
-    return Number(damageByHitZone.arms ?? damageByHitZone.body ?? weapon.damage ?? 0);
-  }
-
-  if (hitZone === 'legs') {
-    return Number(damageByHitZone.legs ?? damageByHitZone.body ?? weapon.damage ?? 0);
-  }
-
-  return Number(damageByHitZone.body ?? weapon.damage ?? 0);
-}
-
-function getDeathClipForShot(target, shotDirection) {
-  if (!target?.motionState || !shotDirection) {
-    return REMOTE_CLIPS.dieBackward;
-  }
-
-  TARGET_DEATH_FORWARD.set(
-    -Math.sin(Number(target.motionState.yaw ?? 0)),
-    0,
-    -Math.cos(Number(target.motionState.yaw ?? 0)),
-  );
-  return TARGET_DEATH_FORWARD.dot(shotDirection) > 0
-    ? REMOTE_CLIPS.dieForward
-    : REMOTE_CLIPS.dieBackward;
-}
-
-function getPlayerHitResult(ray, target, maxDistance, currentBestDistance) {
-  const layout = computePlayerHitboxLayout({
-    position: target.motionState.position,
-    yaw: target.motionState?.yaw ?? 0,
-    currentHeight: target.motionState?.currentHeight ?? 1.72,
-    isCrouched: target.motionState?.isCrouched ?? false,
-    activeWeaponKey: target.activeWeaponKey ?? 'rifle',
-  }, TARGET_HITBOX_LAYOUT);
-
-  let bestDistance = currentBestDistance;
-  let bestHitZone = null;
-
-  TARGET_POINT.set(layout.head.center.x, layout.head.center.y, layout.head.center.z);
-  {
-    const hitDistance = getRaySphereHitDistance(ray, TARGET_POINT, layout.head.radius, bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'head';
-    }
-  }
-
-  TARGET_SEGMENT.start.set(layout.torso.start.x, layout.torso.start.y, layout.torso.start.z);
-  TARGET_SEGMENT.end.set(layout.torso.end.x, layout.torso.end.y, layout.torso.end.z);
-  {
-    const hitDistance = getRayCapsuleHitDistance(ray, TARGET_SEGMENT.start, TARGET_SEGMENT.end, layout.torso.radius, bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'body';
-    }
-  }
-
-  TARGET_SEGMENT.start.set(layout.pelvis.start.x, layout.pelvis.start.y, layout.pelvis.start.z);
-  TARGET_SEGMENT.end.set(layout.pelvis.end.x, layout.pelvis.end.y, layout.pelvis.end.z);
-  {
-    const hitDistance = getRayCapsuleHitDistance(ray, TARGET_SEGMENT.start, TARGET_SEGMENT.end, layout.pelvis.radius, bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'body';
-    }
-  }
-
-  for (const arm of layout.arms) {
-    TARGET_SHOULDER.set(arm.start.x, arm.start.y, arm.start.z);
-    TARGET_HAND.set(arm.end.x, arm.end.y, arm.end.z);
-    const hitDistance = getRayCapsuleHitDistance(ray, TARGET_SHOULDER, TARGET_HAND, arm.radius, bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'arms';
-    }
-  }
-
-  for (const leg of layout.legs) {
-    TARGET_LEG_START.set(leg.start.x, leg.start.y, leg.start.z);
-    TARGET_LEG_END.set(leg.end.x, leg.end.y, leg.end.z);
-    const hitDistance = getRayCapsuleHitDistance(ray, TARGET_LEG_START, TARGET_LEG_END, leg.radius, bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'legs';
-    }
-  }
-
-  return {
-    distance: bestDistance,
-    hitZone: bestHitZone,
-  };
-}
-
-function getAuthoritativeHitboxSnapshotResult(ray, hitboxes, maxDistance, currentBestDistance) {
-  if (!hitboxes?.head || !hitboxes?.torso || !hitboxes?.pelvis) {
-    return {
-      distance: Infinity,
-      hitZone: null,
-    };
-  }
-
-  let bestDistance = currentBestDistance;
-  let bestHitZone = null;
-
-  TARGET_POINT.set(hitboxes.head.center.x, hitboxes.head.center.y, hitboxes.head.center.z);
-  {
-    const hitDistance = hitboxes.head?.size && hitboxes.head?.right && hitboxes.head?.up && hitboxes.head?.forward
-      ? getRayEllipsoidHitDistance(ray, hitboxes.head, bestDistance)
-      : getRaySphereHitDistance(ray, TARGET_POINT, Number(hitboxes.head.radius ?? REMOTE_HITBOX_RADII.head), bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'head';
-    }
-  }
-
-  TARGET_SEGMENT.start.set(hitboxes.torso.start.x, hitboxes.torso.start.y, hitboxes.torso.start.z);
-  TARGET_SEGMENT.end.set(hitboxes.torso.end.x, hitboxes.torso.end.y, hitboxes.torso.end.z);
-  {
-    const hitDistance = getRayCapsuleHitDistance(
-      ray,
-      TARGET_SEGMENT.start,
-      TARGET_SEGMENT.end,
-      Number(hitboxes.torso.radius ?? REMOTE_HITBOX_RADII.torso),
-      bestDistance,
-    );
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'body';
-    }
-  }
-
-  TARGET_SEGMENT.start.set(hitboxes.pelvis.start.x, hitboxes.pelvis.start.y, hitboxes.pelvis.start.z);
-  TARGET_SEGMENT.end.set(hitboxes.pelvis.end.x, hitboxes.pelvis.end.y, hitboxes.pelvis.end.z);
-  {
-    const hitDistance = getRayCapsuleHitDistance(
-      ray,
-      TARGET_SEGMENT.start,
-      TARGET_SEGMENT.end,
-      Number(hitboxes.pelvis.radius ?? REMOTE_HITBOX_RADII.pelvis),
-      bestDistance,
-    );
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'body';
-    }
-  }
-
-  for (const arm of hitboxes.arms ?? []) {
-    if (!arm?.start || !arm?.end) {
-      continue;
-    }
-    TARGET_SHOULDER.set(arm.start.x, arm.start.y, arm.start.z);
-    TARGET_HAND.set(arm.end.x, arm.end.y, arm.end.z);
-    const hitDistance = getRayCapsuleHitDistance(ray, TARGET_SHOULDER, TARGET_HAND, Number(arm.radius ?? REMOTE_HITBOX_RADII.arm), bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'arms';
-    }
-  }
-
-  for (const hand of hitboxes.hands ?? []) {
-    if (!hand?.center) {
-      continue;
-    }
-    TARGET_POINT.set(hand.center.x, hand.center.y, hand.center.z);
-    const hitDistance = getRaySphereHitDistance(ray, TARGET_POINT, Number(hand.radius ?? REMOTE_HITBOX_RADII.hand), bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'arms';
-    }
-  }
-
-  for (const leg of hitboxes.legs ?? []) {
-    if (!leg?.start || !leg?.end) {
-      continue;
-    }
-    TARGET_LEG_START.set(leg.start.x, leg.start.y, leg.start.z);
-    TARGET_LEG_END.set(leg.end.x, leg.end.y, leg.end.z);
-    const hitDistance = getRayCapsuleHitDistance(ray, TARGET_LEG_START, TARGET_LEG_END, Number(leg.radius ?? REMOTE_HITBOX_RADII.leg), bestDistance);
-    if (Number.isFinite(hitDistance) && hitDistance < bestDistance) {
-      bestDistance = hitDistance;
-      bestHitZone = 'legs';
-    }
-  }
-
-  return {
-    distance: bestDistance,
-    hitZone: bestHitZone,
-  };
 }
 
 export class TacticalRoom extends Room {
@@ -2098,7 +1636,7 @@ export class TacticalRoom extends Room {
     });
     player.pitch = Number(player.spawnState?.pitch ?? 0);
     player.presentationState = this.getPresentationStateForPlayer(player);
-    player.hitboxHistory.length = 0;
+    clearPlayerHitboxHistory(player);
     if (broadcastEvent) {
       this.broadcast('combat-event', {
         type: 'player-respawned',
@@ -2351,118 +1889,41 @@ export class TacticalRoom extends Room {
 
     triggerRemoteHitboxRigFire(player.hitboxRig);
 
-    PLAYER_EYE.set(
-      player.motionState.position.x,
-      player.motionState.position.y + player.motionState.currentHeight,
-      player.motionState.position.z,
-    );
-    SHOT_ORIGIN.set(
-      fireRequest.origin.x,
-      fireRequest.origin.y,
-      fireRequest.origin.z,
-    );
-    SHOT_DIRECTION.set(
-      fireRequest.direction.x,
-      fireRequest.direction.y,
-      fireRequest.direction.z,
-    );
-
-    if (
-      !Number.isFinite(SHOT_ORIGIN.x)
-      || !Number.isFinite(SHOT_ORIGIN.y)
-      || !Number.isFinite(SHOT_ORIGIN.z)
-      || !Number.isFinite(SHOT_DIRECTION.x)
-      || !Number.isFinite(SHOT_DIRECTION.y)
-      || !Number.isFinite(SHOT_DIRECTION.z)
-    ) {
+    const shotResult = resolvePlayerFire({
+      player,
+      fireRequest,
+      weapon,
+      now,
+      players: Object.values(this.players),
+      collisionWorld: this.getCollisionWorldForMap(player.mapId),
+    });
+    if (!shotResult) {
       return;
     }
 
-    if (SHOT_ORIGIN.distanceTo(PLAYER_EYE) > 1.25) {
-      SHOT_ORIGIN.copy(PLAYER_EYE);
-    }
+    this.emitWeaponAudioEvent(player, player.activeWeaponKey, shotResult.origin);
 
-    if (SHOT_DIRECTION.lengthSq() <= 1e-6) {
-      return;
-    }
-    SHOT_DIRECTION.normalize();
-    SHOT_RAY.origin.copy(SHOT_ORIGIN);
-    SHOT_RAY.direction.copy(SHOT_DIRECTION);
-    this.emitWeaponAudioEvent(player, player.activeWeaponKey, SHOT_ORIGIN);
-    const rewindMs = getLagCompensationRewindMs(player?.pingMs);
-    const rewindTimestamp = now - rewindMs;
-
-    const maxDistance = weapon.meleeRange ?? 512;
-    const collisionWorld = this.getCollisionWorldForMap(player.mapId);
-    const worldHit = collisionWorld?.raycast(SHOT_ORIGIN, SHOT_DIRECTION, maxDistance) ?? null;
-    const worldHitDistance = worldHit ? worldHit.point.distanceTo(SHOT_ORIGIN) : Infinity;
-
-    let bestTarget = null;
-    let bestDistance = Math.min(maxDistance, worldHitDistance);
-    let bestHitZone = null;
-
-    for (const target of Object.values(this.players)) {
-      if (
-        target.playerId === player.playerId
-        || !target.isAlive
-        || target.mapId !== player.mapId
-        || target.team === player.team
-      ) {
-        continue;
-      }
-
-      const lagCompensatedHitboxes = getLagCompensatedHitboxes(target, rewindTimestamp);
-      const authoritativeHitResult = getAuthoritativeHitboxSnapshotResult(
-        SHOT_RAY,
-        lagCompensatedHitboxes,
-        maxDistance,
-        bestDistance,
-      );
-      const hitResult = Number.isFinite(authoritativeHitResult.distance)
-        ? authoritativeHitResult
-        : getPlayerHitResult(SHOT_RAY, target, maxDistance, bestDistance);
-      const hitDistance = Number(hitResult?.distance ?? Infinity);
-      if (!Number.isFinite(hitDistance) || hitDistance >= bestDistance) {
-        continue;
-      }
-
-      bestDistance = hitDistance;
-      bestTarget = target;
-      bestHitZone = hitResult?.hitZone ?? 'body';
-    }
-
-    if (!bestTarget) {
-      const traceEnd = worldHit?.point
-        ? worldHit.point
-        : SHOT_TRACE_END.copy(SHOT_ORIGIN).addScaledVector(SHOT_DIRECTION, maxDistance);
+    if (!shotResult.hit || !shotResult.bestTarget) {
       this.broadcast('combat-event', {
         type: 'player-fired',
         playerId: player.playerId,
         weaponKey: player.activeWeaponKey,
         mapId: player.mapId,
-        origin: {
-          x: SHOT_ORIGIN.x,
-          y: SHOT_ORIGIN.y,
-          z: SHOT_ORIGIN.z,
-        },
-        tracerEnd: {
-          x: Number(traceEnd.x ?? 0),
-          y: Number(traceEnd.y ?? 0),
-          z: Number(traceEnd.z ?? 0),
-        },
-        impact: Boolean(worldHit),
+        origin: shotResult.origin,
+        tracerEnd: shotResult.traceEnd,
+        impact: shotResult.impact,
       });
       return;
     }
 
-    const damage = getWeaponDamageForHitZone(weapon, bestHitZone);
-    bestTarget.health = Math.max(0, bestTarget.health - damage);
+    const damage = getWeaponDamageForHitZone(weapon, shotResult.bestHitZone);
+    shotResult.bestTarget.health = Math.max(0, shotResult.bestTarget.health - damage);
     let deathClip = null;
-    if (bestTarget.health === 0) {
+    if (shotResult.bestTarget.health === 0) {
       player.kills = Number(player.kills ?? 0) + 1;
-      deathClip = getDeathClipForShot(bestTarget, SHOT_DIRECTION);
-      this.killPlayer(bestTarget, { now, deathClip });
-      this.evaluateCompetitiveEliminationWin(bestTarget.mapId ?? null);
+      deathClip = getDeathClipForShot(shotResult.bestTarget, shotResult.direction);
+      this.killPlayer(shotResult.bestTarget, { now, deathClip });
+      this.evaluateCompetitiveEliminationWin(shotResult.bestTarget.mapId ?? null);
     }
 
     player.presentationState = this.getPresentationStateForPlayer(player);
@@ -2470,41 +1931,28 @@ export class TacticalRoom extends Room {
     this.broadcast('combat-event', {
       type: 'player-hit',
       attackerPlayerId: player.playerId,
-      victimPlayerId: bestTarget.playerId,
+      victimPlayerId: shotResult.bestTarget.playerId,
       weaponKey: String(weapon?.key ?? player.activeWeaponKey ?? 'rifle'),
       damage,
-      hitZone: bestHitZone,
+      hitZone: shotResult.bestHitZone,
       hitPosition: {
-        x: SHOT_ORIGIN.x + (SHOT_DIRECTION.x * bestDistance),
-        y: SHOT_ORIGIN.y + (SHOT_DIRECTION.y * bestDistance),
-        z: SHOT_ORIGIN.z + (SHOT_DIRECTION.z * bestDistance),
+        x: shotResult.origin.x + (shotResult.direction.x * shotResult.bestDistance),
+        y: shotResult.origin.y + (shotResult.direction.y * shotResult.bestDistance),
+        z: shotResult.origin.z + (shotResult.direction.z * shotResult.bestDistance),
       },
-      hitDirection: {
-        x: SHOT_DIRECTION.x,
-        y: SHOT_DIRECTION.y,
-        z: SHOT_DIRECTION.z,
-      },
-      remainingHealth: bestTarget.health,
-      killed: bestTarget.health === 0,
+      hitDirection: shotResult.direction,
+      remainingHealth: shotResult.bestTarget.health,
+      killed: shotResult.bestTarget.health === 0,
       deathClip,
-      respawnAt: bestTarget.respawnAt,
+      respawnAt: shotResult.bestTarget.respawnAt,
     });
-    SHOT_TRACE_END.copy(SHOT_ORIGIN).addScaledVector(SHOT_DIRECTION, bestDistance);
     this.broadcast('combat-event', {
       type: 'player-fired',
       playerId: player.playerId,
       weaponKey: player.activeWeaponKey,
       mapId: player.mapId,
-      origin: {
-        x: SHOT_ORIGIN.x,
-        y: SHOT_ORIGIN.y,
-        z: SHOT_ORIGIN.z,
-      },
-      tracerEnd: {
-        x: SHOT_TRACE_END.x,
-        y: SHOT_TRACE_END.y,
-        z: SHOT_TRACE_END.z,
-      },
+      origin: shotResult.origin,
+      tracerEnd: shotResult.traceEnd,
       impact: true,
     });
     this.requestStateBroadcast();
