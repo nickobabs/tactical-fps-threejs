@@ -30,9 +30,10 @@ import {
   usesRemoteMeleeClipSet,
 } from '../../shared/remoteCharacterConfig.js';
 import {
-  NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
-  NETCODE_REMOTE_INTERPOLATION_DELAY_MS,
-} from '../../shared/netcode.js';
+  getLagCompensationRewindMs,
+  getTimelineNow,
+  interpolateRemotePlayerSnapshotAtTime,
+} from '../../shared/remoteTimeline.js';
 import {
   getDefaultRemoteCharacterDefinition,
   getFallbackRemoteCharacterDefinition,
@@ -107,7 +108,6 @@ const DEFAULT_REMOTE_HITBOX_DEBUG_SETTINGS = {
   showRewoundHitboxes: false,
   showRewoundMarkers: false,
 };
-const MIN_ONE_WAY_NETWORK_MS = 0;
 
 const REMOTE_CHARACTER_BOX = new THREE.Box3();
 const REMOTE_CHARACTER_SIZE = new THREE.Vector3();
@@ -1038,94 +1038,6 @@ function pickAuditCoreSnapshot(snapshot) {
     torso: snapshot.torso ?? null,
     pelvis: snapshot.pelvis ?? null,
   };
-}
-
-function getRemoteDebugNow() {
-  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-    return performance.now();
-  }
-
-  return Date.now();
-}
-
-function lerpNumber(start, end, alpha) {
-  return Number(start ?? 0) + ((Number(end ?? 0) - Number(start ?? 0)) * alpha);
-}
-
-function interpolateAngle(start, end, alpha) {
-  let delta = end - start;
-
-  while (delta > Math.PI) {
-    delta -= Math.PI * 2;
-  }
-
-  while (delta < -Math.PI) {
-    delta += Math.PI * 2;
-  }
-
-  return start + (delta * alpha);
-}
-
-function getLagCompensationRewindMs(roundTripMs) {
-  const reportedRoundTripMs = Math.max(0, Number(roundTripMs ?? 0));
-  const estimatedOneWayMs = Math.max(MIN_ONE_WAY_NETWORK_MS, reportedRoundTripMs * 0.5);
-  return Math.max(
-    0,
-    Math.min(
-      NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
-      NETCODE_REMOTE_INTERPOLATION_DELAY_MS + estimatedOneWayMs,
-    ),
-  );
-}
-
-function getLagCompensatedSnapshot(snapshots, rewindTimestamp) {
-  if (!Array.isArray(snapshots) || snapshots.length === 0) {
-    return null;
-  }
-
-  if (snapshots.length === 1) {
-    return snapshots[0] ?? null;
-  }
-
-  if (rewindTimestamp <= Number(snapshots[0]?.receivedAt ?? 0)) {
-    return snapshots[0] ?? null;
-  }
-
-  const latestIndex = snapshots.length - 1;
-  if (rewindTimestamp >= Number(snapshots[latestIndex]?.receivedAt ?? 0)) {
-    return snapshots[latestIndex] ?? null;
-  }
-
-  for (let index = 1; index < snapshots.length; index += 1) {
-    const previousSnapshot = snapshots[index - 1];
-    const nextSnapshot = snapshots[index];
-    const previousReceivedAt = Number(previousSnapshot?.receivedAt ?? 0);
-    const nextReceivedAt = Number(nextSnapshot?.receivedAt ?? 0);
-    if (rewindTimestamp <= nextReceivedAt) {
-      const range = Math.max(nextReceivedAt - previousReceivedAt, 1e-6);
-      const alpha = Math.max(0, Math.min(1, (rewindTimestamp - previousReceivedAt) / range));
-      return {
-        ...nextSnapshot,
-        position: {
-          x: lerpNumber(previousSnapshot?.position?.x, nextSnapshot?.position?.x, alpha),
-          y: lerpNumber(previousSnapshot?.position?.y, nextSnapshot?.position?.y, alpha),
-          z: lerpNumber(previousSnapshot?.position?.z, nextSnapshot?.position?.z, alpha),
-        },
-        yaw: interpolateAngle(Number(previousSnapshot?.yaw ?? 0), Number(nextSnapshot?.yaw ?? 0), alpha),
-        pitch: lerpNumber(previousSnapshot?.pitch, nextSnapshot?.pitch, alpha),
-        currentHeight: lerpNumber(previousSnapshot?.currentHeight, nextSnapshot?.currentHeight, alpha),
-        hitboxes: interpolateRemoteHitboxSnapshots(
-          previousSnapshot?.hitboxes,
-          nextSnapshot?.hitboxes,
-          alpha,
-          createRemoteHitboxSnapshot(),
-        ),
-        receivedAt: rewindTimestamp,
-      };
-    }
-  }
-
-  return snapshots[latestIndex] ?? null;
 }
 
 function createRemotePositionDebugGroup() {
@@ -2356,7 +2268,7 @@ export class RemotePlayerPresenter {
       const authoritativeSnapshots = authoritativeBuffers.get(player.playerId) ?? [];
       const authoritativeState = authoritativeSnapshots.at?.(-1) ?? null;
       const rewindMs = getLagCompensationRewindMs(this.debugPingRoundTripMs);
-      const rewoundState = getLagCompensatedSnapshot(authoritativeSnapshots, getRemoteDebugNow() - rewindMs);
+      const rewoundState = interpolateRemotePlayerSnapshotAtTime(authoritativeSnapshots, getTimelineNow() - rewindMs);
       const renderPlayer = player;
       visual.team = renderPlayer.team ?? authoritativeState?.team ?? null;
       ensureRemoteCharacterModel(visual);
@@ -2405,7 +2317,7 @@ export class RemotePlayerPresenter {
           },
           distance: REMOTE_DEBUG_POSITION_DELTA.length(),
           horizontalDistance: Math.hypot(REMOTE_DEBUG_POSITION_DELTA.x, REMOTE_DEBUG_POSITION_DELTA.z),
-          snapshotAgeMs: Number.isFinite(authoritativeState.receivedAt) ? Math.max(0, getRemoteDebugNow() - authoritativeState.receivedAt) : null,
+          snapshotAgeMs: Number.isFinite(authoritativeState.receivedAt) ? Math.max(0, getTimelineNow() - authoritativeState.receivedAt) : null,
         };
       } else {
         visual.latestDebugState = null;
@@ -2475,7 +2387,7 @@ export class RemotePlayerPresenter {
           visual.latestDebugState.rewoundHorizontalDistance = Math.hypot(REMOTE_DEBUG_POSITION_DELTA.x, REMOTE_DEBUG_POSITION_DELTA.z);
           visual.latestDebugState.rewindMs = rewindMs;
           visual.latestDebugState.rewoundSnapshotAgeMs = Number.isFinite(rewoundState.receivedAt)
-            ? Math.max(0, getRemoteDebugNow() - rewoundState.receivedAt)
+            ? Math.max(0, getTimelineNow() - rewoundState.receivedAt)
             : null;
         } else {
           visual.latestDebugState.rewoundPosition = null;

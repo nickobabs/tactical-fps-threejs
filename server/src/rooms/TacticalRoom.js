@@ -9,12 +9,14 @@ import {
   simulatePlayerMovement,
 } from '../../../src/shared/playerMovement.js';
 import {
-  NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
   NETCODE_SIMULATION_RATE,
   NETCODE_SIMULATION_STEP,
-  NETCODE_REMOTE_INTERPOLATION_DELAY_MS,
   NETCODE_SERVER_HITBOX_HISTORY_MS,
 } from '../../../src/shared/netcode.js';
+import {
+  getLagCompensationRewindMs,
+  interpolateRemoteHitboxHistoryAtTime,
+} from '../../../src/shared/remoteTimeline.js';
 import {
   createBuyRequestMessage,
   createChatMessage,
@@ -117,7 +119,6 @@ const BOMB_EXPLOSION_MAX_RADIUS = 100;
 const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
 const SMOKE_BLOOM_MAX_VALIDATE_DISTANCE = 32;
 const SMOKE_THROW_MAX_VALIDATE_DISTANCE = 3;
-const MIN_ONE_WAY_NETWORK_MS = 0;
 const DEFAULT_GAMEPLAY_SETTINGS = Object.freeze({
   infiniteAmmoEnabled: true,
 });
@@ -308,50 +309,9 @@ function getLagCompensatedHitboxes(target, rewindTimestamp) {
   if (!Array.isArray(history) || history.length === 0) {
     return target?.authoritativeHitboxes ?? null;
   }
-
-  if (history.length === 1) {
-    return history[0]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
-  }
-
-  if (rewindTimestamp <= Number(history[0]?.recordedAt ?? 0)) {
-    return history[0]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
-  }
-
-  const latestIndex = history.length - 1;
-  if (rewindTimestamp >= Number(history[latestIndex]?.recordedAt ?? 0)) {
-    return history[latestIndex]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
-  }
-
-  for (let index = 1; index < history.length; index += 1) {
-    const previousSnapshot = history[index - 1];
-    const nextSnapshot = history[index];
-    const previousRecordedAt = Number(previousSnapshot?.recordedAt ?? 0);
-    const nextRecordedAt = Number(nextSnapshot?.recordedAt ?? 0);
-    if (rewindTimestamp <= nextRecordedAt) {
-      const range = Math.max(nextRecordedAt - previousRecordedAt, 1e-6);
-      const alpha = Math.max(0, Math.min(1, (rewindTimestamp - previousRecordedAt) / range));
-      return interpolateRemoteHitboxSnapshots(
-        previousSnapshot?.hitboxes,
-        nextSnapshot?.hitboxes,
-        alpha,
-        createRemoteHitboxSnapshot(),
-      ) ?? nextSnapshot?.hitboxes ?? target?.authoritativeHitboxes ?? null;
-    }
-  }
-
-  return history[latestIndex]?.hitboxes ?? target?.authoritativeHitboxes ?? null;
-}
-
-function getLagCompensationRewindMs(shooter) {
-  const reportedRoundTripMs = Math.max(0, Number(shooter?.pingMs ?? 0));
-  const estimatedOneWayMs = Math.max(MIN_ONE_WAY_NETWORK_MS, reportedRoundTripMs * 0.5);
-  return Math.max(
-    0,
-    Math.min(
-      NETCODE_LAG_COMPENSATION_MAX_REWIND_MS,
-      NETCODE_REMOTE_INTERPOLATION_DELAY_MS + estimatedOneWayMs,
-    ),
-  );
+  return interpolateRemoteHitboxHistoryAtTime(history, rewindTimestamp)
+    ?? target?.authoritativeHitboxes
+    ?? null;
 }
 
 function getRayDistanceAlong(ray, point) {
@@ -2429,7 +2389,7 @@ export class TacticalRoom extends Room {
     SHOT_RAY.origin.copy(SHOT_ORIGIN);
     SHOT_RAY.direction.copy(SHOT_DIRECTION);
     this.emitWeaponAudioEvent(player, player.activeWeaponKey, SHOT_ORIGIN);
-    const rewindMs = getLagCompensationRewindMs(player);
+    const rewindMs = getLagCompensationRewindMs(player?.pingMs);
     const rewindTimestamp = now - rewindMs;
 
     const maxDistance = weapon.meleeRange ?? 512;

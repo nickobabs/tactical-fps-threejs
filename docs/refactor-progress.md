@@ -6,6 +6,12 @@ The refactor pass has already moved a lot of the old runtime pressure out of the
 
 At this point, the highest-value work is no longer broad refactoring for its own sake. The remaining useful refactor targets are the dense hotspots that still combine simulation, authority, presentation, or animation responsibilities in ways that make changes risky.
 
+See also:
+
+- [session-note-2026-04-18-networking-refactor-guardrails.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-networking-refactor-guardrails.md)
+  - shared timeline math extraction was a good win
+  - but networking lifecycle refactors must preserve explicit active-room ownership and stale-callback guards
+
 ## What Is Already In Better Shape
 
 - App layer
@@ -29,6 +35,7 @@ At this point, the highest-value work is no longer broad refactoring for its own
   - bomb helpers/constants are shared
   - plant-zone helpers are shared
   - movement simulation is shared between client and server in [playerMovement.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js)
+  - remote interpolation / rewind helpers are now shared in [remoteTimeline.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteTimeline.js)
 - Audio / tuning surfaces
   - shared audio registration lives in [createGameAudioManager.js](/C:/Users/nicko/tactical-fps-threejs/src/app/createGameAudioManager.js)
   - movement tuning and recoil tuning are now separate runtime tools instead of being hidden inside larger gameplay classes
@@ -61,6 +68,10 @@ At this point, the highest-value work is no longer broad refactoring for its own
   - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
   - these are functionally important and still fairly dense
   - they should only be refactored when there is a clear ownership win, not just because they are large
+- Connection lifecycle in [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
+  - future cleanup here must preserve explicit active-room ownership
+  - stale async room callbacks are now a known regression risk
+  - room-token style guards should be treated as structural, not temporary
 
 ## Things That Are Important But Not Refactor Targets
 
@@ -86,6 +97,7 @@ At this point, the highest-value work is no longer broad refactoring for its own
   - collision resolution
   - server authority handoff
   - remote presentation / hitbox parity
+  - connection lifecycle ownership and stale async callbacks
 - Rebuild after each code refactor slice
 
 ## Practical Next Refactor Order

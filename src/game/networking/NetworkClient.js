@@ -5,6 +5,10 @@ import {
   NETCODE_SIMULATION_STEP,
 } from '../../shared/netcode.js';
 import {
+  getTimelineNow,
+  interpolateRemotePlayerSnapshotAtTime,
+} from '../../shared/remoteTimeline.js';
+import {
   createBombDropMessage,
   createBombDefuseMessage,
   createBombPlantMessage,
@@ -33,14 +37,8 @@ const PING_TIMEOUT_MS = 10000;
 const MAX_REPORTED_PING_MS = 999;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 8000;
-
-function getNow() {
-  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
-    return performance.now();
-  }
-
-  return Date.now();
-}
+const MAX_CONNECTION_EVENT_HISTORY = 40;
+let NEXT_NETWORK_CLIENT_INSTANCE_ID = 1;
 
 function formatAudioDebugEntry(entry, now) {
   if (!entry) {
@@ -61,24 +59,6 @@ function formatAudioDebugEntry(entry, now) {
     panningModel: String(entry.panningModel ?? 'unknown'),
     ageMs: Number(now - Number(entry.recordedAt ?? now)),
   };
-}
-
-function lerp(start, end, alpha) {
-  return start + (end - start) * alpha;
-}
-
-function interpolateAngle(start, end, alpha) {
-  let delta = end - start;
-
-  while (delta > Math.PI) {
-    delta -= Math.PI * 2;
-  }
-
-  while (delta < -Math.PI) {
-    delta += Math.PI * 2;
-  }
-
-  return start + delta * alpha;
 }
 
 function hasSamePoint(a, b) {
@@ -171,6 +151,8 @@ function getDefaultServerUrl() {
 
 export class NetworkClient {
   constructor(options = {}) {
+    this.instanceId = NEXT_NETWORK_CLIENT_INSTANCE_ID;
+    NEXT_NETWORK_CLIENT_INSTANCE_ID += 1;
     this.serverUrl = options.serverUrl ?? import.meta.env.VITE_COLYSEUS_SERVER_URL ?? getDefaultServerUrl();
     this.roomName = options.roomName ?? ROOM_NAME;
     this.client = null;
@@ -217,15 +199,94 @@ export class NetworkClient {
     this.reconnectAttemptCount = 0;
     this.reconnectTimerId = null;
     this.lastDisconnectReason = null;
+    this.connectAttemptCount = 0;
+    this.activeRoomToken = 0;
+    this.connectionEvents = [];
+
+    if (typeof window !== 'undefined') {
+      window.__TACTICAL_FPS_NETWORK_CLIENTS__ ??= new Map();
+      window.__TACTICAL_FPS_NETWORK_CLIENTS__.set(this.instanceId, this);
+    }
+
+    this.recordConnectionEvent('created', {
+      instanceId: this.instanceId,
+      serverUrl: this.serverUrl,
+      roomName: this.roomName,
+    });
 
     void this.connect();
   }
 
+  recordConnectionEvent(type, details = {}) {
+    const entry = {
+      at: Date.now(),
+      performanceAt: getTimelineNow(),
+      type: String(type ?? 'unknown'),
+      instanceId: this.instanceId,
+      connectionState: this.connectionState,
+      playerId: this.playerId,
+      roomSessionId: this.room?.sessionId ?? null,
+      activeRoomToken: this.activeRoomToken,
+      ...details,
+    };
+    this.connectionEvents.push(entry);
+    while (this.connectionEvents.length > MAX_CONNECTION_EVENT_HISTORY) {
+      this.connectionEvents.shift();
+    }
+
+    if (typeof window !== 'undefined') {
+      window.__TACTICAL_FPS_NETWORK_CLIENT_EVENT_LOG__ ??= [];
+      window.__TACTICAL_FPS_NETWORK_CLIENT_EVENT_LOG__.push(entry);
+      while (window.__TACTICAL_FPS_NETWORK_CLIENT_EVENT_LOG__.length > 200) {
+        window.__TACTICAL_FPS_NETWORK_CLIENT_EVENT_LOG__.shift();
+      }
+    }
+
+    const logMethod = (
+      type.includes('error')
+      || type.includes('failed')
+      || type.includes('stale')
+      || type.includes('left')
+      || type.includes('reconnect')
+    )
+      ? console.warn
+      : console.info;
+    logMethod('[NetworkClient]', entry);
+  }
+
+  resetRoomState() {
+    this.room = null;
+    this.playerId = null;
+    this.localPlayerState = null;
+    this.remotePlayerBuffers.clear();
+    this.scoreboardPlayers.clear();
+    this.pendingLocalCorrection = null;
+    this.pendingInputs.length = 0;
+    this.latestSampledInput = null;
+    this.pendingJumpSend = false;
+    this.lastAuthoritativeStateAt = 0;
+    this.lastAuthoritativeSequence = 0;
+    this.lastCorrectionDistance = 0;
+    this.lastReconciledSequence = 0;
+    this.authoritativeEvents.length = 0;
+    this.lastReceivedPlayerStateCount = 0;
+    this.lastSameMapRemoteStateCount = 0;
+    this.lastFilteredRemoteStateCount = 0;
+    this.lastReceivedRemoteMaps = [];
+    this.pendingCombatEvents = [];
+    this.pendingAudioEvents = [];
+    this.pendingChatEvents = [];
+    this.roundState = null;
+    this.objectiveState = null;
+    this.gameplaySettings = null;
+  }
+
   getConnectionDiagnostics() {
-    const now = getNow();
+    const now = getTimelineNow();
     return {
       serverUrl: this.serverUrl,
       roomName: this.roomName,
+      instanceId: this.instanceId,
       playerId: this.playerId,
       connectionState: this.connectionState,
       lastError: this.lastError,
@@ -235,6 +296,10 @@ export class NetworkClient {
       online: typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean'
         ? navigator.onLine
         : 'unknown',
+      activeRoomToken: this.activeRoomToken,
+      connectAttemptCount: this.connectAttemptCount,
+      reconnectAttemptCount: this.reconnectAttemptCount,
+      recentConnectionEvents: this.connectionEvents.slice(-10),
     };
   }
 
@@ -271,8 +336,7 @@ export class NetworkClient {
       scheduledAt: Date.now(),
       delayMs,
     };
-    console.warn('[NetworkClient] Scheduling reconnect.', {
-      ...this.getConnectionDiagnostics(),
+    this.recordConnectionEvent('schedule-reconnect', {
       reason,
       delayMs,
       reconnectAttempt: this.reconnectAttemptCount,
@@ -293,13 +357,25 @@ export class NetworkClient {
     this.clearReconnectTimer();
     this.connectionState = 'connecting';
     this.lastError = null;
-    console.info(`[NetworkClient] Connecting to ${this.serverUrl}/${this.roomName}`);
+    this.connectAttemptCount += 1;
+    const roomToken = this.activeRoomToken + 1;
+    this.activeRoomToken = roomToken;
+    this.recordConnectionEvent('connect-start', {
+      connectAttempt: this.connectAttemptCount,
+      serverUrl: this.serverUrl,
+      roomName: this.roomName,
+      roomToken,
+    });
 
     try {
       this.client = new Client(this.serverUrl);
       const room = await this.client.joinOrCreate(this.roomName);
 
-      if (this.destroyed) {
+      if (this.destroyed || this.activeRoomToken !== roomToken) {
+        this.recordConnectionEvent('connect-stale-room-leave', {
+          roomToken,
+          staleSessionId: room.sessionId,
+        });
         await room.leave();
         return;
       }
@@ -308,17 +384,27 @@ export class NetworkClient {
       this.connectionState = 'connected';
       this.reconnectAttemptCount = 0;
       this.playerId = room.sessionId;
-      console.info(`[NetworkClient] Connected to room "${room.name}" with session ${room.sessionId}`);
-      console.info(`[NetworkClient] Assigned player ID: ${this.playerId}`);
+      this.recordConnectionEvent('connect-success', {
+        connectAttempt: this.connectAttemptCount,
+        roomName: room.name,
+        sessionId: room.sessionId,
+        roomToken,
+      });
 
       room.onMessage('player-joined', (message) => {
-        console.info('[NetworkClient] Player joined:', message);
+        this.recordConnectionEvent('player-joined-event', {
+          message,
+          roomToken,
+        });
       });
 
       room.onMessage('player-left', (message) => {
         this.remotePlayerBuffers.delete(message?.playerId);
         this.scoreboardPlayers.delete(message?.playerId);
-        console.info('[NetworkClient] Player left:', message);
+        this.recordConnectionEvent('player-left-event', {
+          message,
+          roomToken,
+        });
       });
 
       room.onMessage('player-state', (message) => {
@@ -342,21 +428,39 @@ export class NetworkClient {
       });
 
       room.onLeave((code) => {
-        this.room = null;
-        this.remotePlayerBuffers.clear();
-        this.connectionState = this.destroyed ? 'closed' : 'disconnected';
-        console.warn('[NetworkClient] Room left / disconnected.', {
-          ...this.getConnectionDiagnostics(),
+        if (this.room !== room || this.activeRoomToken !== roomToken) {
+          this.recordConnectionEvent('room-left-stale-ignored', {
+            closeCode: code,
+            callbackRoomSessionId: room.sessionId,
+            callbackRoomToken: roomToken,
+          });
+          return;
+        }
+
+        this.recordConnectionEvent('room-left', {
           closeCode: code,
+          sessionId: room.sessionId,
+          roomToken,
           lastDisconnectReason: this.lastDisconnectReason,
         });
+        this.resetRoomState();
+        this.connectionState = this.destroyed ? 'closed' : 'disconnected';
         this.scheduleReconnect('room-onLeave', { closeCode: code });
       });
 
       room.onError((code, message) => {
+        if (this.room !== room || this.activeRoomToken !== roomToken) {
+          this.recordConnectionEvent('room-error-stale-ignored', {
+            errorCode: code,
+            errorMessage: message,
+            callbackRoomSessionId: room.sessionId,
+            callbackRoomToken: roomToken,
+          });
+          return;
+        }
+
         this.lastError = `${code}: ${message}`;
-        console.error('[NetworkClient] Room error.', {
-          ...this.getConnectionDiagnostics(),
+        this.recordConnectionEvent('room-error', {
           errorCode: code,
           errorMessage: message,
         });
@@ -376,14 +480,22 @@ export class NetworkClient {
       this.lastPingReceivedAt = 0;
       this.sendPingProbe(true);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (this.activeRoomToken !== roomToken) {
+        this.recordConnectionEvent('connect-failed-stale-ignored', {
+          error: errorMessage,
+          roomToken,
+        });
+        return;
+      }
+
       this.client = null;
-      this.room = null;
-      this.remotePlayerBuffers.clear();
+      this.resetRoomState();
       this.connectionState = 'offline';
-      this.lastError = error instanceof Error ? error.message : String(error);
-      console.warn('[NetworkClient] Connect failed.', {
-        ...this.getConnectionDiagnostics(),
+      this.lastError = errorMessage;
+      this.recordConnectionEvent('connect-failed', {
         error: this.lastError,
+        roomToken,
       });
       this.scheduleReconnect('connect-failed', { error: this.lastError });
     }
@@ -398,7 +510,7 @@ export class NetworkClient {
 
   applyPlayerState(players) {
     const nextRemotePlayerIds = new Set();
-    const receivedAt = getNow();
+    const receivedAt = getTimelineNow();
     const activeMapId = this.pendingInitializationState?.mapId ?? this.localMapId;
     let receivedPlayerStateCount = 0;
     let sameMapRemoteStateCount = 0;
@@ -577,7 +689,7 @@ export class NetworkClient {
       return;
     }
 
-    const now = getNow();
+    const now = getTimelineNow();
     const roundTripMs = Math.max(0, Math.round(now - this.pendingPingSentAt));
     const serverReceivedAt = Number(message?.serverReceivedAt ?? 0);
     const serverSentAt = Number(message?.serverSentAt ?? serverReceivedAt);
@@ -607,7 +719,7 @@ export class NetworkClient {
       return;
     }
 
-    const now = getNow();
+    const now = getTimelineNow();
     if (this.pendingPingId > 0 && now - this.pendingPingSentAt >= PING_TIMEOUT_MS) {
       this.pendingPingId = 0;
       this.pendingPingSentAt = 0;
@@ -845,88 +957,33 @@ export class NetworkClient {
   }
 
   getRemotePlayers() {
-    const renderTime = getNow() - NETCODE_REMOTE_INTERPOLATION_DELAY_MS;
+    const renderTime = getTimelineNow() - NETCODE_REMOTE_INTERPOLATION_DELAY_MS;
     const interpolatedPlayers = [];
 
     for (const [playerId, snapshots] of this.remotePlayerBuffers) {
-      if (snapshots.length === 0) {
+      const snapshot = interpolateRemotePlayerSnapshotAtTime(snapshots, renderTime);
+      if (!snapshot) {
         continue;
       }
-
-      if (snapshots.length === 1 || renderTime <= snapshots[0].receivedAt) {
-        const snapshot = snapshots[0];
-        interpolatedPlayers.push({
-          playerId,
-          position: { ...snapshot.position },
-          yaw: snapshot.yaw,
-          pitch: snapshot.pitch,
-          currentHeight: snapshot.currentHeight,
-          isCrouched: snapshot.isCrouched,
-          displayName: snapshot.displayName,
-          team: snapshot.team,
-          activeWeaponKey: snapshot.activeWeaponKey,
-          isScoped: snapshot.isScoped,
-          presentationState: snapshot.presentationState,
-          deathClip: snapshot.deathClip,
-          isAlive: snapshot.isAlive,
-        });
-        continue;
-      }
-
-      let previousSnapshot = snapshots[0];
-      let nextSnapshot = snapshots[snapshots.length - 1];
-
-      for (let index = 1; index < snapshots.length; index += 1) {
-        const candidate = snapshots[index];
-        if (candidate.receivedAt >= renderTime) {
-          nextSnapshot = candidate;
-          previousSnapshot = snapshots[index - 1];
-          break;
-        }
-
-        previousSnapshot = candidate;
-      }
-
-      if (nextSnapshot.receivedAt <= previousSnapshot.receivedAt || renderTime >= nextSnapshot.receivedAt) {
-        interpolatedPlayers.push({
-          playerId,
-          position: { ...nextSnapshot.position },
-          yaw: nextSnapshot.yaw,
-          pitch: nextSnapshot.pitch,
-          currentHeight: nextSnapshot.currentHeight,
-          isCrouched: nextSnapshot.isCrouched,
-          displayName: nextSnapshot.displayName,
-          team: nextSnapshot.team,
-          activeWeaponKey: nextSnapshot.activeWeaponKey,
-          isScoped: nextSnapshot.isScoped,
-          presentationState: nextSnapshot.presentationState,
-          deathClip: nextSnapshot.deathClip,
-          isAlive: nextSnapshot.isAlive,
-        });
-        continue;
-      }
-
-      const alpha = (renderTime - previousSnapshot.receivedAt)
-        / (nextSnapshot.receivedAt - previousSnapshot.receivedAt);
 
       interpolatedPlayers.push({
         playerId,
         position: {
-          x: lerp(previousSnapshot.position.x, nextSnapshot.position.x, alpha),
-          y: lerp(previousSnapshot.position.y, nextSnapshot.position.y, alpha),
-          z: lerp(previousSnapshot.position.z, nextSnapshot.position.z, alpha),
+          x: Number(snapshot.position?.x ?? 0),
+          y: Number(snapshot.position?.y ?? 0),
+          z: Number(snapshot.position?.z ?? 0),
         },
-        yaw: interpolateAngle(previousSnapshot.yaw, nextSnapshot.yaw, alpha),
-        pitch: lerp(previousSnapshot.pitch, nextSnapshot.pitch, alpha),
-        currentHeight: lerp(previousSnapshot.currentHeight, nextSnapshot.currentHeight, alpha),
-        isCrouched: nextSnapshot.isCrouched,
-        displayName: nextSnapshot.displayName,
-        team: nextSnapshot.team,
-        activeWeaponKey: nextSnapshot.activeWeaponKey,
-        isScoped: nextSnapshot.isScoped,
-        presentationState: nextSnapshot.presentationState,
-        deathClip: nextSnapshot.deathClip,
-        isAlive: nextSnapshot.isAlive,
+        yaw: Number(snapshot.yaw ?? 0),
+        pitch: Number(snapshot.pitch ?? 0),
+        currentHeight: Number(snapshot.currentHeight ?? 0),
+        isCrouched: Boolean(snapshot.isCrouched),
+        displayName: snapshot.displayName,
+        team: snapshot.team,
+        activeWeaponKey: snapshot.activeWeaponKey,
+        isScoped: snapshot.isScoped,
+        presentationState: snapshot.presentationState,
+        deathClip: snapshot.deathClip,
+        isAlive: snapshot.isAlive,
       });
     }
 
@@ -950,7 +1007,7 @@ export class NetworkClient {
   }
 
   getDebugState() {
-    const now = getNow();
+    const now = getTimelineNow();
     return {
       connectionState: this.connectionState,
       localMapId: this.localMapId,
@@ -989,21 +1046,10 @@ export class NetworkClient {
   destroy() {
     this.destroyed = true;
     this.clearReconnectTimer();
-    this.remotePlayerBuffers.clear();
-    this.pendingLocalCorrection = null;
+    const activeRoom = this.room;
+    const activeRoomSessionId = activeRoom?.sessionId ?? null;
     this.pendingInitializationState = null;
-    this.pendingInputs.length = 0;
-    this.latestSampledInput = null;
-    this.pendingJumpSend = false;
-    this.authoritativeEvents.length = 0;
-    this.localPlayerState = null;
-    this.pendingCombatEvents = [];
-    this.pendingAudioEvents = [];
-    this.pendingChatEvents = [];
-    this.lastReceivedPlayerStateCount = 0;
-    this.lastSameMapRemoteStateCount = 0;
-    this.lastFilteredRemoteStateCount = 0;
-    this.lastReceivedRemoteMaps = [];
+    this.resetRoomState();
     this.lastPingSentAt = 0;
     this.pendingPingId = 0;
     this.pendingPingSentAt = 0;
@@ -1015,15 +1061,20 @@ export class NetworkClient {
     this.roundState = null;
     this.objectiveState = null;
     this.audioDebugState = null;
+    this.recordConnectionEvent('destroy', {
+      activeRoomSessionId,
+    });
 
-    if (this.room) {
-      void this.room.leave().catch((error) => {
+    if (activeRoom) {
+      void activeRoom.leave().catch((error) => {
         console.warn('[NetworkClient] Failed to leave room cleanly.', error);
       });
     }
 
-    this.room = null;
     this.client = null;
     this.connectionState = 'closed';
+    if (typeof window !== 'undefined') {
+      window.__TACTICAL_FPS_NETWORK_CLIENTS__?.delete?.(this.instanceId);
+    }
   }
 }
