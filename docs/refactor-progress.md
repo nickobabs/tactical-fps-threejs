@@ -14,6 +14,9 @@ See also:
 - [session-note-2026-04-18-server-combat-refactor.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-server-combat-refactor.md)
   - server combat extraction is now underway in narrow, ownership-driven slices
   - the room still owns side effects and broadcast sequencing
+- [session-note-2026-04-18-remote-animation-refactor.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-remote-animation-refactor.md)
+  - remote presenter debug, audit, policy, and playback responsibilities are now split into dedicated helper modules
+  - client/server idle-entry dwell is now mirrored to preserve visible mesh vs authoritative hitbox parity during fast strafe reversals
 
 ## What Is Already In Better Shape
 
@@ -49,6 +52,12 @@ See also:
   - server shot/hit geometry now lives in [shotValidation.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/shotValidation.js)
   - server shot target resolution now lives in [fireResolution.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/fireResolution.js)
   - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js) is now more of an authoritative combat orchestrator than a geometry helper dump
+- Remote animation / debug helpers
+  - remote hitbox debug now lives in [remoteHitboxDebug.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxDebug.js)
+  - remote hitbox audit now lives in [remoteHitboxAudit.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxAudit.js)
+  - remote clip-selection policy now lives in [remoteAnimationPolicy.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPolicy.js)
+  - low-level mixer/action helpers now live in [remoteAnimationPlayback.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPlayback.js)
+  - [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js) is now more of a remote-animation/runtime orchestrator than a single-file implementation dump
 
 ## Main Remaining Hotspots
 
@@ -64,12 +73,17 @@ See also:
   - still the largest concentrated runtime hotspot in the repo
   - stable enough for current multiplayer use
   - recent low-risk extractions moved character definition/selection, character asset loading, and animation-clip construction into dedicated networking modules
+  - this pass also moved:
+    - hitbox debug
+    - hitbox audit
+    - clip-selection policy
+    - low-level playback/mixer helpers
   - it still owns the higher-risk runtime behavior:
     - active visual updates
-    - live animation action switching/playback
+    - higher-level fire/death animation orchestration
     - pose/aim application
     - socket attachment at runtime
-    - hit-volume debug and tuning workflow
+    - runtime presentation-state integration
   - any further extraction should stay smaller and narrower than the earlier reverted hit-volume-debug attempt
 - Server-side authoritative room / hitbox runtime
   - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)

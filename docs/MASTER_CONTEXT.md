@@ -729,10 +729,16 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - `server/src/combat/shotValidation.js`
     - `server/src/combat/fireResolution.js`
   - `server/src/rooms/TacticalRoom.js` still owns authoritative side effects and broadcast sequencing
+  - remote presenter extraction has continued in narrow client-side slices:
+    - `src/game/networking/remoteHitboxDebug.js`
+    - `src/game/networking/remoteHitboxAudit.js`
+    - `src/game/networking/remoteAnimationPolicy.js`
+    - `src/game/networking/remoteAnimationPlayback.js`
   - immediate review after each slice has already caught real issues, including:
     - stale room callback reconnect churn
     - a lag-comp RTT argument regression
     - fallback hitbox aliasing in the coarse path
+    - a stale remote death-clip call after the policy extraction
 - Keep building on the imported-map pipeline instead of reverting to graybox-only assumptions.
 - Formalize gameplay metadata export for imported maps later, likely from Blender or a similar DCC path.
 - Keep baked navmesh as the preferred runtime model.
@@ -772,6 +778,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
 - Refactor/session checkpoints for the latest networking/combat work now also live in:
   - `docs/session-notes/session-note-2026-04-18-networking-refactor-guardrails.md`
   - `docs/session-notes/session-note-2026-04-18-server-combat-refactor.md`
+  - `docs/session-notes/session-note-2026-04-18-remote-animation-refactor.md`
 
 ## Current Remote Aim / Animation Checkpoint
 
@@ -791,6 +798,11 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - standing fire now uses the full-body `newtest_fire.fbx` clip again instead of the old broken experimental overlay path
   - rifle and pistol now use authored walk / walk-back clips before the authored run set when replicated speed falls into the slow-walk range
   - knife now uses a dedicated authored melee locomotion set for idle, forward walk, back walk, run, strafe, crouch, and jump
+  - remote locomotion now also has a narrow idle-entry dwell on both:
+    - the visible client presenter
+    - the authoritative server hitbox rig
+  - this keeps fast strafe-direction reversals from flashing briefly through idle on either the mesh or latest hitbox debug
+  - `F3` now also exposes remote animation clip/layer state for transition debugging
   - current remote body aiming is intentionally modest:
     - neck/head-only procedural pitch remains active
     - crouch body aiming is disabled

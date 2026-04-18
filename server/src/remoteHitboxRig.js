@@ -34,6 +34,7 @@ const REMOTE_MODEL_URL = new URL('../../public/models/players/newtest.glb', impo
 const REMOTE_ANIMATION_ROOT_URL = new URL('../../public/models/players/animations/', import.meta.url);
 const REMOTE_RIFLE_MODEL_URL = new URL('../../public/models/weapons/newak.glb', import.meta.url);
 const REMOTE_FIRE_ACTION_DURATION = 0.18;
+const REMOTE_IDLE_ENTRY_DELAY = 0.1;
 const MOVEMENT_DIRECTION_EPSILON = 0.08;
 const REMOTE_AIM_BONE_AXIS = new THREE.Vector3(0, 0, 1);
 const REMOTE_AIM_BONE_QUATERNION = new THREE.Quaternion();
@@ -510,6 +511,49 @@ function getRigMovementPlaybackScale(player, targetClip) {
   );
 }
 
+function resolveRigMovementClipWithIdleEntryDelay(rig, targetClip, delta) {
+  const isIdleTarget = targetClip === CLIPS.idle
+    || targetClip === CLIPS.crouchIdle
+    || targetClip === CLIPS.meleeIdle
+    || targetClip === CLIPS.meleeCrouchIdle;
+
+  if (!isIdleTarget) {
+    rig.idleEntryCandidateClip = null;
+    rig.idleEntryElapsed = 0;
+    rig.lastNonIdleMovementClip = targetClip;
+    return targetClip;
+  }
+
+  const lastNonIdleMovementClip = rig.lastNonIdleMovementClip ?? null;
+  if (!lastNonIdleMovementClip) {
+    return targetClip;
+  }
+
+  const shouldDelayIdleEntry = (
+    (targetClip === CLIPS.idle && lastNonIdleMovementClip !== CLIPS.meleeIdle)
+    || (targetClip === CLIPS.crouchIdle && lastNonIdleMovementClip !== CLIPS.meleeCrouchIdle)
+    || (targetClip === CLIPS.meleeIdle && lastNonIdleMovementClip !== CLIPS.idle)
+    || (targetClip === CLIPS.meleeCrouchIdle && lastNonIdleMovementClip !== CLIPS.crouchIdle)
+  );
+
+  if (!shouldDelayIdleEntry) {
+    return targetClip;
+  }
+
+  if (rig.idleEntryCandidateClip !== targetClip) {
+    rig.idleEntryCandidateClip = targetClip;
+    rig.idleEntryElapsed = 0;
+  } else {
+    rig.idleEntryElapsed = Math.min(REMOTE_IDLE_ENTRY_DELAY, rig.idleEntryElapsed + Math.max(0, delta));
+  }
+
+  if (rig.idleEntryElapsed < REMOTE_IDLE_ENTRY_DELAY) {
+    return lastNonIdleMovementClip;
+  }
+
+  return targetClip;
+}
+
 function createServerRifleGroup(asset) {
   const group = new THREE.Group();
   group.rotation.order = REMOTE_WEAPON_ROTATION_ORDER;
@@ -655,6 +699,9 @@ export async function createRemoteHitboxRig() {
     hitboxPoints: createRemoteHitboxPointCache(),
     activeClip: null,
     fireTime: 0,
+    idleEntryCandidateClip: null,
+    idleEntryElapsed: 0,
+    lastNonIdleMovementClip: null,
     weaponAnchor,
     weaponRoot,
     skinnedMesh,
@@ -682,9 +729,10 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   }
 
   rig.fireTime = Math.max(0, rig.fireTime - delta);
+  const movementClip = resolveRigMovementClipWithIdleEntryDelay(rig, selectMovementClip(player), delta);
   const targetClip = rig.fireTime > 0 && ['idle', 'scoped-idle'].includes(String(player.presentationState ?? 'idle'))
     ? CLIPS.fire
-    : selectMovementClip(player);
+    : movementClip;
   const movementPlaybackScale = getRigMovementPlaybackScale(player, targetClip);
 
   if (rig.activeClip !== targetClip) {

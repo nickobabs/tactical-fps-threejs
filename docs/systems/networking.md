@@ -86,7 +86,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - remote animation-clip construction now lives in `src/game/networking/remoteCharacterAnimationBuilder.js`
   - tuning persistence / normalization now lives in `src/game/networking/remoteTuningStore.js`
   - `F6` / `F7` browser tuning panels now live in `src/game/networking/remoteTuningPanels.js`
-  - core remote visual update, live animation playback, hit-bone discovery, and `F3` hit-volume debug still remain in `RemotePlayerPresenter.js`
+  - hitbox debug now lives in `src/game/networking/remoteHitboxDebug.js`
+  - hitbox audit now lives in `src/game/networking/remoteHitboxAudit.js`
+  - remote animation clip-choice policy now lives in `src/game/networking/remoteAnimationPolicy.js`
+  - low-level mixer/action playback helpers now live in `src/game/networking/remoteAnimationPlayback.js`
+  - `RemotePlayerPresenter.js` still owns high-level remote animation orchestration, transform application, aim application, and runtime socket attachment
   - the current swap/integration contract is documented in `docs/remote-character-asset-contract.md`
 - The server-side simulation now uses shared authored collision primitives for map-aware authoritative movement, but it still does not share the browser's full rendered map assembly path.
 - The current combat slice is intentionally narrow:
@@ -103,6 +107,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - the room keeps a short recent history of authoritative target hitboxes
   - on `player-fire`, hit validation rewinds against the shooter's estimated one-way latency plus that interpolation delay
   - this rewind affects hit validation only; it does not rewind or snap victim movement
+  - remote latest-hitbox debug and visible remote locomotion now also share a small idle-entry dwell concept across client presenter and server hitbox rig to avoid one-frame idle pops during fast direction reversals
 - The first spectator flow is client-reconstructed rather than server-streamed:
   - dead clients wait `2` seconds, then spectate an alive teammate if one exists
   - the spectator camera is rebuilt from replicated teammate `position`, `currentHeight`, `yaw`, and `pitch`
@@ -192,6 +197,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - jump playback on the authoritative rig no longer runs through the movement-speed scaling path, which resolved a small jump-ahead mismatch in `F3`
   - knife now uses its dedicated authored melee locomotion set on both the visible client presenter and the authoritative server rig
   - remote pitch is now replicated
+  - `F3` now also exposes remote animation clip/layer state so bad transition frames can be traced live
   - a new authored rifle upper-body base clip still exists for the experimental remote path:
     - `public/models/players/animations/newtest_rifle_upper_idle.fbx`
   - that broader upper/lower-body locomotion layering path is currently paused and is not the active runtime baseline

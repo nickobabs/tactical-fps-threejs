@@ -1,11 +1,6 @@
 import * as THREE from 'three';
-import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../shared/playerHitboxes.js';
 import {
-  buildRemoteHitboxSnapshotFromPoints,
-  createRemoteHitboxPointCache,
-  createRemoteHitboxSnapshot,
   interpolateRemoteHitboxSnapshots,
-  REMOTE_HITBOX_HEAD_OFFSET,
 } from '../../shared/remoteHitboxes.js';
 import {
   describeRemoteHitboxAudit,
@@ -24,15 +19,10 @@ import {
   REMOTE_AIM_PITCH_MIN,
   REMOTE_AIM_STATE_FACTORS,
   REMOTE_CLIPS,
-  getRemoteMovementClipBaselineSpeeds,
   getRemoteSocketPoseKey,
-  shouldUseRemoteWalkClip,
-  usesRemoteMeleeClipSet,
 } from '../../shared/remoteCharacterConfig.js';
 import {
-  getLagCompensationRewindMs,
   getTimelineNow,
-  interpolateRemotePlayerSnapshotAtTime,
 } from '../../shared/remoteTimeline.js';
 import {
   getDefaultRemoteCharacterDefinition,
@@ -47,6 +37,28 @@ import {
   createRemoteCharacterTuningPanelUi,
   createRemoteWeaponTuningPanelUi,
 } from './remoteTuningPanels.js';
+import {
+  collectRemoteHitboxDebugState,
+  createRemoteDebugAttachments,
+  DEFAULT_REMOTE_HITBOX_DEBUG_SETTINGS,
+  syncRemoteHitboxDebug,
+} from './remoteHitboxDebug.js';
+import { maybeSendRemoteHitboxAudit } from './remoteHitboxAudit.js';
+import {
+  getRemoteMovementPlaybackScale,
+  resolveRemoteDeathClip as resolveRemoteDeathClipPolicy,
+  selectTargetClip,
+} from './remoteAnimationPolicy.js';
+import {
+  findRemoteClipAction,
+  freezeRemoteCharacterClip,
+  normalizeRemoteClipName,
+  playRemoteUpperBodyClip,
+  setRemoteCharacterClip,
+  stopRemoteUpperBodyActions,
+  updateRemoteFullBodyAction,
+  updateRemoteUpperBodyAction,
+} from './remoteAnimationPlayback.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
 const REMOTE_PLAYER_BODY_RADIUS = 0.35;
@@ -77,7 +89,6 @@ const REMOTE_BORROWED_WEAPON_DEFINITIONS = {
     hideFlash: true,
   },
 };
-const MOVEMENT_DIRECTION_EPSILON = 0.08;
 const REMOTE_JUMP_TIME_SCALE = 0.76;
 const REMOTE_JUMP_END_HOLD_RATIO = 0.58;
 const REMOTE_RIFLE_TARGET_LENGTH = 0.82;
@@ -86,6 +97,7 @@ const REMOTE_UPPER_BODY_FADE_DURATION = 0.08;
 const REMOTE_UPPER_BODY_ACTION_DURATION = 0.22;
 const REMOTE_FULL_BODY_FIRE_ACTION_DURATION = 0.18;
 const REMOTE_PERSISTENT_ACTION_TIME = Number.POSITIVE_INFINITY;
+const REMOTE_IDLE_ENTRY_DELAY = 0.1;
 const REMOTE_IK_BLEND_FACTOR = 0.9;
 const REMOTE_IK_ITERATIONS = 2;
 const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
@@ -94,21 +106,11 @@ const REMOTE_AIM_PROXY_WEAPON_FACTOR = 0.75;
 const REMOTE_AIM_WEAPON_AXIS = 'y';
 const REMOTE_AIM_PROXY_WEAPON_AXIS = 'y';
 const REMOTE_AIM_BONE_LOCAL_AXIS = new THREE.Vector3(0, 0, 1);
-const REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE = 0.55;
-const REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE = 1.45;
 const DEFAULT_REMOTE_DEBUG_SETTINGS = {
   freezePose: false,
   freezeClip: REMOTE_CLIPS.idle,
   localHitboxDebug: false,
 };
-const DEFAULT_REMOTE_HITBOX_DEBUG_SETTINGS = {
-  enabled: false,
-  showLatestHitboxes: true,
-  showLatestMarkers: true,
-  showRewoundHitboxes: false,
-  showRewoundMarkers: false,
-};
-
 const REMOTE_CHARACTER_BOX = new THREE.Box3();
 const REMOTE_CHARACTER_SIZE = new THREE.Vector3();
 const REMOTE_CHARACTER_CENTER = new THREE.Vector3();
@@ -116,9 +118,6 @@ const REMOTE_CHARACTER_ROOT_WORLD = new THREE.Vector3();
 const REMOTE_WEAPON_BOX = new THREE.Box3();
 const REMOTE_WEAPON_SIZE = new THREE.Vector3();
 const REMOTE_WEAPON_CENTER = new THREE.Vector3();
-const REMOTE_MOVE_VECTOR = new THREE.Vector3();
-const REMOTE_FORWARD = new THREE.Vector3();
-const REMOTE_RIGHT = new THREE.Vector3();
 const REMOTE_WORLD_SCALE = new THREE.Vector3();
 const REMOTE_IK_TARGET_WORLD = new THREE.Vector3();
 const REMOTE_IK_TARGET_LOCAL = new THREE.Vector3();
@@ -128,17 +127,10 @@ const REMOTE_HITBOX_SEGMENT_END = new THREE.Vector3();
 const REMOTE_HITBOX_SEGMENT_CENTER = new THREE.Vector3();
 const REMOTE_HITBOX_SEGMENT_DIRECTION = new THREE.Vector3();
 const REMOTE_HITBOX_UP_AXIS = new THREE.Vector3(0, 1, 0);
-const REMOTE_HITBOX_LAYOUT = createPlayerHitboxLayout();
-const REMOTE_HITBOX_WORLD_POINT_A = new THREE.Vector3();
 const REMOTE_HITBOX_WORLD_POINT_B = new THREE.Vector3();
-const REMOTE_DEBUG_RENDERED_POSITION = new THREE.Vector3();
-const REMOTE_DEBUG_AUTHORITATIVE_POSITION = new THREE.Vector3();
-const REMOTE_DEBUG_POSITION_DELTA = new THREE.Vector3();
 const REMOTE_TRACER_ORIGIN = new THREE.Vector3();
 const REMOTE_BLOOD_ORIGIN = new THREE.Vector3();
 const REMOTE_BLOOD_OUTWARD = new THREE.Vector3();
-const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
-const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
 let REMOTE_BORROWED_WEAPON_ASSET_PROMISE = null;
 let REMOTE_CCDIK_SOLVER_PROMISE = null;
@@ -427,14 +419,6 @@ async function loadRemoteWeaponAsset(weaponKey) {
     };
   }
   return null;
-}
-
-function normalizeRemoteClipName(name) {
-  return String(name ?? '')
-    .split(/[|/\\]/)
-    .pop()
-    .trim()
-    .toLowerCase();
 }
 
 function stripRootMotionFromClip(clip, options = null) {
@@ -786,305 +770,9 @@ function createRemoteHitCapsuleDebugMesh(color) {
   return { group, cylinder, top, bottom };
 }
 
-function createRemoteHitSphereDebugMesh(color) {
-  const material = new THREE.MeshBasicMaterial({
-    color,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.9,
-    depthWrite: false,
-  });
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), material);
-  return mesh;
-}
-
-function updateRemoteHitEllipsoidDebugMesh(debugMesh, ellipsoid) {
-  if (!debugMesh || !ellipsoid?.center) {
-    return;
-  }
-
-  debugMesh.position.set(
-    Number(ellipsoid.center.x ?? 0),
-    Number(ellipsoid.center.y ?? 0),
-    Number(ellipsoid.center.z ?? 0),
-  );
-  debugMesh.scale.set(
-    Math.max(0.001, Number(ellipsoid.size?.x ?? Number(ellipsoid.radius ?? 0.15) * 2) * 0.5),
-    Math.max(0.001, Number(ellipsoid.size?.y ?? Number(ellipsoid.radius ?? 0.15) * 2) * 0.5),
-    Math.max(0.001, Number(ellipsoid.size?.z ?? Number(ellipsoid.radius ?? 0.15) * 2) * 0.5),
-  );
-
-  if (ellipsoid.right && ellipsoid.up && ellipsoid.forward) {
-    const basis = new THREE.Matrix4().makeBasis(
-      REMOTE_FORWARD.set(ellipsoid.right.x, ellipsoid.right.y, ellipsoid.right.z),
-      REMOTE_RIGHT.set(ellipsoid.up.x, ellipsoid.up.y, ellipsoid.up.z),
-      REMOTE_MOVE_VECTOR.set(ellipsoid.forward.x, ellipsoid.forward.y, ellipsoid.forward.z),
-    );
-    debugMesh.quaternion.setFromRotationMatrix(basis);
-  } else {
-    debugMesh.quaternion.identity();
-  }
-}
-
-function updateRemoteHitCapsuleDebugMesh(debugMesh, segment) {
-  REMOTE_HITBOX_SEGMENT_START.set(segment.start.x, segment.start.y, segment.start.z);
-  REMOTE_HITBOX_SEGMENT_END.set(segment.end.x, segment.end.y, segment.end.z);
-  REMOTE_HITBOX_SEGMENT_CENTER.copy(REMOTE_HITBOX_SEGMENT_START).add(REMOTE_HITBOX_SEGMENT_END).multiplyScalar(0.5);
-  REMOTE_HITBOX_SEGMENT_DIRECTION.copy(REMOTE_HITBOX_SEGMENT_END).sub(REMOTE_HITBOX_SEGMENT_START);
-  const length = Math.max(0.001, REMOTE_HITBOX_SEGMENT_DIRECTION.length());
-  REMOTE_HITBOX_SEGMENT_DIRECTION.normalize();
-
-  debugMesh.group.position.copy(REMOTE_HITBOX_SEGMENT_CENTER);
-  debugMesh.group.quaternion.setFromUnitVectors(REMOTE_HITBOX_UP_AXIS, REMOTE_HITBOX_SEGMENT_DIRECTION);
-  debugMesh.cylinder.scale.set(segment.radius, length, segment.radius);
-  debugMesh.top.position.set(0, length * 0.5, 0);
-  debugMesh.bottom.position.set(0, -length * 0.5, 0);
-  debugMesh.top.scale.setScalar(segment.radius);
-  debugMesh.bottom.scale.setScalar(segment.radius);
-}
-
-function createRemoteHitVolumeDebugGroup(colors = {}) {
-  const group = new THREE.Group();
-  group.renderOrder = 1200;
-
-  const head = createRemoteHitSphereDebugMesh(colors.head ?? 0xff5d5d);
-  const torso = createRemoteHitCapsuleDebugMesh(colors.torso ?? 0x6bd3ff);
-  const pelvis = createRemoteHitCapsuleDebugMesh(colors.pelvis ?? 0x8cff7a);
-  const arms = [
-    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
-    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
-    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
-    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
-    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
-    createRemoteHitCapsuleDebugMesh(colors.arms ?? 0xffd166),
-  ];
-  const hands = [
-    createRemoteHitSphereDebugMesh(colors.hands ?? colors.arms ?? 0xffd166),
-    createRemoteHitSphereDebugMesh(colors.hands ?? colors.arms ?? 0xffd166),
-  ];
-  const legs = [
-    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
-    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
-    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
-    createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff),
-  ];
-
-  group.add(
-    head,
-    torso.group,
-    pelvis.group,
-    arms[0].group,
-    arms[1].group,
-    arms[2].group,
-    arms[3].group,
-    arms[4].group,
-    arms[5].group,
-    hands[0],
-    hands[1],
-    legs[0].group,
-    legs[1].group,
-    legs[2].group,
-    legs[3].group,
-  );
-  return { group, head, torso, pelvis, arms, hands, legs };
-}
-
 function findRemoteHitBones(root, definition) {
   const skeleton = definition?.skeleton ?? {};
   return resolveRemoteHitBones(root, skeleton);
-}
-
-function hasCompleteRemoteHitBones(bones) {
-  return Boolean(
-    bones?.head
-    && bones?.neck
-    && bones?.spine
-    && bones?.pelvis
-    && bones?.leftClavicle
-    && bones?.leftUpperArm
-    && bones?.leftForearm
-    && bones?.leftHand
-    && bones?.rightClavicle
-    && bones?.rightUpperArm
-    && bones?.rightForearm
-    && bones?.rightHand
-    && bones?.leftThigh
-    && bones?.leftCalf
-    && bones?.leftFoot
-    && bones?.rightThigh
-    && bones?.rightCalf
-    && bones?.rightFoot
-  );
-}
-
-function updateRemoteHitVolumeDebugGroup(debugGroup, player) {
-  if (!debugGroup) {
-    return;
-  }
-
-  const layout = computePlayerHitboxLayout({
-    position: player.position,
-    yaw: player.yaw ?? 0,
-    currentHeight: player.currentHeight ?? REMOTE_PLAYER_STAND_HEIGHT,
-    isCrouched: player.isCrouched ?? false,
-    activeWeaponKey: player.activeWeaponKey ?? 'rifle',
-  }, REMOTE_HITBOX_LAYOUT);
-
-  updateRemoteHitEllipsoidDebugMesh(debugGroup.head, {
-    center: layout.head.center,
-    radius: layout.head.radius,
-    size: {
-      x: layout.head.radius * 2,
-      y: layout.head.radius * 2,
-      z: layout.head.radius * 2,
-    },
-  });
-  updateRemoteHitCapsuleDebugMesh(debugGroup.torso, layout.torso);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.pelvis, layout.pelvis);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[0], layout.arms[0]);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[1], layout.arms[1]);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[2], layout.arms[2]);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.arms[3], layout.arms[3]);
-  debugGroup.arms[4].group.visible = false;
-  debugGroup.arms[5].group.visible = false;
-  debugGroup.hands[0].visible = false;
-  debugGroup.hands[1].visible = false;
-  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[0], layout.legs[0]);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[1], layout.legs[1]);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[2], layout.legs[2]);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.legs[3], layout.legs[3]);
-}
-
-function updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, hitboxes) {
-  if (!debugGroup || !hitboxes?.head || !hitboxes?.torso || !hitboxes?.pelvis) {
-    return false;
-  }
-
-  updateRemoteHitEllipsoidDebugMesh(debugGroup.head, hitboxes.head);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.torso, hitboxes.torso);
-  updateRemoteHitCapsuleDebugMesh(debugGroup.pelvis, hitboxes.pelvis);
-
-  for (let index = 0; index < debugGroup.arms.length; index += 1) {
-    const arm = hitboxes.arms?.[index] ?? null;
-    debugGroup.arms[index].group.visible = Boolean(arm);
-    if (arm) {
-      updateRemoteHitCapsuleDebugMesh(debugGroup.arms[index], arm);
-    }
-  }
-
-  for (let index = 0; index < debugGroup.hands.length; index += 1) {
-    const hand = hitboxes.hands?.[index] ?? null;
-    debugGroup.hands[index].visible = Boolean(hand);
-    if (hand) {
-      debugGroup.hands[index].position.set(hand.center.x, hand.center.y, hand.center.z);
-      debugGroup.hands[index].scale.setScalar(hand.radius);
-    }
-  }
-
-  for (let index = 0; index < debugGroup.legs.length; index += 1) {
-    const leg = hitboxes.legs?.[index] ?? null;
-    debugGroup.legs[index].group.visible = Boolean(leg);
-    if (leg) {
-      updateRemoteHitCapsuleDebugMesh(debugGroup.legs[index], leg);
-    }
-  }
-
-  return true;
-}
-
-function updateRemoteBoneDrivenHitVolumeDebugGroup(debugGroup, bones) {
-  if (!debugGroup || !hasCompleteRemoteHitBones(bones)) {
-    return false;
-  }
-
-  for (const [key, point] of Object.entries(REMOTE_LOCAL_HITBOX_POINTS)) {
-    const bone = bones[key];
-    if (!bone?.getWorldPosition) {
-      return false;
-    }
-    bone.getWorldPosition(REMOTE_HITBOX_WORLD_POINT_A);
-    point.x = REMOTE_HITBOX_WORLD_POINT_A.x;
-    point.y = REMOTE_HITBOX_WORLD_POINT_A.y;
-    point.z = REMOTE_HITBOX_WORLD_POINT_A.z;
-  }
-
-  const hitboxSettings = getRemoteHitboxSettings();
-  const localSnapshot = buildRemoteHitboxSnapshotFromPoints({
-    points: REMOTE_LOCAL_HITBOX_POINTS,
-    headOffset: hitboxSettings.headOffset,
-    headRadius: hitboxSettings.headRadius,
-    headSize: hitboxSettings.headSize,
-    torsoRadius: hitboxSettings.torsoRadius,
-    torsoLengthPadding: hitboxSettings.torsoLengthPadding,
-    pelvisRadius: hitboxSettings.pelvisRadius,
-    pelvisLengthPadding: hitboxSettings.pelvisLengthPadding,
-    armRadius: hitboxSettings.armRadius,
-    armLengthPadding: hitboxSettings.armLengthPadding,
-    handRadius: hitboxSettings.handRadius,
-    legRadius: hitboxSettings.legRadius,
-    legLengthPadding: hitboxSettings.legLengthPadding,
-  }, REMOTE_LOCAL_HITBOX_SNAPSHOT);
-
-  return updateRemoteAuthoritativeHitVolumeDebugGroup(debugGroup, localSnapshot);
-}
-
-function pickAuditCoreSnapshot(snapshot) {
-  if (!snapshot) {
-    return null;
-  }
-
-  return {
-    head: snapshot.head ?? null,
-    torso: snapshot.torso ?? null,
-    pelvis: snapshot.pelvis ?? null,
-  };
-}
-
-function createRemotePositionDebugGroup() {
-  const group = new THREE.Group();
-  const renderedMarker = new THREE.Mesh(
-    new THREE.SphereGeometry(0.075, 12, 8),
-    new THREE.MeshBasicMaterial({ color: 0x32d17c, depthTest: false, transparent: true, opacity: 0.95 }),
-  );
-  const authoritativeMarker = new THREE.Mesh(
-    new THREE.SphereGeometry(0.075, 12, 8),
-    new THREE.MeshBasicMaterial({ color: 0xff5b5b, depthTest: false, transparent: true, opacity: 0.95 }),
-  );
-  const lineGeometry = new THREE.BufferGeometry();
-  lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
-  const connector = new THREE.Line(
-    lineGeometry,
-    new THREE.LineBasicMaterial({ color: 0xffd54d, depthTest: false, transparent: true, opacity: 0.9 }),
-  );
-  connector.renderOrder = 999;
-  renderedMarker.renderOrder = 999;
-  authoritativeMarker.renderOrder = 999;
-  group.add(connector, renderedMarker, authoritativeMarker);
-  return {
-    group,
-    renderedMarker,
-    authoritativeMarker,
-    connector,
-  };
-}
-
-function updateRemotePositionDebugGroup(debugGroup, renderedPosition, authoritativePosition) {
-  if (!debugGroup || !renderedPosition || !authoritativePosition) {
-    return;
-  }
-
-  debugGroup.renderedMarker.position.set(renderedPosition.x, renderedPosition.y + 0.05, renderedPosition.z);
-  debugGroup.authoritativeMarker.position.set(authoritativePosition.x, authoritativePosition.y + 0.05, authoritativePosition.z);
-
-  const positions = debugGroup.connector.geometry.attributes.position.array;
-  positions[0] = renderedPosition.x;
-  positions[1] = renderedPosition.y + 0.05;
-  positions[2] = renderedPosition.z;
-  positions[3] = authoritativePosition.x;
-  positions[4] = authoritativePosition.y + 0.05;
-  positions[5] = authoritativePosition.z;
-  debugGroup.connector.geometry.attributes.position.needsUpdate = true;
-  debugGroup.connector.geometry.computeBoundingSphere();
 }
 
 function createRemotePlayerVisual(displayName, bodyMaterial) {
@@ -1124,24 +812,7 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
   weaponAnchor.userData.baseRotationZ = weaponAnchor.rotation.z;
   root.add(weaponAnchor);
 
-  const hitVolumeDebugGroup = createRemoteHitVolumeDebugGroup();
-  hitVolumeDebugGroup.group.visible = false;
-  const positionDebugGroup = createRemotePositionDebugGroup();
-  positionDebugGroup.group.visible = false;
-  const rewoundHitVolumeDebugGroup = createRemoteHitVolumeDebugGroup({
-    head: 0xffb36b,
-    torso: 0xffc874,
-    pelvis: 0xffdf8b,
-    arms: 0xffcf76,
-    hands: 0xffcf76,
-    legs: 0xe1a95f,
-  });
-  rewoundHitVolumeDebugGroup.group.visible = false;
-  const rewoundPositionDebugGroup = createRemotePositionDebugGroup();
-  rewoundPositionDebugGroup.renderedMarker.material.color.setHex(0x67d7ff);
-  rewoundPositionDebugGroup.authoritativeMarker.material.color.setHex(0xffb347);
-  rewoundPositionDebugGroup.connector.material.color.setHex(0xffb347);
-  rewoundPositionDebugGroup.group.visible = false;
+  const debugAttachments = createRemoteDebugAttachments();
 
   return {
     root,
@@ -1153,12 +824,7 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     weaponAnchor,
     weaponMesh: null,
     weaponKey: null,
-    hitVolumeDebugGroup,
-    positionDebugGroup,
-    rewoundHitVolumeDebugGroup,
-    rewoundPositionDebugGroup,
-    showHitVolumeDebug: false,
-    latestDebugState: null,
+    ...debugAttachments,
     flashTime: 0,
     hitReactionTime: 0,
     deathTransitionTime: 0,
@@ -1174,6 +840,9 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     upperBodyActionTime: 0,
     fullBodyActionClip: null,
     fullBodyActionTime: 0,
+    idleEntryCandidateClip: null,
+    idleEntryElapsed: 0,
+    lastNonIdleBaseClip: null,
     characterLoadState: 'idle',
     requestedCharacterDefinitionId: null,
     characterLoadRequestId: 0,
@@ -1240,29 +909,25 @@ function triggerRemotePlayerFireFlash(visual) {
     if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
       visual.fullBodyActionClip = REMOTE_CLIPS.fire;
       visual.fullBodyActionTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
+      setRemoteCharacterClip(visual, REMOTE_CLIPS.fire);
+      visual.characterMixer?.update?.(0);
+      captureRemoteAimBoneBasePose(visual);
       return;
     }
-    return;
   }
   if (visual.characterDefinition?.prefersFullBodyPistolFire && visual.weaponKey === 'pistol') {
     if (visual.presentationState === 'idle' || visual.presentationState === 'scoped-idle') {
       visual.fullBodyActionClip = REMOTE_CLIPS.fire;
       visual.fullBodyActionTime = REMOTE_FULL_BODY_FIRE_ACTION_DURATION;
+      setRemoteCharacterClip(visual, REMOTE_CLIPS.fire);
+      visual.characterMixer?.update?.(0);
+      captureRemoteAimBoneBasePose(visual);
       return;
     }
   }
   playRemoteUpperBodyClip(visual, REMOTE_CLIPS.fire);
-}
-
-function stopRemoteUpperBodyActions(visual) {
-  for (const action of visual.characterUpperBodyActions.values()) {
-    action.stop();
-    action.paused = false;
-    action.setEffectiveWeight(0);
-  }
-  visual.activeUpperBodyClip = null;
-  visual.activeUpperBodyWeight = 1;
-  visual.upperBodyActionTime = 0;
+  visual.characterMixer?.update?.(0);
+  captureRemoteAimBoneBasePose(visual);
 }
 
 function resetRemoteDeathPresentation(visual) {
@@ -1275,34 +940,12 @@ function resetRemoteDeathPresentation(visual) {
   visual.deathTransitionTime = 0;
 }
 
-function getRequestedRemoteDeathClip(player, authoritativeState) {
-  const deathClip = authoritativeState?.deathClip ?? player?.deathClip ?? null;
-  if (deathClip) {
-    return deathClip;
-  }
-  return REMOTE_CLIPS.dieBackward;
-}
-
-function resolveRemoteDeathClip(visual, player, authoritativeState) {
-  const preferredClip = getRequestedRemoteDeathClip(player, authoritativeState);
-  if (findRemoteClipAction(visual, preferredClip)) {
-    return preferredClip;
-  }
-  if (preferredClip !== REMOTE_CLIPS.dieBackward && findRemoteClipAction(visual, REMOTE_CLIPS.dieBackward)) {
-    return REMOTE_CLIPS.dieBackward;
-  }
-  if (preferredClip !== REMOTE_CLIPS.dieForward && findRemoteClipAction(visual, REMOTE_CLIPS.dieForward)) {
-    return REMOTE_CLIPS.dieForward;
-  }
-  return null;
-}
-
 function playRemoteDeathClip(visual, player, authoritativeState) {
   if (!visual) {
     return false;
   }
 
-  const deathClip = resolveRemoteDeathClip(visual, player, authoritativeState);
+  const deathClip = resolveRemoteDeathClipPolicy(visual, player, authoritativeState, findRemoteClipAction);
   if (!deathClip) {
     return false;
   }
@@ -1326,157 +969,80 @@ function triggerRemotePlayerHitReaction(visual, { killed = false, player = null,
   }
 }
 
-function findRemoteClipAction(visual, clipName) {
-  const normalizedClipName = normalizeRemoteClipName(clipName);
-  return visual.characterActions.get(normalizedClipName)
-    ?? [...visual.characterActions.entries()].find(([name]) => name.includes(normalizedClipName))?.[1]
-    ?? null;
+function shouldLockFireBaseClip(visual, targetClip) {
+  if (!visual?.characterDefinition) {
+    return false;
+  }
+
+  const normalizedTargetClip = normalizeRemoteClipName(targetClip);
+  if (normalizedTargetClip !== normalizeRemoteClipName(REMOTE_CLIPS.idle)) {
+    return false;
+  }
+
+  const activeUpperBodyClip = normalizeRemoteClipName(visual.activeUpperBodyClip);
+  const isFireOverlayActive = activeUpperBodyClip === normalizeRemoteClipName(REMOTE_CLIPS.fire)
+    && Number(visual.upperBodyActionTime ?? 0) > 0;
+  if (!isFireOverlayActive) {
+    return false;
+  }
+
+  if (visual.weaponKey === 'rifle') {
+    return Boolean(visual.characterDefinition.prefersFullBodyRifleFire);
+  }
+  if (visual.weaponKey === 'pistol') {
+    return Boolean(visual.characterDefinition.prefersFullBodyPistolFire);
+  }
+  return false;
 }
 
-function findRemoteUpperBodyAction(visual, clipName) {
-  const normalizedClipName = normalizeRemoteClipName(clipName);
-  return visual.characterUpperBodyActions.get(normalizedClipName)
-    ?? [...visual.characterUpperBodyActions.entries()].find(([name]) => name.includes(normalizedClipName))?.[1]
-    ?? null;
-}
+function resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta) {
+  const normalizedTargetClip = normalizeRemoteClipName(targetClip);
+  const standingIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.idle);
+  const crouchIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.crouchIdle);
+  const meleeIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.meleeIdle);
+  const meleeCrouchIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.meleeCrouchIdle);
 
-function setRemoteCharacterClip(visual, clipName) {
-  if (!visual.characterMixer || !visual.characterActions?.size) {
-    return;
+  const isIdleTarget = normalizedTargetClip === standingIdleClip
+    || normalizedTargetClip === crouchIdleClip
+    || normalizedTargetClip === meleeIdleClip
+    || normalizedTargetClip === meleeCrouchIdleClip;
+
+  if (!isIdleTarget) {
+    visual.idleEntryCandidateClip = null;
+    visual.idleEntryElapsed = 0;
+    visual.lastNonIdleBaseClip = targetClip;
+    return targetClip;
   }
 
-  const normalizedClipName = normalizeRemoteClipName(clipName);
-  const nextAction = findRemoteClipAction(visual, normalizedClipName);
-  if (!nextAction) {
-    return;
-  }
-  const isImmediateFireTransition = normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.fire);
-
-  const previousAction = visual.activeCharacterClip
-    ? findRemoteClipAction(visual, visual.activeCharacterClip)
-    : null;
-
-  if (visual.activeCharacterClip === normalizedClipName) {
-    return;
+  const lastNonIdleBaseClip = visual.lastNonIdleBaseClip ?? null;
+  if (!lastNonIdleBaseClip) {
+    return targetClip;
   }
 
-  if (previousAction && previousAction !== nextAction) {
-    if (isImmediateFireTransition) {
-      previousAction.stop();
-    } else {
-      previousAction.fadeOut(0.12);
-    }
+  const normalizedLastNonIdleBaseClip = normalizeRemoteClipName(lastNonIdleBaseClip);
+  const shouldDelayIdleEntry = (
+    (normalizedTargetClip === standingIdleClip && normalizedLastNonIdleBaseClip !== meleeIdleClip)
+    || (normalizedTargetClip === crouchIdleClip && normalizedLastNonIdleBaseClip !== meleeCrouchIdleClip)
+    || (normalizedTargetClip === meleeIdleClip && normalizedLastNonIdleBaseClip !== standingIdleClip)
+    || (normalizedTargetClip === meleeCrouchIdleClip && normalizedLastNonIdleBaseClip !== crouchIdleClip)
+  );
+
+  if (!shouldDelayIdleEntry) {
+    return targetClip;
   }
 
-  nextAction.reset();
-  if (isImmediateFireTransition) {
-    nextAction.setEffectiveWeight(1).setEffectiveTimeScale(1).play();
+  if (visual.idleEntryCandidateClip !== normalizedTargetClip) {
+    visual.idleEntryCandidateClip = normalizedTargetClip;
+    visual.idleEntryElapsed = 0;
   } else {
-    nextAction.fadeIn(0.12).play();
-  }
-  visual.activeCharacterClip = normalizedClipName;
-}
-
-function freezeRemoteCharacterClip(visual, clipName) {
-  if (!visual.characterMixer || !visual.characterActions?.size) {
-    return;
+    visual.idleEntryElapsed = Math.min(REMOTE_IDLE_ENTRY_DELAY, visual.idleEntryElapsed + Math.max(0, delta));
   }
 
-  const normalizedClipName = normalizeRemoteClipName(clipName);
-  setRemoteCharacterClip(visual, normalizedClipName);
-  const targetAction = findRemoteClipAction(visual, normalizedClipName);
-  if (!targetAction) {
-    return;
+  if (visual.idleEntryElapsed < REMOTE_IDLE_ENTRY_DELAY) {
+    return lastNonIdleBaseClip;
   }
 
-  for (const action of visual.characterActions.values()) {
-    if (action === targetAction) {
-      action.enabled = true;
-      action.play();
-      action.time = 0;
-      action.paused = true;
-      action.setEffectiveTimeScale(0);
-      action.setEffectiveWeight(1);
-    } else {
-      action.stop();
-      action.paused = true;
-    }
-  }
-  for (const action of visual.characterUpperBodyActions.values()) {
-    action.stop();
-    action.paused = true;
-    action.setEffectiveWeight(0);
-  }
-  visual.activeUpperBodyClip = null;
-  visual.upperBodyActionTime = 0;
-  visual.characterMixer.update(0);
-  captureRemoteAimBoneBasePose(visual);
-}
-
-function playRemoteUpperBodyClip(visual, clipName) {
-  if (!visual.characterMixer || !visual.characterUpperBodyActions?.size) {
-    return;
-  }
-
-  const normalizedClipName = normalizeRemoteClipName(clipName);
-  const nextAction = findRemoteUpperBodyAction(visual, normalizedClipName);
-  if (!nextAction) {
-    return;
-  }
-
-  const previousAction = visual.activeUpperBodyClip
-    ? findRemoteUpperBodyAction(visual, visual.activeUpperBodyClip)
-    : null;
-  if (previousAction && previousAction !== nextAction) {
-    previousAction.fadeOut(REMOTE_UPPER_BODY_FADE_DURATION);
-  }
-
-  nextAction
-    .reset()
-    .setEffectiveWeight(1)
-    .setEffectiveTimeScale(1)
-    .fadeIn(REMOTE_UPPER_BODY_FADE_DURATION)
-    .play();
-  visual.activeUpperBodyClip = normalizedClipName;
-  visual.activeUpperBodyWeight = 1;
-  visual.upperBodyActionTime = REMOTE_UPPER_BODY_ACTION_DURATION;
-}
-
-function updateRemoteUpperBodyAction(visual, delta) {
-  if (!visual.activeUpperBodyClip) {
-    return;
-  }
-
-  const action = findRemoteUpperBodyAction(visual, visual.activeUpperBodyClip);
-  if (!action) {
-    visual.activeUpperBodyClip = null;
-    visual.upperBodyActionTime = 0;
-    return;
-  }
-
-  visual.upperBodyActionTime = Math.max(0, visual.upperBodyActionTime - delta);
-  if (visual.upperBodyActionTime > 0) {
-    action.setEffectiveWeight(visual.activeUpperBodyWeight ?? 1);
-    return;
-  }
-
-  action.fadeOut(REMOTE_UPPER_BODY_FADE_DURATION);
-  visual.activeUpperBodyClip = null;
-  visual.activeUpperBodyWeight = 1;
-}
-
-function updateRemoteFullBodyAction(visual, delta) {
-  if (!visual.fullBodyActionClip) {
-    return null;
-  }
-
-  const activeClip = visual.fullBodyActionClip;
-  visual.fullBodyActionTime = Math.max(0, visual.fullBodyActionTime - delta);
-  if (visual.fullBodyActionTime <= 0) {
-    visual.fullBodyActionClip = null;
-    visual.fullBodyActionTime = 0;
-  }
-  return activeClip;
+  return targetClip;
 }
 
 function findFirstSkinnedMesh(root) {
@@ -1772,72 +1338,6 @@ function ensureRemoteCharacterModel(visual) {
     });
 }
 
-function selectMovementClip(authoritativeState, presentationState) {
-  if (presentationState === 'dead') {
-    return REMOTE_CLIPS.idle;
-  }
-
-  if (presentationState === 'air') {
-    return REMOTE_CLIPS.jump;
-  }
-
-  const velocity = authoritativeState?.velocity ?? null;
-  const isCrouched = Boolean(authoritativeState?.isCrouched);
-  if (!velocity) {
-    return isCrouched ? REMOTE_CLIPS.crouchIdle : REMOTE_CLIPS.idle;
-  }
-
-  REMOTE_MOVE_VECTOR.set(Number(velocity.x ?? 0), 0, Number(velocity.z ?? 0));
-  const horizontalSpeed = REMOTE_MOVE_VECTOR.length();
-  const weaponKey = String(authoritativeState?.activeWeaponKey ?? 'rifle');
-  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
-    if (isCrouched) {
-      return usesRemoteMeleeClipSet(weaponKey) ? REMOTE_CLIPS.meleeCrouchIdle : REMOTE_CLIPS.crouchIdle;
-    }
-    return usesRemoteMeleeClipSet(weaponKey) ? REMOTE_CLIPS.meleeIdle : REMOTE_CLIPS.idle;
-  }
-
-  const yaw = Number(authoritativeState?.yaw ?? 0);
-  REMOTE_FORWARD.set(-Math.sin(yaw), 0, -Math.cos(yaw));
-  REMOTE_RIGHT.set(Math.cos(yaw), 0, -Math.sin(yaw));
-
-  const forwardAmount = REMOTE_MOVE_VECTOR.dot(REMOTE_FORWARD);
-  const strafeAmount = REMOTE_MOVE_VECTOR.dot(REMOTE_RIGHT);
-
-  if (isCrouched) {
-    if (usesRemoteMeleeClipSet(weaponKey)) {
-      return REMOTE_CLIPS.meleeCrouchWalk;
-    }
-    if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
-      return forwardAmount >= 0 ? REMOTE_CLIPS.crouchWalk : REMOTE_CLIPS.crouchBackward;
-    }
-
-    return REMOTE_CLIPS.crouchWalk;
-  }
-
-  if (usesRemoteMeleeClipSet(weaponKey)) {
-    if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
-      if (forwardAmount >= 0) {
-        return shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)
-          ? REMOTE_CLIPS.meleeWalkForward
-          : REMOTE_CLIPS.meleeRunForward;
-      }
-      return REMOTE_CLIPS.meleeWalkBackward;
-    }
-
-    return strafeAmount >= 0 ? REMOTE_CLIPS.meleeStrafeRight : REMOTE_CLIPS.meleeStrafeLeft;
-  }
-
-  if (Math.abs(forwardAmount) >= Math.abs(strafeAmount)) {
-    if (shouldUseRemoteWalkClip(weaponKey, horizontalSpeed)) {
-      return forwardAmount >= 0 ? REMOTE_CLIPS.walkForward : REMOTE_CLIPS.walkBackward;
-    }
-    return forwardAmount >= 0 ? REMOTE_CLIPS.runForward : REMOTE_CLIPS.runBackward;
-  }
-
-  return strafeAmount >= 0 ? REMOTE_CLIPS.strafeRight : REMOTE_CLIPS.strafeLeft;
-}
-
 function getCharacterWeaponPose(weaponKey, isScoped) {
   if (weaponKey === 'pistol') {
     return isScoped
@@ -1863,54 +1363,6 @@ function getCharacterWeaponPose(weaponKey, isScoped) {
 function getSocketWeaponPose(weaponKey, isScoped) {
   const tuning = ensureRemoteWeaponTuning();
   return tuning.weaponPoses[getRemoteSocketPoseKey(weaponKey, isScoped)];
-}
-
-function selectTargetClip(authoritativeState, presentationState) {
-  const weaponKey = String(authoritativeState?.activeWeaponKey ?? 'rifle');
-  return presentationState === 'air'
-    ? (usesRemoteMeleeClipSet(weaponKey) ? REMOTE_CLIPS.meleeJump : REMOTE_CLIPS.jump)
-    : selectMovementClip(authoritativeState, presentationState);
-}
-
-function getRemoteMovementPlaybackScale(authoritativeState, targetClip) {
-  const velocity = authoritativeState?.velocity ?? null;
-  if (!velocity) {
-    return 1;
-  }
-
-  const horizontalSpeed = Math.hypot(
-    Number(velocity.x ?? 0),
-    Number(velocity.z ?? 0),
-  );
-  if (horizontalSpeed <= MOVEMENT_DIRECTION_EPSILON) {
-    return 1;
-  }
-
-  const weaponKey = String(authoritativeState?.activeWeaponKey ?? 'rifle');
-  const baselineSpeeds = getRemoteMovementClipBaselineSpeeds(weaponKey);
-  const crouchClip = [
-    REMOTE_CLIPS.crouchWalk,
-    REMOTE_CLIPS.crouchBackward,
-    REMOTE_CLIPS.meleeCrouchWalk,
-  ].includes(targetClip);
-  const walkClip = [
-    REMOTE_CLIPS.walkForward,
-    REMOTE_CLIPS.walkBackward,
-    REMOTE_CLIPS.meleeWalkForward,
-    REMOTE_CLIPS.meleeWalkBackward,
-  ].includes(targetClip);
-  const baselineSpeed = crouchClip
-    ? baselineSpeeds.crouchSpeed
-    : (walkClip ? baselineSpeeds.walkSpeed : baselineSpeeds.fullSpeed);
-  if (!Number.isFinite(baselineSpeed) || baselineSpeed <= 0) {
-    return 1;
-  }
-
-  return THREE.MathUtils.clamp(
-    horizontalSpeed / baselineSpeed,
-    REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE,
-    REMOTE_MAX_MOVEMENT_PLAYBACK_SCALE,
-  );
 }
 
 function updateClipPlaybackParameters(visual, authoritativeState, targetClip) {
@@ -1983,7 +1435,9 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   }
 
   const hitAlpha = Math.max(0, Math.min(1, visual.hitReactionTime / REMOTE_HIT_REACTION_DURATION));
-  const deathClip = !isAlive ? resolveRemoteDeathClip(visual, player, authoritativeState) : null;
+  const deathClip = !isAlive
+    ? resolveRemoteDeathClipPolicy(visual, player, authoritativeState, findRemoteClipAction)
+    : null;
   if (!isAlive && deathClip && visual.fullBodyActionClip !== normalizeRemoteClipName(deathClip)) {
     playRemoteDeathClip(visual, player, authoritativeState);
   }
@@ -2025,14 +1479,45 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
       ? debugSettings.freezeClip
       : selectTargetClip(authoritativeState, presentationState);
     if (debugSettings.freezePose) {
-      freezeRemoteCharacterClip(visual, targetClip);
+      visual.animationDebugState = {
+        presentationState,
+        targetClip,
+        baseClip: targetClip,
+        activeCharacterClip: visual.activeCharacterClip ?? null,
+        activeUpperBodyClip: visual.activeUpperBodyClip ?? null,
+        fullBodyActionClip: visual.fullBodyActionClip ?? null,
+        upperBodyActionTime: Number(visual.upperBodyActionTime ?? 0),
+        fullBodyActionTime: Number(visual.fullBodyActionTime ?? 0),
+        fireBaseLocked: false,
+        freezePose: true,
+      };
+      freezeRemoteCharacterClip(visual, targetClip, {
+        captureAimBoneBasePose: captureRemoteAimBoneBasePose,
+      });
     } else {
       const fullBodyActionClip = updateRemoteFullBodyAction(visual, delta);
-      setRemoteCharacterClip(visual, fullBodyActionClip ?? targetClip);
+      const delayedBaseTargetClip = resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta);
+      const fireBaseLocked = shouldLockFireBaseClip(visual, delayedBaseTargetClip);
+      const baseClip = fireBaseLocked
+        ? REMOTE_CLIPS.fire
+        : delayedBaseTargetClip;
+      setRemoteCharacterClip(visual, fullBodyActionClip ?? baseClip);
       updateClipPlaybackParameters(visual, authoritativeState, targetClip);
       updateRemoteUpperBodyAction(visual, delta);
       visual.characterMixer.update(delta);
       captureRemoteAimBoneBasePose(visual);
+      visual.animationDebugState = {
+        presentationState,
+        targetClip,
+        baseClip,
+        activeCharacterClip: visual.activeCharacterClip ?? null,
+        activeUpperBodyClip: visual.activeUpperBodyClip ?? null,
+        fullBodyActionClip: visual.fullBodyActionClip ?? null,
+        upperBodyActionTime: Number(visual.upperBodyActionTime ?? 0),
+        fullBodyActionTime: Number(visual.fullBodyActionTime ?? 0),
+        fireBaseLocked,
+        freezePose: false,
+      };
     }
     if (visual.characterRoot) {
       const currentModelScaleSetting = getRemoteCharacterModelScale();
@@ -2267,8 +1752,6 @@ export class RemotePlayerPresenter {
 
       const authoritativeSnapshots = authoritativeBuffers.get(player.playerId) ?? [];
       const authoritativeState = authoritativeSnapshots.at?.(-1) ?? null;
-      const rewindMs = getLagCompensationRewindMs(this.debugPingRoundTripMs);
-      const rewoundState = interpolateRemotePlayerSnapshotAtTime(authoritativeSnapshots, getTimelineNow() - rewindMs);
       const renderPlayer = player;
       visual.team = renderPlayer.team ?? authoritativeState?.team ?? null;
       ensureRemoteCharacterModel(visual);
@@ -2279,126 +1762,43 @@ export class RemotePlayerPresenter {
       });
       const hideForSpectator = this.spectatorTargetPlayerId != null && player.playerId === this.spectatorTargetPlayerId;
       visual.root.visible = !hideForSpectator;
-      const debugEnabled = this.showHitVolumeDebug && !hideForSpectator;
-      visual.hitVolumeDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showLatestHitboxes;
-      visual.positionDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showLatestMarkers && Boolean(authoritativeState?.position);
-      visual.rewoundHitVolumeDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showRewoundHitboxes;
-      visual.rewoundPositionDebugGroup.group.visible = debugEnabled && this.hitboxDebugSettings.showRewoundMarkers && Boolean(rewoundState?.position);
-      if (this.showHitVolumeDebug && !hideForSpectator && authoritativeState?.position) {
-        REMOTE_DEBUG_RENDERED_POSITION.copy(visual.root.position);
-        REMOTE_DEBUG_AUTHORITATIVE_POSITION.set(
-          Number(authoritativeState.position.x ?? 0),
-          Number(authoritativeState.position.y ?? 0),
-          Number(authoritativeState.position.z ?? 0),
-        );
-        REMOTE_DEBUG_POSITION_DELTA.subVectors(REMOTE_DEBUG_AUTHORITATIVE_POSITION, REMOTE_DEBUG_RENDERED_POSITION);
-        updateRemotePositionDebugGroup(
-          visual.positionDebugGroup,
-          REMOTE_DEBUG_RENDERED_POSITION,
-          REMOTE_DEBUG_AUTHORITATIVE_POSITION,
-        );
-        visual.latestDebugState = {
-          playerId: player.playerId,
-          displayName: player.displayName ?? authoritativeState.displayName ?? player.playerId,
-          renderedPosition: {
-            x: REMOTE_DEBUG_RENDERED_POSITION.x,
-            y: REMOTE_DEBUG_RENDERED_POSITION.y,
-            z: REMOTE_DEBUG_RENDERED_POSITION.z,
-          },
-          authoritativePosition: {
-            x: REMOTE_DEBUG_AUTHORITATIVE_POSITION.x,
-            y: REMOTE_DEBUG_AUTHORITATIVE_POSITION.y,
-            z: REMOTE_DEBUG_AUTHORITATIVE_POSITION.z,
-          },
-          delta: {
-            x: REMOTE_DEBUG_POSITION_DELTA.x,
-            y: REMOTE_DEBUG_POSITION_DELTA.y,
-            z: REMOTE_DEBUG_POSITION_DELTA.z,
-          },
-          distance: REMOTE_DEBUG_POSITION_DELTA.length(),
-          horizontalDistance: Math.hypot(REMOTE_DEBUG_POSITION_DELTA.x, REMOTE_DEBUG_POSITION_DELTA.z),
-          snapshotAgeMs: Number.isFinite(authoritativeState.receivedAt) ? Math.max(0, getTimelineNow() - authoritativeState.receivedAt) : null,
-        };
-      } else {
-        visual.latestDebugState = null;
-      }
-      if (debugEnabled && this.hitboxDebugSettings.showLatestHitboxes) {
-        const debugSettings = getRemoteDebugSettings();
-        const preferLocalHitboxDebug = Boolean(debugSettings.localHitboxDebug);
-        const usedAuthoritativeHitboxes = !preferLocalHitboxDebug && updateRemoteAuthoritativeHitVolumeDebugGroup(
-          visual.hitVolumeDebugGroup,
-          authoritativeState?.hitboxes,
-        );
-        if (!usedAuthoritativeHitboxes) {
-          const usedBoneDrivenHitboxes = updateRemoteBoneDrivenHitVolumeDebugGroup(
-            visual.hitVolumeDebugGroup,
-            visual.characterHitBones,
-          );
-          if (!usedBoneDrivenHitboxes) {
-            updateRemoteHitVolumeDebugGroup(visual.hitVolumeDebugGroup, {
-              position: player.position,
-              yaw: player.yaw,
-              currentHeight: player.currentHeight ?? authoritativeState?.currentHeight,
-              isCrouched: player.isCrouched ?? authoritativeState?.isCrouched,
-              activeWeaponKey: authoritativeState?.activeWeaponKey ?? player.activeWeaponKey,
-            });
-          }
-        }
-      }
-      if (debugEnabled && this.hitboxDebugSettings.showRewoundHitboxes) {
-        updateRemoteAuthoritativeHitVolumeDebugGroup(
-          visual.rewoundHitVolumeDebugGroup,
-          rewoundState?.hitboxes,
-        );
-      }
-      if (debugEnabled && this.hitboxDebugSettings.showRewoundMarkers && rewoundState?.position) {
-        REMOTE_DEBUG_RENDERED_POSITION.copy(visual.root.position);
-        REMOTE_DEBUG_AUTHORITATIVE_POSITION.set(
-          Number(rewoundState.position.x ?? 0),
-          Number(rewoundState.position.y ?? 0),
-          Number(rewoundState.position.z ?? 0),
-        );
-        updateRemotePositionDebugGroup(
-          visual.rewoundPositionDebugGroup,
-          REMOTE_DEBUG_RENDERED_POSITION,
-          REMOTE_DEBUG_AUTHORITATIVE_POSITION,
-        );
-      }
-      if (visual.latestDebugState) {
-        if (rewoundState?.position) {
-          REMOTE_DEBUG_RENDERED_POSITION.copy(visual.root.position);
-          REMOTE_DEBUG_AUTHORITATIVE_POSITION.set(
-            Number(rewoundState.position.x ?? 0),
-            Number(rewoundState.position.y ?? 0),
-            Number(rewoundState.position.z ?? 0),
-          );
-          REMOTE_DEBUG_POSITION_DELTA.subVectors(REMOTE_DEBUG_AUTHORITATIVE_POSITION, REMOTE_DEBUG_RENDERED_POSITION);
-          visual.latestDebugState.rewoundPosition = {
-            x: REMOTE_DEBUG_AUTHORITATIVE_POSITION.x,
-            y: REMOTE_DEBUG_AUTHORITATIVE_POSITION.y,
-            z: REMOTE_DEBUG_AUTHORITATIVE_POSITION.z,
-          };
-          visual.latestDebugState.rewoundDelta = {
-            x: REMOTE_DEBUG_POSITION_DELTA.x,
-            y: REMOTE_DEBUG_POSITION_DELTA.y,
-            z: REMOTE_DEBUG_POSITION_DELTA.z,
-          };
-          visual.latestDebugState.rewoundDistance = REMOTE_DEBUG_POSITION_DELTA.length();
-          visual.latestDebugState.rewoundHorizontalDistance = Math.hypot(REMOTE_DEBUG_POSITION_DELTA.x, REMOTE_DEBUG_POSITION_DELTA.z);
-          visual.latestDebugState.rewindMs = rewindMs;
-          visual.latestDebugState.rewoundSnapshotAgeMs = Number.isFinite(rewoundState.receivedAt)
-            ? Math.max(0, getTimelineNow() - rewoundState.receivedAt)
-            : null;
-        } else {
-          visual.latestDebugState.rewoundPosition = null;
-          visual.latestDebugState.rewoundDelta = null;
-          visual.latestDebugState.rewoundDistance = 0;
-          visual.latestDebugState.rewoundHorizontalDistance = 0;
-          visual.latestDebugState.rewindMs = rewindMs;
-          visual.latestDebugState.rewoundSnapshotAgeMs = null;
-        }
-      }
-      this.maybeSendHitboxAudit(visual, renderPlayer, authoritativeState);
+      const debugSettings = getRemoteDebugSettings();
+      const hitboxSettings = getRemoteHitboxSettings();
+      syncRemoteHitboxDebug({
+        visual,
+        player,
+        authoritativeSnapshots,
+        authoritativeState,
+        showHitVolumeDebug: this.showHitVolumeDebug,
+        hitboxDebugSettings: this.hitboxDebugSettings,
+        hideForSpectator,
+        debugPingRoundTripMs: this.debugPingRoundTripMs,
+        localHitboxDebugEnabled: Boolean(debugSettings.localHitboxDebug),
+        localHitboxSettings: {
+          headOffset: hitboxSettings.headOffset,
+          headRadius: hitboxSettings.headRadius,
+          headSize: hitboxSettings.headSize,
+          torsoRadius: hitboxSettings.torsoRadius,
+          torsoLengthPadding: hitboxSettings.torsoLengthPadding,
+          pelvisRadius: hitboxSettings.pelvisRadius,
+          pelvisLengthPadding: hitboxSettings.pelvisLengthPadding,
+          armRadius: hitboxSettings.armRadius,
+          armLengthPadding: hitboxSettings.armLengthPadding,
+          handRadius: hitboxSettings.handRadius,
+          legRadius: hitboxSettings.legRadius,
+          legLengthPadding: hitboxSettings.legLengthPadding,
+        },
+        standHeight: REMOTE_PLAYER_STAND_HEIGHT,
+      });
+      maybeSendRemoteHitboxAudit({
+        showHitVolumeDebug: this.showHitVolumeDebug,
+        sendHitboxAudit: this.sendHitboxAudit,
+        visual,
+        renderPlayer,
+        authoritativeState,
+        hitboxSettings,
+        findClipAction: findRemoteClipAction,
+      });
     }
 
     for (const [playerId, visual] of this.remotePlayerMeshes) {
@@ -2473,140 +1873,10 @@ export class RemotePlayerPresenter {
   }
 
   getDebugState() {
-    let focus = null;
-    for (const visual of this.remotePlayerMeshes.values()) {
-      if (!visual?.latestDebugState) {
-        continue;
-      }
-      if (!focus || Number(visual.latestDebugState.horizontalDistance ?? 0) > Number(focus.horizontalDistance ?? 0)) {
-        focus = visual.latestDebugState;
-      }
-    }
-
-    return {
-      showHitVolumeDebug: this.showHitVolumeDebug,
-      trackedRemoteCount: this.remotePlayerMeshes.size,
-      focusPlayerId: focus?.playerId ?? null,
-      focusDisplayName: focus?.displayName ?? null,
-      renderedPosition: focus?.renderedPosition ?? null,
-      authoritativePosition: focus?.authoritativePosition ?? null,
-      delta: focus?.delta ?? null,
-      distance: focus?.distance ?? 0,
-      horizontalDistance: focus?.horizontalDistance ?? 0,
-      snapshotAgeMs: focus?.snapshotAgeMs ?? null,
-      rewoundPosition: focus?.rewoundPosition ?? null,
-      rewoundDelta: focus?.rewoundDelta ?? null,
-      rewoundDistance: focus?.rewoundDistance ?? 0,
-      rewoundHorizontalDistance: focus?.rewoundHorizontalDistance ?? 0,
-      rewoundSnapshotAgeMs: focus?.rewoundSnapshotAgeMs ?? null,
-      rewindMs: focus?.rewindMs ?? 0,
-      settings: this.getHitboxDebugSettings(),
-    };
-  }
-
-  maybeSendHitboxAudit(visual, renderPlayer, authoritativeState) {
-    if (!this.showHitVolumeDebug || !this.sendHitboxAudit || !visual?.characterHitBones || !authoritativeState?.hitboxDebug) {
-      return;
-    }
-
-    const now = Date.now();
-    if (now - (visual.lastSentHitboxAuditAt ?? 0) < 750) {
-      return;
-    }
-
-    for (const [key, point] of Object.entries(REMOTE_LOCAL_HITBOX_POINTS)) {
-      const bone = visual.characterHitBones[key];
-      if (!bone?.getWorldPosition) {
-        continue;
-      }
-      bone.getWorldPosition(REMOTE_HITBOX_WORLD_POINT_A);
-      point.x = REMOTE_HITBOX_WORLD_POINT_A.x;
-      point.y = REMOTE_HITBOX_WORLD_POINT_A.y;
-      point.z = REMOTE_HITBOX_WORLD_POINT_A.z;
-    }
-
-    const hitboxSettings = getRemoteHitboxSettings();
-    const localSnapshot = buildRemoteHitboxSnapshotFromPoints({
-      points: REMOTE_LOCAL_HITBOX_POINTS,
-      headOffset: hitboxSettings.headOffset,
-      headRadius: hitboxSettings.headRadius,
-      headSize: hitboxSettings.headSize,
-      torsoRadius: hitboxSettings.torsoRadius,
-      torsoLengthPadding: hitboxSettings.torsoLengthPadding,
-      pelvisRadius: hitboxSettings.pelvisRadius,
-      pelvisLengthPadding: hitboxSettings.pelvisLengthPadding,
-      armRadius: hitboxSettings.armRadius,
-      armLengthPadding: hitboxSettings.armLengthPadding,
-      handRadius: hitboxSettings.handRadius,
-      legRadius: hitboxSettings.legRadius,
-      legLengthPadding: hitboxSettings.legLengthPadding,
-    }, createRemoteHitboxSnapshot());
-
-    const signature = JSON.stringify({
-      playerId: renderPlayer?.playerId,
-      activeClip: authoritativeState.hitboxDebug.activeClip,
-      clipTime: Number(authoritativeState.hitboxDebug.clipTime ?? 0).toFixed(3),
-      position: authoritativeState.position,
-      localHead: localSnapshot?.head?.center ?? null,
-      serverHead: authoritativeState.hitboxes?.head?.center ?? null,
-    });
-    if (visual.lastSentHitboxAuditSignature === signature) {
-      return;
-    }
-    visual.lastSentHitboxAuditAt = now;
-    visual.lastSentHitboxAuditSignature = signature;
-
-    const visiblePoints = {};
-    for (const [key, bone] of Object.entries(visual.characterHitBones)) {
-      if (!bone?.getWorldPosition) {
-        visiblePoints[key] = null;
-        continue;
-      }
-      bone.getWorldPosition(REMOTE_HITBOX_WORLD_POINT_A);
-      visiblePoints[key] = {
-        x: REMOTE_HITBOX_WORLD_POINT_A.x,
-        y: REMOTE_HITBOX_WORLD_POINT_A.y,
-        z: REMOTE_HITBOX_WORLD_POINT_A.z,
-      };
-    }
-
-    const activeClientAction = visual.activeCharacterClip
-      ? findRemoteClipAction(visual, visual.activeCharacterClip)
-      : null;
-
-    this.sendHitboxAudit({
-      capturedAt: Date.now(),
-      playerId: renderPlayer?.playerId ?? authoritativeState.playerId ?? null,
-      renderPlayer: {
-        position: renderPlayer?.position ?? null,
-        yaw: renderPlayer?.yaw ?? null,
-        pitch: renderPlayer?.pitch ?? null,
-        currentHeight: renderPlayer?.currentHeight ?? null,
-        presentationState: renderPlayer?.presentationState ?? null,
-      },
-      authoritativeState: {
-        position: authoritativeState.position,
-        yaw: authoritativeState.yaw,
-        pitch: authoritativeState.pitch,
-        currentHeight: authoritativeState.currentHeight,
-        presentationState: authoritativeState.presentationState,
-        hitboxes: authoritativeState.hitboxes ?? null,
-        hitboxDebug: authoritativeState.hitboxDebug ?? null,
-      },
-      clientAnimationDebug: {
-        activeClip: visual.activeCharacterClip ?? null,
-        clipTime: activeClientAction ? Number(activeClientAction.time ?? 0) : null,
-        clipPlaybackSpeed: activeClientAction
-          ? Number(activeClientAction.getEffectiveTimeScale?.() ?? 1)
-          : null,
-      },
-      clientVisibleBones: {
-        head: visiblePoints.head ?? null,
-        neck: visiblePoints.neck ?? null,
-        spine: visiblePoints.spine ?? null,
-        pelvis: visiblePoints.pelvis ?? null,
-      },
-      clientLocalSnapshot: pickAuditCoreSnapshot(localSnapshot),
-    });
+    return collectRemoteHitboxDebugState(
+      this.remotePlayerMeshes,
+      this.showHitVolumeDebug,
+      this.hitboxDebugSettings,
+    );
   }
 }
