@@ -19,6 +19,7 @@ export const PLAYER_MOVEMENT_DEFAULTS = {
   crouchFatigueMinLerpMultiplier: 0.45,
   maxStepHeight: 0.45,
 };
+export const PLAYER_CROUCH_PRESENTATION_ENTER_THRESHOLD = 0.55;
 const GROUNDED_PROBE_EPSILON = 0.04;
 const GROUNDED_STICK_EPSILON = 0.08;
 const LANDING_SNAP_PADDING = 0.14;
@@ -45,6 +46,23 @@ function clamp(value, min, max) {
 
 function lerp(start, end, alpha) {
   return start + (end - start) * alpha;
+}
+
+export function getPlayerCrouchFraction(currentHeight, config = PLAYER_MOVEMENT_DEFAULTS) {
+  const standHeight = Number(config?.standHeight ?? PLAYER_MOVEMENT_DEFAULTS.standHeight);
+  const crouchHeight = Number(config?.crouchHeight ?? PLAYER_MOVEMENT_DEFAULTS.crouchHeight);
+  const heightRange = Math.max(1e-6, standHeight - crouchHeight);
+  return clamp((standHeight - Number(currentHeight ?? standHeight)) / heightRange, 0, 1);
+}
+
+export function isPlayerPresentationCrouched(
+  state,
+  {
+    config = PLAYER_MOVEMENT_DEFAULTS,
+    threshold = PLAYER_CROUCH_PRESENTATION_ENTER_THRESHOLD,
+  } = {},
+) {
+  return getPlayerCrouchFraction(state?.currentHeight, config) >= Number(threshold ?? PLAYER_CROUCH_PRESENTATION_ENTER_THRESHOLD);
 }
 
 function getGroundSupportInfo({

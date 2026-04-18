@@ -5,6 +5,7 @@ import { createTeamSelectOverlay } from './createTeamSelectOverlay.js';
 import { createHudClassicController } from './hudClassic.js';
 import { createHudObjectiveWidgetsController } from './hudObjectiveWidgets.js';
 import { createHudScoreboardController } from './hudScoreboard.js';
+import { collectHudDebugState } from './hudDebugState.js';
 import { getBombPulseIntervalSeconds } from '../../shared/bombObjective.js';
 
 const ATTACKER_ROSTER_ICON = '/icons/k3FcN65.png';
@@ -80,6 +81,7 @@ export function createHud({
   onSendChatMessage,
   getIgnoreLocalCorrections,
   getIsMovementTraceRecording,
+  getIsRemoteAnimationTraceRecording,
   getShowCrouchFatigueDebug,
   getSpectatorState,
   getAnnouncementText,
@@ -823,34 +825,17 @@ export function createHud({
       const deltaSeconds = Math.min(0.25, Math.max(0, (now - lastHudUpdateAt) / 1000));
       lastHudUpdateAt = now;
       const markDebugSnapshotRequested = Boolean(consumeMarkDebugSnapshotRequested?.());
-      const movement = playerController?.getDebugState?.() ?? {
-        grounded: true,
-        crouched: false,
-        speed: 0,
-        traceRecording: false,
-        correctionOffsetMagnitude: 0,
-        simulationDeltaMagnitude: 0,
-        movementMode: 'grounded',
-        positionText: '0.00, 0.00, 0.00',
-      };
-      movement.traceRecording = Boolean(getIsMovementTraceRecording?.());
-      const networkDebug = networkClient?.getDebugState?.() ?? {
-        connectionState: 'offline',
-        localMapId: null,
-        receivedPlayerStateCount: 0,
-        sameMapRemoteStateCount: 0,
-        filteredRemoteStateCount: 0,
-        receivedRemoteMaps: [],
-        latestSequence: 0,
-        acknowledgedSequence: 0,
-        pendingInputCount: 0,
-        sequenceGap: 0,
-        snapshotAgeMs: -1,
-        lastPredictedDriftDistance: 0,
-        authoritativeUpdatesPerSecond: 0,
-        pendingJumpSend: false,
-      };
-      const remoteDebug = remotePlayerPresenter?.getDebugState?.() ?? null;
+      const {
+        movement,
+        networkDebug,
+        remoteDebug,
+      } = collectHudDebugState({
+        playerController,
+        networkClient,
+        remotePlayerPresenter,
+        isMovementTraceRecording: Boolean(getIsMovementTraceRecording?.()),
+        isRemoteAnimationTraceRecording: Boolean(getIsRemoteAnimationTraceRecording?.()),
+      });
       displaySpeed += (movement.speed - displaySpeed) * 0.18;
       const utilityHudState = utilityManager?.getHudState?.() ?? null;
       const objectiveState = networkClient?.getObjectiveState?.() ?? null;
@@ -878,7 +863,7 @@ export function createHud({
       const utilityStatusSuffix = utilityHudState?.statusText ? ` - ${utilityHudState.statusText}` : '';
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}${utilityStatusSuffix}`;
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
-      const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}`;
+      const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}${networkDebug.remoteTraceRecording ? ' - RTRACE(F11)' : ''}`;
       const supportText = ` - support ${Number(movement.supportRatio ?? 0).toFixed(2)} - gd ${Number(movement.groundDistance ?? 0).toFixed(2)}`;
       const crouchFatigueText = getShowCrouchFatigueDebug?.()
         ? ` - cf ${Number(movement.crouchFatigue ?? 0).toFixed(2)} - ct ${Math.max(0, Math.floor(Number(movement.crouchToggleCount ?? 0)))} - cdt ${Number.isFinite(movement.timeSinceCrouchToggle) ? Number(movement.timeSinceCrouchToggle).toFixed(2) : '--'}s - CFD`

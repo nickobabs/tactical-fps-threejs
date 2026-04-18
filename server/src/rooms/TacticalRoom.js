@@ -6,6 +6,7 @@ import { Room } from '@colyseus/core';
 import { CollisionWorld } from '../../../src/core/physics/CollisionWorld.js';
 import {
   createPlayerMovementState,
+  isPlayerPresentationCrouched,
   simulatePlayerMovement,
 } from '../../../src/shared/playerMovement.js';
 import {
@@ -1898,7 +1899,7 @@ export class TacticalRoom extends Room {
       Number(velocity?.z ?? 0),
     );
     const moving = horizontalSpeed > PLAYER_MOVE_SPEED_EPSILON;
-    const crouched = Boolean(player.motionState?.isCrouched);
+      const crouched = isPlayerPresentationCrouched(player.motionState);
 
     if (crouched) {
       return moving ? 'crouch-move' : 'crouch-idle';

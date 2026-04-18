@@ -23,6 +23,9 @@ See also:
 - [session-note-2026-04-18-tactical-room-payload-refactor.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-tactical-room-payload-refactor.md)
   - `TacticalRoom` now delegates event/snapshot payload shaping more cleanly
   - server authority, validation, and broadcast sequencing still remain local to the room
+- [session-note-2026-04-18-shared-pose-parity-plan.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-18-shared-pose-parity-plan.md)
+  - next meaningful multiplayer-quality step is shared pose/blend evaluation between visible remote presentation and the authoritative hitbox rig
+  - crouch-fatigue, ADAD, and transition hitbox pops are now considered pose-parity problems more than simple threshold problems
 
 ## What Is Already In Better Shape
 
@@ -118,6 +121,7 @@ See also:
   - these are functionally important and still fairly dense
   - they should only be refactored when there is a clear ownership win, not just because they are large
   - the first useful server combat and payload extractions are now done, so future slices should target state-application or event-construction boundaries only if they are equally clear
+  - the next clear structural win is likely not another small threshold tweak, but a shared pose/blend-state layer consumed by both `RemotePlayerPresenter` and `remoteHitboxRig`
 - Connection lifecycle in [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
   - future cleanup here must preserve explicit active-room ownership
   - stale async room callbacks are now a known regression risk
@@ -148,6 +152,7 @@ See also:
   - server authority handoff
   - remote presentation / hitbox parity
   - connection lifecycle ownership and stale async callbacks
+- For remote multiplayer polish, prefer shared pose-state extraction over piling on more one-off crouch / transition heuristics
 - Rebuild after each code refactor slice
 
 ## Practical Next Refactor Order
@@ -158,3 +163,4 @@ See also:
 4. If server combat work continues, keep extracting only narrow authority-adjacent helpers from `TacticalRoom` without moving state mutation/broadcast sequencing prematurely.
 5. Treat server payload shaping as mostly “done enough” unless a similarly clear serialization boundary appears.
 6. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.
+7. For the next substantial multiplayer-quality pass, prefer a shared remote pose/blend-state module used by both visible presentation and authoritative hitbox evaluation.

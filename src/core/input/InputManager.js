@@ -7,7 +7,7 @@ import {
   sanitizeBindingValue,
 } from './keyBindings.js';
 
-const PREVENT_DEFAULT_KEYS = new Set(['F3', 'F6', 'F7', 'F9', 'F10', 'Tab']);
+const PREVENT_DEFAULT_KEYS = new Set(['F3', 'F6', 'F7', 'F9', 'F10', 'F11', 'Tab']);
 const CTRL_META_BLOCK_ACTIONS = [
   'moveForward',
   'moveBackward',

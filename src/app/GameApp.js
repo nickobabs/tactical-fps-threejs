@@ -32,6 +32,7 @@ const DEFAULT_HORIZONTAL_FOV = 103;
 const DEFAULT_MOUSE_SENSITIVITY = 0.0011;
 const DEFAULT_MASTER_VOLUME = 0.6;
 const MOVEMENT_TRACE_STORAGE_KEY = 'tactical-fps-threejs-movement-trace';
+const REMOTE_ANIMATION_TRACE_STORAGE_KEY = 'tactical-fps-threejs-remote-animation-trace';
 const PLAYER_NAME_STORAGE_KEY = 'tactical-fps-threejs-player-name';
 const HUD_MODE_STORAGE_KEY = 'tactical-fps-threejs-hud-mode';
 const SETTINGS_STORAGE_KEY = 'tactical-fps-threejs-settings';
@@ -152,6 +153,14 @@ function persistSettings({ mouseSensitivity, horizontalFov, masterVolume }) {
 }
 
 function getMovementTraceUploadUrl(serverUrl) {
+  return getDebugUploadUrl(serverUrl, '/debug/movement-trace');
+}
+
+function getRemoteAnimationTraceUploadUrl(serverUrl) {
+  return getDebugUploadUrl(serverUrl, '/debug/remote-animation-trace');
+}
+
+function getDebugUploadUrl(serverUrl, pathName) {
   if (!serverUrl) {
     return null;
   }
@@ -159,7 +168,7 @@ function getMovementTraceUploadUrl(serverUrl) {
   try {
     const url = new URL(serverUrl);
     url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-    url.pathname = '/debug/movement-trace';
+    url.pathname = pathName;
     url.search = '';
     url.hash = '';
     return url.toString();
@@ -187,6 +196,8 @@ export class GameApp {
     this.networkJumpQueued = false;
     this.lastMovementTraceSampleAt = 0;
     this.movementTraceSamples = [];
+    this.lastRemoteAnimationTraceSampleAt = 0;
+    this.remoteAnimationTraceSamples = [];
     this.fatalErrorOverlay = new FatalErrorOverlay(this.root);
     this.localSimulationLoop = new FixedStepLoop(NETCODE_SIMULATION_STEP);
     this.audioManager = createGameAudioManager();
@@ -404,11 +415,12 @@ export class GameApp {
       getIsLoading: () => this.isLoadingMap,
       getLoadingStatus: () => this.loadingStatus,
       getKillfeedEntries: () => this.killfeedEntries,
-      getChatEntries: () => this.chatEntries,
-      onSendChatMessage: (message) => this.sendChatMessage(message),
-      getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
-      getIsMovementTraceRecording: () => this.debugController.isMovementTraceRecording(),
-      getShowCrouchFatigueDebug: () => this.showCrouchFatigueDebug,
+        getChatEntries: () => this.chatEntries,
+        onSendChatMessage: (message) => this.sendChatMessage(message),
+        getIgnoreLocalCorrections: () => this.debugController.getIgnoreLocalCorrections(),
+        getIsMovementTraceRecording: () => this.debugController.isMovementTraceRecording(),
+        getIsRemoteAnimationTraceRecording: () => this.debugController.isRemoteAnimationTraceRecording(),
+        getShowCrouchFatigueDebug: () => this.showCrouchFatigueDebug,
       getSpectatorState: () => this.getSpectatorUiState(),
       getAnnouncementText: () => this.getHudAnnouncementText(),
       consumeMarkDebugSnapshotRequested: () => this.debugController.consumeMarkDebugSnapshotRequested(),
@@ -1034,6 +1046,16 @@ export class GameApp {
       this.lastMovementTraceSampleAt = 0;
     }
 
+    if (frameInput.justPressed.has('F11')) {
+      const recording = this.debugController.toggleRemoteAnimationTraceRecording();
+      if (recording) {
+        this.remoteAnimationTraceSamples = [];
+      } else {
+        this.flushRemoteAnimationTrace();
+      }
+      this.lastRemoteAnimationTraceSampleAt = 0;
+    }
+
     if (frameInput.justPressed.has('F3')) {
       this.remotePlayerPresenter.toggleHitVolumeDebug();
     }
@@ -1482,6 +1504,7 @@ export class GameApp {
     this.updateRemotePlayers(delta);
     this.applySpectatorView(delta);
     this.recordMovementTraceIfNeeded();
+    this.recordRemoteAnimationTraceIfNeeded();
   }
 
   recordMovementTraceIfNeeded() {
@@ -1532,6 +1555,67 @@ export class GameApp {
     });
   }
 
+  recordRemoteAnimationTraceIfNeeded() {
+    if (!this.debugController.isRemoteAnimationTraceRecording()) {
+      return;
+    }
+
+    const now = performance.now();
+    if (now - this.lastRemoteAnimationTraceSampleAt < 33) {
+      return;
+    }
+    this.lastRemoteAnimationTraceSampleAt = now;
+
+    const localPlayerState = this.networkClient.getLocalPlayerState?.() ?? null;
+    const remoteDebug = this.remotePlayerPresenter.getDebugState?.() ?? null;
+    const network = this.networkClient.getDebugState?.() ?? null;
+    if (!remoteDebug?.focusPlayerId) {
+      return;
+    }
+
+    this.remoteAnimationTraceSamples.push({
+      recordedAt: Date.now(),
+      perfNow: now,
+      mapId: this.selectedMapId,
+      localPlayer: localPlayerState
+        ? {
+          playerId: String(localPlayerState.playerId ?? this.networkClient.playerId ?? ''),
+          position: localPlayerState.position ? { ...localPlayerState.position } : null,
+          currentHeight: Number(localPlayerState.currentHeight ?? 0),
+          isCrouched: Boolean(localPlayerState.isCrouched),
+          crouchFatigue: Number(localPlayerState.crouchFatigue ?? 0),
+          crouchToggleCount: Number(localPlayerState.crouchToggleCount ?? 0),
+          timeSinceCrouchToggle: localPlayerState.timeSinceCrouchToggle == null
+            ? null
+            : Number(localPlayerState.timeSinceCrouchToggle),
+        }
+        : null,
+      remote: {
+        focusPlayerId: remoteDebug.focusPlayerId,
+        focusDisplayName: remoteDebug.focusDisplayName,
+        renderedPosition: remoteDebug.renderedPosition ? { ...remoteDebug.renderedPosition } : null,
+        authoritativePosition: remoteDebug.authoritativePosition ? { ...remoteDebug.authoritativePosition } : null,
+        delta: remoteDebug.delta ? { ...remoteDebug.delta } : null,
+        snapshotAgeMs: remoteDebug.snapshotAgeMs,
+        rewoundPosition: remoteDebug.rewoundPosition ? { ...remoteDebug.rewoundPosition } : null,
+        rewoundDelta: remoteDebug.rewoundDelta ? { ...remoteDebug.rewoundDelta } : null,
+        rewoundSnapshotAgeMs: remoteDebug.rewoundSnapshotAgeMs,
+        rewindMs: remoteDebug.rewindMs,
+        animation: remoteDebug.animation ? { ...remoteDebug.animation } : null,
+        playerState: remoteDebug.playerState ? { ...remoteDebug.playerState } : null,
+      },
+      network: network
+        ? {
+          connectionState: network.connectionState,
+          pingRoundTripMs: Number(network.pingRoundTripMs ?? 0),
+          pingAverageMs: Number(network.pingAverageMs ?? 0),
+          snapshotAgeMs: Number(network.snapshotAgeMs ?? 0),
+          authoritativeUpdatesPerSecond: Number(network.authoritativeUpdatesPerSecond ?? 0),
+        }
+        : null,
+    });
+  }
+
   flushMovementTrace() {
     const payload = {
       recordedAt: Date.now(),
@@ -1571,8 +1655,49 @@ export class GameApp {
         const result = await response.json();
         console.info(`[GameApp] Wrote movement trace to ${result.filePath ?? 'debug file'}.`);
       })
+        .catch((error) => {
+          console.warn('[GameApp] Failed to write movement trace file.', error);
+        });
+  }
+
+  flushRemoteAnimationTrace() {
+    const payload = {
+      recordedAt: Date.now(),
+      mapId: this.selectedMapId,
+      samples: this.remoteAnimationTraceSamples,
+    };
+
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        window.localStorage.setItem(REMOTE_ANIMATION_TRACE_STORAGE_KEY, JSON.stringify(payload));
+        console.info(`[GameApp] Saved remote animation trace samples=${this.remoteAnimationTraceSamples.length} to localStorage key "${REMOTE_ANIMATION_TRACE_STORAGE_KEY}".`);
+      } catch (error) {
+        console.warn('[GameApp] Failed to persist remote animation trace.', error);
+      }
+    }
+
+    const uploadUrl = getRemoteAnimationTraceUploadUrl(this.networkClient?.serverUrl);
+    if (!uploadUrl || typeof fetch !== 'function') {
+      return;
+    }
+
+    void fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        console.info(`[GameApp] Wrote remote animation trace to ${result.filePath ?? 'debug file'}.`);
+      })
       .catch((error) => {
-        console.warn('[GameApp] Failed to write movement trace file.', error);
+        console.warn('[GameApp] Failed to write remote animation trace file.', error);
       });
   }
 

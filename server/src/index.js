@@ -15,8 +15,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const clientDistPath = path.resolve(__dirname, '../../dist');
 const movementTraceDebugDir = path.resolve(__dirname, '../../debug/movement-traces');
+const remoteAnimationTraceDebugDir = path.resolve(__dirname, '../../debug/remote-animation-traces');
 
-function getSafeTraceFileName(payload) {
+function getSafeTraceFileName(payload, prefix = 'movement-trace') {
   const recordedAt = Number(payload?.recordedAt ?? Date.now());
   const isoStamp = new Date(recordedAt).toISOString().replace(/[:.]/g, '-');
   const mapId = String(payload?.mapId ?? payload?.samples?.[0]?.mapId ?? 'unknown-map')
@@ -24,7 +25,7 @@ function getSafeTraceFileName(payload) {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     || 'unknown-map';
-  return `movement-trace-${isoStamp}-${mapId}.json`;
+  return `${prefix}-${isoStamp}-${mapId}.json`;
 }
 
 app.get('/health', (_request, response) => {
@@ -32,6 +33,19 @@ app.get('/health', (_request, response) => {
 });
 
 app.use('/debug/movement-trace', (request, response, next) => {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (request.method === 'OPTIONS') {
+    response.status(204).end();
+    return;
+  }
+
+  next();
+});
+
+app.use('/debug/remote-animation-trace', (request, response, next) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -62,6 +76,25 @@ app.post('/debug/movement-trace', async (request, response) => {
   } catch (error) {
     console.error('[server] Failed to write movement trace.', error);
     response.status(500).json({ ok: false, error: 'Failed to write movement trace.' });
+  }
+});
+
+app.post('/debug/remote-animation-trace', async (request, response) => {
+  const payload = request.body;
+  if (!payload || !Array.isArray(payload.samples)) {
+    response.status(400).json({ ok: false, error: 'Invalid remote animation trace payload.' });
+    return;
+  }
+
+  try {
+    await fs.mkdir(remoteAnimationTraceDebugDir, { recursive: true });
+    const fileName = getSafeTraceFileName(payload, 'remote-animation-trace');
+    const filePath = path.join(remoteAnimationTraceDebugDir, fileName);
+    await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    response.status(200).json({ ok: true, filePath });
+  } catch (error) {
+    console.error('[server] Failed to write remote animation trace.', error);
+    response.status(500).json({ ok: false, error: 'Failed to write remote animation trace.' });
   }
 });
 

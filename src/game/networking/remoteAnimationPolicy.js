@@ -5,6 +5,7 @@ import {
   shouldUseRemoteWalkClip,
   usesRemoteMeleeClipSet,
 } from '../../shared/remoteCharacterConfig.js';
+import { isPlayerPresentationCrouched } from '../../shared/playerMovement.js';
 
 const MOVEMENT_DIRECTION_EPSILON = 0.08;
 const REMOTE_MIN_MOVEMENT_PLAYBACK_SCALE = 0.55;
@@ -45,7 +46,7 @@ export function selectMovementClip(authoritativeState, presentationState) {
   }
 
   const velocity = authoritativeState?.velocity ?? null;
-  const isCrouched = Boolean(authoritativeState?.isCrouched);
+  const isCrouched = isPlayerPresentationCrouched(authoritativeState);
   if (!velocity) {
     return isCrouched ? REMOTE_CLIPS.crouchIdle : REMOTE_CLIPS.idle;
   }

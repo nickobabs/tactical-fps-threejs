@@ -13,6 +13,7 @@ export class GameDebugController {
     this.ignoreLocalCorrections = false;
     this.markDebugSnapshotRequested = false;
     this.movementTraceRecording = false;
+    this.remoteAnimationTraceRecording = false;
     this.debugMarkers = [];
     this.nextDebugMarkerId = 1;
     this.showCollisionDebug = false;
@@ -46,6 +47,15 @@ export class GameDebugController {
   toggleMovementTraceRecording() {
     this.movementTraceRecording = !this.movementTraceRecording;
     return this.movementTraceRecording;
+  }
+
+  isRemoteAnimationTraceRecording() {
+    return this.remoteAnimationTraceRecording;
+  }
+
+  toggleRemoteAnimationTraceRecording() {
+    this.remoteAnimationTraceRecording = !this.remoteAnimationTraceRecording;
+    return this.remoteAnimationTraceRecording;
   }
 
   consumeMarkDebugSnapshotRequested() {

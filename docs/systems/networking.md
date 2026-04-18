@@ -118,6 +118,10 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - on `player-fire`, hit validation rewinds against the shooter's estimated one-way latency plus that interpolation delay
   - this rewind affects hit validation only; it does not rewind or snap victim movement
   - remote latest-hitbox debug and visible remote locomotion now also share a small idle-entry dwell concept across client presenter and server hitbox rig to avoid one-frame idle pops during fast direction reversals
+  - the next planned quality step is shared pose/blend evaluation between:
+    - `src/game/networking/RemotePlayerPresenter.js`
+    - `server/src/remoteHitboxRig.js`
+  - that work is intended to reduce pose mismatch during crouch-fatigue transitions, ADAD spam, and other fast animation-state changes
 - The first spectator flow is client-reconstructed rather than server-streamed:
   - dead clients wait `2` seconds, then spectate an alive teammate if one exists
   - the spectator camera is rebuilt from replicated teammate `position`, `currentHeight`, `yaw`, and `pitch`
@@ -247,6 +251,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
     - `torsoLengthPadding = -0.085`
   - the head volume is no longer limited to a perfect sphere; the authoritative path now supports a shaped head ellipsoid
 - `NETDEBUG` instrumentation exists in the HUD/devtools path for local multiplayer diagnosis and is intentionally being kept available while multiplayer expands
+- temporary remote animation trace capture now also exists for deeper pose debugging:
+  - `F11` toggles remote animation trace capture
+  - trace is stored in browser `localStorage` under `tactical-fps-threejs-remote-animation-trace`
+  - trace is also written to `debug/remote-animation-traces/`
+  - current trace payload includes focused remote clip state, crouch/current-height state, and latest/rewound debug positions
 - Current live ping diagnostics include:
   - `server_url`
   - `ping_rtt_ms`

@@ -415,6 +415,17 @@ export function syncRemoteHitboxDebug({
           freezePose: Boolean(visual.animationDebugState.freezePose),
         }
         : null,
+      playerState: {
+        currentHeight: Number(player.currentHeight ?? authoritativeState?.currentHeight ?? 0),
+        isCrouched: Boolean(player.isCrouched ?? authoritativeState?.isCrouched),
+        crouchFatigue: Number(authoritativeState?.crouchFatigue ?? 0),
+        crouchToggleCount: Number(authoritativeState?.crouchToggleCount ?? 0),
+        timeSinceCrouchToggle: authoritativeState?.timeSinceCrouchToggle == null
+          ? null
+          : Number(authoritativeState.timeSinceCrouchToggle),
+        activeWeaponKey: String(authoritativeState?.activeWeaponKey ?? player.activeWeaponKey ?? 'rifle'),
+        presentationState: String(player.presentationState ?? authoritativeState?.presentationState ?? 'idle'),
+      },
     };
   } else {
     visual.latestDebugState = null;
@@ -529,6 +540,7 @@ export function collectRemoteHitboxDebugState(remotePlayerMeshes, showHitVolumeD
     rewoundSnapshotAgeMs: focus?.rewoundSnapshotAgeMs ?? null,
     rewindMs: focus?.rewindMs ?? 0,
     animation: focus?.animation ?? null,
+    playerState: focus?.playerState ?? null,
     settings: { ...hitboxDebugSettings },
   };
 }

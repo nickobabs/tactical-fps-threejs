@@ -19,6 +19,7 @@ import {
 import {
   getTimelineNow,
 } from '../../shared/remoteTimeline.js';
+import { isPlayerPresentationCrouched } from '../../shared/playerMovement.js';
 import {
   getDefaultRemoteCharacterDefinition,
   getFallbackRemoteCharacterDefinition,
@@ -777,10 +778,11 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     upperBodyActionTime: 0,
     fullBodyActionClip: null,
     fullBodyActionTime: 0,
-    idleEntryCandidateClip: null,
-    idleEntryElapsed: 0,
-    lastNonIdleBaseClip: null,
-    characterLoadState: 'idle',
+      idleEntryCandidateClip: null,
+      idleEntryElapsed: 0,
+      lastNonIdleBaseClip: null,
+      lastRawCrouchState: null,
+      characterLoadState: 'idle',
     requestedCharacterDefinitionId: null,
     characterLoadRequestId: 0,
     characterWeaponBone: null,
@@ -796,6 +798,12 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     characterBasePosition: new THREE.Vector3(),
     team: null,
   };
+}
+
+function clearRemoteIdleEntryCarryover(visual) {
+  visual.idleEntryCandidateClip = null;
+  visual.idleEntryElapsed = 0;
+  visual.lastNonIdleBaseClip = null;
 }
 
 function getRemoteWeaponParent(visual) {
@@ -816,9 +824,7 @@ function setRemotePlayerWeapon(visual, weaponKey) {
   const crossesMeleeLocomotionBoundary = usesRemoteMeleeClipSet(previousWeaponKey)
     !== usesRemoteMeleeClipSet(nextWeaponKey);
   if (crossesMeleeLocomotionBoundary) {
-    visual.idleEntryCandidateClip = null;
-    visual.idleEntryElapsed = 0;
-    visual.lastNonIdleBaseClip = null;
+    clearRemoteIdleEntryCarryover(visual);
   }
 
   if (visual.weaponMesh) {
@@ -871,6 +877,45 @@ function shouldLockFireBaseClip(visual, targetClip) {
   return false;
 }
 
+function getRemoteIdleClipFamily(normalizedClipName) {
+  const normalizedStandingIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.idle);
+  const normalizedCrouchIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.crouchIdle);
+  const normalizedMeleeIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.meleeIdle);
+  const normalizedMeleeCrouchIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.meleeCrouchIdle);
+
+  if (normalizedClipName === normalizedStandingIdleClip) {
+    return 'stand';
+  }
+  if (normalizedClipName === normalizedCrouchIdleClip) {
+    return 'crouch';
+  }
+  if (normalizedClipName === normalizedMeleeIdleClip) {
+    return 'melee-stand';
+  }
+  if (normalizedClipName === normalizedMeleeCrouchIdleClip) {
+    return 'melee-crouch';
+  }
+  if (
+    normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.crouchWalk)
+    || normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.crouchBackward)
+  ) {
+    return 'crouch';
+  }
+  if (normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.meleeCrouchWalk)) {
+    return 'melee-crouch';
+  }
+  if (
+    normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.meleeWalkForward)
+    || normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.meleeWalkBackward)
+    || normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.meleeRunForward)
+    || normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.meleeStrafeLeft)
+    || normalizedClipName === normalizeRemoteClipName(REMOTE_CLIPS.meleeStrafeRight)
+  ) {
+    return 'melee-stand';
+  }
+  return 'stand';
+}
+
 function resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta) {
   const normalizedTargetClip = normalizeRemoteClipName(targetClip);
   const standingIdleClip = normalizeRemoteClipName(REMOTE_CLIPS.idle);
@@ -896,6 +941,14 @@ function resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta) {
   }
 
   const normalizedLastNonIdleBaseClip = normalizeRemoteClipName(lastNonIdleBaseClip);
+  const targetFamily = getRemoteIdleClipFamily(normalizedTargetClip);
+  const lastNonIdleFamily = getRemoteIdleClipFamily(normalizedLastNonIdleBaseClip);
+  if (targetFamily !== lastNonIdleFamily) {
+    visual.idleEntryCandidateClip = null;
+    visual.idleEntryElapsed = 0;
+    return targetClip;
+  }
+
   const shouldDelayIdleEntry = (
     (normalizedTargetClip === standingIdleClip && normalizedLastNonIdleBaseClip !== meleeIdleClip)
     || (normalizedTargetClip === crouchIdleClip && normalizedLastNonIdleBaseClip !== meleeCrouchIdleClip)
@@ -1294,6 +1347,11 @@ function updateRemoteAnimationPresentation(visual, {
   }
 
   const debugSettings = getRemoteDebugSettings();
+  const rawCrouchState = Boolean(authoritativeState?.isCrouched);
+  if (visual.lastRawCrouchState !== null && visual.lastRawCrouchState !== rawCrouchState) {
+    clearRemoteIdleEntryCarryover(visual);
+  }
+  visual.lastRawCrouchState = rawCrouchState;
   const targetClip = debugSettings.freezePose
     ? debugSettings.freezeClip
     : selectTargetClip(authoritativeState, presentationState);
@@ -1366,7 +1424,9 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
     Number(player.currentHeight ?? authoritativeState?.currentHeight ?? REMOTE_PLAYER_STAND_HEIGHT),
   );
   const isAlive = authoritativeState?.isAlive !== false;
-  const isCrouched = Boolean(player.isCrouched ?? authoritativeState?.isCrouched);
+  const isCrouched = isPlayerPresentationCrouched({
+    currentHeight: player.currentHeight ?? authoritativeState?.currentHeight,
+  });
   const cylinderHeight = Math.max(0.05, height - REMOTE_PLAYER_BODY_RADIUS * 2);
   const presentationState = String(player.presentationState ?? authoritativeState?.presentationState ?? 'idle');
   const isAir = presentationState === 'air';

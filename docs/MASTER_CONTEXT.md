@@ -488,6 +488,14 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
     - keep weapon/socket pitch visible
     - use only a narrow neck/head procedural aim-readability pass
     - avoid broad runtime upper/lower-body clip layering for locomotion states
+  - the next substantial multiplayer-quality step for remote hitboxes/presentation is shared pose/blend evaluation:
+    - visible remote presentation currently interpolates/blends between animation states
+    - authoritative hitbox evaluation still uses mostly discrete state switches
+    - that gap is now the main explanation for crouch-fatigue mismatch, ADAD hitbox pops, and fast transition pose shifts
+  - temporary remote animation trace capture now exists on `F11`
+    - capture is stored in browser `localStorage` under `tactical-fps-threejs-remote-animation-trace`
+    - the same payload is also written through the server to `debug/remote-animation-traces/`
+    - current samples include focused remote clip state, crouch/current-height state, and latest/rewound debug positions
 - The top active multiplayer movement blocker after the latest pass is wall/slope contact jitter under authority/correction.
 - Narrow ledge support on `Dust2 Test` is also still imperfect:
   - shared grounding currently uses multi-sample floor support rather than binary floor contact
@@ -791,6 +799,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `docs/session-notes/session-note-2026-04-18-remote-animation-refactor.md`
   - `docs/session-notes/session-note-2026-04-18-remote-networking-refactor-checkpoint.md`
   - `docs/session-notes/session-note-2026-04-18-tactical-room-payload-refactor.md`
+  - `docs/session-notes/session-note-2026-04-18-shared-pose-parity-plan.md`
 
 ## Current Remote Aim / Animation Checkpoint
 

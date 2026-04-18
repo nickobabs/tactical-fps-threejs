@@ -23,6 +23,7 @@ import {
 import {
   createRemoteHitboxPointCache,
 } from '../../src/shared/remoteHitboxes.js';
+import { isPlayerPresentationCrouched } from '../../src/shared/playerMovement.js';
 import {
   describeRemoteHitboxAudit,
   resolveRemoteHitBones,
@@ -399,7 +400,7 @@ function selectMovementClip(player) {
   }
 
   const velocity = player.motionState?.velocity ?? null;
-  const isCrouched = Boolean(player.motionState?.isCrouched);
+  const isCrouched = isPlayerPresentationCrouched(player.motionState);
   const weaponKey = String(player?.activeWeaponKey ?? 'rifle');
   if (presentationState === 'air') {
     return usesRemoteMeleeClipSet(weaponKey) ? CLIPS.meleeJump : CLIPS.jump;
@@ -511,6 +512,37 @@ function getRigMovementPlaybackScale(player, targetClip) {
   );
 }
 
+function getRigIdleClipFamily(targetClip) {
+  if (targetClip === CLIPS.idle) {
+    return 'stand';
+  }
+  if (targetClip === CLIPS.crouchIdle || targetClip === CLIPS.crouchWalk || targetClip === CLIPS.crouchBackward) {
+    return 'crouch';
+  }
+  if (targetClip === CLIPS.meleeIdle) {
+    return 'melee-stand';
+  }
+  if (targetClip === CLIPS.meleeCrouchIdle || targetClip === CLIPS.meleeCrouchWalk) {
+    return 'melee-crouch';
+  }
+  if (
+    targetClip === CLIPS.meleeWalkForward
+    || targetClip === CLIPS.meleeWalkBackward
+    || targetClip === CLIPS.meleeRunForward
+    || targetClip === CLIPS.meleeStrafeLeft
+    || targetClip === CLIPS.meleeStrafeRight
+  ) {
+    return 'melee-stand';
+  }
+  return 'stand';
+}
+
+function clearRigIdleEntryCarryover(rig) {
+  rig.idleEntryCandidateClip = null;
+  rig.idleEntryElapsed = 0;
+  rig.lastNonIdleMovementClip = null;
+}
+
 function resolveRigMovementClipWithIdleEntryDelay(rig, targetClip, delta) {
   const isIdleTarget = targetClip === CLIPS.idle
     || targetClip === CLIPS.crouchIdle
@@ -526,6 +558,14 @@ function resolveRigMovementClipWithIdleEntryDelay(rig, targetClip, delta) {
 
   const lastNonIdleMovementClip = rig.lastNonIdleMovementClip ?? null;
   if (!lastNonIdleMovementClip) {
+    return targetClip;
+  }
+
+  const targetFamily = getRigIdleClipFamily(targetClip);
+  const lastNonIdleFamily = getRigIdleClipFamily(lastNonIdleMovementClip);
+  if (targetFamily !== lastNonIdleFamily) {
+    rig.idleEntryCandidateClip = null;
+    rig.idleEntryElapsed = 0;
     return targetClip;
   }
 
@@ -702,6 +742,7 @@ export async function createRemoteHitboxRig() {
     idleEntryCandidateClip: null,
     idleEntryElapsed: 0,
     lastNonIdleMovementClip: null,
+    lastRawCrouchState: null,
     weaponAnchor,
     weaponRoot,
     skinnedMesh,
@@ -729,6 +770,11 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   }
 
   rig.fireTime = Math.max(0, rig.fireTime - delta);
+  const rawCrouchState = Boolean(player.motionState?.isCrouched);
+  if (rig.lastRawCrouchState !== null && rig.lastRawCrouchState !== rawCrouchState) {
+    clearRigIdleEntryCarryover(rig);
+  }
+  rig.lastRawCrouchState = rawCrouchState;
   const movementClip = resolveRigMovementClipWithIdleEntryDelay(rig, selectMovementClip(player), delta);
   const targetClip = rig.fireTime > 0 && ['idle', 'scoped-idle'].includes(String(player.presentationState ?? 'idle'))
     ? CLIPS.fire

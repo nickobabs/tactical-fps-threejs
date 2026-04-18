@@ -559,7 +559,8 @@ canvas {
   position: absolute;
   top: 68px;
   right: 24px;
-  min-width: 360px;
+  width: 92ch;
+  max-width: calc(100vw - 48px);
   margin: 0;
   padding: 12px 14px;
   border: 1px solid rgba(174, 211, 255, 0.14);
@@ -569,6 +570,7 @@ canvas {
   color: #d5e9ff;
   font: 12px/1.45 Consolas, Monaco, monospace;
   white-space: pre-wrap;
+  box-sizing: border-box;
 }
 
 .hud__netdebug-copy {
