@@ -169,12 +169,12 @@ export class FirstPersonController {
     const horizontalSpeed = Math.sqrt(
       this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z,
     );
-    const moveForward = this.input?.isPressed?.('KeyW') ?? false;
-    const moveBackward = this.input?.isPressed?.('KeyS') ?? false;
-    const moveLeft = this.input?.isPressed?.('KeyA') ?? false;
-    const moveRight = this.input?.isPressed?.('KeyD') ?? false;
-    const wantsCrouch = this.input?.isPressed?.('KeyC') ?? false;
-    const wantsWalk = this.input?.isPressed?.('ShiftLeft') ?? false;
+    const moveForward = this.input?.isPressed?.('moveForward') ?? false;
+    const moveBackward = this.input?.isPressed?.('moveBackward') ?? false;
+    const moveLeft = this.input?.isPressed?.('moveLeft') ?? false;
+    const moveRight = this.input?.isPressed?.('moveRight') ?? false;
+    const wantsCrouch = this.input?.isPressed?.('crouch') ?? false;
+    const wantsWalk = this.input?.isPressed?.('walk') ?? false;
     const forwardX = -Math.sin(this.yawAngle);
     const forwardZ = -Math.cos(this.yawAngle);
     const rightX = Math.cos(this.yawAngle);
@@ -206,7 +206,7 @@ export class FirstPersonController {
     }
 
     const targetBaseSpeed = this.movementMode === 'fly'
-      ? ((this.input?.isPressed?.('ShiftLeft') ?? false) ? this.flySprintSpeed : this.flySpeed)
+      ? ((this.input?.isPressed?.('walk') ?? false) ? this.flySprintSpeed : this.flySpeed)
       : (wantsCrouch ? this.crouchSpeed : (wantsWalk ? this.walkSpeed * 0.5 : this.walkSpeed));
     const targetSpeed = targetMoveLength > 0 ? targetBaseSpeed * this.getSpeedMultiplier() : 0;
     const targetVelocityX = targetMoveLength > 0 ? targetMoveX * targetSpeed : 0;
@@ -423,7 +423,7 @@ export class FirstPersonController {
     this.updateLook(frameInput.lookDelta);
     FOOTSTEP_POSITION_BEFORE_STEP.copy(this.position);
     this.stepSimulation(delta, this.getMovementInputSnapshot({
-      jumpPressed: frameInput.justPressed?.has?.('Space'),
+      jumpPressed: frameInput.actionJustPressed?.has?.('jump'),
     }));
   }
 
@@ -518,7 +518,7 @@ export class FirstPersonController {
       this.position.z - previousPosition.z,
     );
     const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
-    const isWalking = this.input?.isPressed?.('ShiftLeft') ?? false;
+    const isWalking = this.input?.isPressed?.('walk') ?? false;
     const minimumAudibleSpeed = Math.max(
       MOVEMENT_TUNING.footstepMinHorizontalSpeed,
       FOOTSTEP_AUDIBLE_SPEED_FLOOR,

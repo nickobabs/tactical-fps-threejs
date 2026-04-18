@@ -152,17 +152,17 @@ export class UtilityManager {
     this.state.interactionText = '';
 
     if (
-      frameInput?.justPressed?.has?.('Digit1')
-      || frameInput?.justPressed?.has?.('Digit2')
-      || frameInput?.justPressed?.has?.('Digit3')
-      || frameInput?.justPressed?.has?.('Digit4')
-      || frameInput?.justPressed?.has?.('Digit5')
+      frameInput?.actionJustPressed?.has?.('weaponRifle')
+      || frameInput?.actionJustPressed?.has?.('weaponPistol')
+      || frameInput?.actionJustPressed?.has?.('weaponKnife')
+      || frameInput?.actionJustPressed?.has?.('weaponSniper')
+      || frameInput?.actionJustPressed?.has?.('weaponBomb')
     ) {
       this.equippedUtilityKey = null;
       return;
     }
 
-    if (frameInput?.justPressed?.has?.('Digit6') && this.smokeCharges > 0) {
+    if (frameInput?.actionJustPressed?.has?.('weaponSmoke') && this.smokeCharges > 0) {
       this.equippedUtilityKey = SMOKE_UTILITY_KEY;
       if (weaponManager?.activeWeaponKey === BOMB_UTILITY_KEY) {
         weaponManager.equipWeapon(this.lastNonBombWeaponKey || 'rifle');
@@ -246,7 +246,7 @@ export class UtilityManager {
       return false;
     }
 
-    if (!frameInput?.mouseButtonsJustPressed?.has?.(0) || !playerController) {
+    if (!frameInput?.actionJustPressed?.has?.('fire') || !playerController) {
       return false;
     }
 
@@ -647,7 +647,7 @@ export class UtilityManager {
     }
 
     this.state.interactionText = `Hold left click to plant (${plantZone.name})`;
-    if (input?.isMouseButtonPressed?.(0) && playerController?.isGrounded) {
+    if (input?.isPressed?.('fire') && playerController?.isGrounded) {
       this.setPlantMovementLock(playerController, true);
       this.state.plantProgress = Math.min(this.state.plantDuration, this.state.plantProgress + delta);
       const percent = Math.round((this.state.plantProgress / this.state.plantDuration) * 100);

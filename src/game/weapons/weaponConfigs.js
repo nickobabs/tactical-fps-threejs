@@ -8,6 +8,7 @@ export const WEAPON_CONFIGS = {
   rifle: {
     ...SHARED_WEAPON_DATA.rifle,
     slot: 'Digit1',
+    slotAction: 'weaponRifle',
     label: 'Rifle',
     fireSound: 'rifle-fire',
     equipSound: 'rifle-equip',
@@ -33,6 +34,7 @@ export const WEAPON_CONFIGS = {
   pistol: {
     ...SHARED_WEAPON_DATA.pistol,
     slot: 'Digit2',
+    slotAction: 'weaponPistol',
     label: 'Pistol',
     fireSound: 'pistol-fire',
     equipSound: 'pistol-equip',
@@ -58,6 +60,7 @@ export const WEAPON_CONFIGS = {
   sniper: {
     ...SHARED_WEAPON_DATA.sniper,
     slot: 'Digit4',
+    slotAction: 'weaponSniper',
     label: 'Sniper',
     fireSound: 'sniper-fire',
     zoomSound: 'sniper-zoom',
@@ -83,6 +86,7 @@ export const WEAPON_CONFIGS = {
   knife: {
     ...SHARED_WEAPON_DATA.knife,
     slot: 'Digit3',
+    slotAction: 'weaponKnife',
     label: 'Knife',
     fireSound: 'knife-slash',
     equipSound: 'knife-draw',
@@ -108,6 +112,7 @@ export const WEAPON_CONFIGS = {
   bomb: {
     ...SHARED_WEAPON_DATA.bomb,
     slot: 'Digit5',
+    slotAction: 'weaponBomb',
     label: 'C4 Explosive',
     zoomFov: BASE_FOV,
     swayScale: 0.7,

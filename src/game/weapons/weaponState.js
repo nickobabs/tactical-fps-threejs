@@ -1,8 +1,10 @@
-import { getWeaponConfigBySlot } from './weaponConfigs.js';
+import { getWeaponConfigBySlot, WEAPON_CONFIGS } from './weaponConfigs.js';
 
 export function getWeaponSwapSelection(justPressed) {
   for (const key of justPressed) {
-    const weapon = getWeaponConfigBySlot(key);
+    const weapon = getWeaponConfigBySlot(key)
+      ?? Object.values(WEAPON_CONFIGS).find((candidate) => candidate.slotAction === key)
+      ?? null;
     if (weapon) {
       return weapon.key;
     }
@@ -11,8 +13,8 @@ export function getWeaponSwapSelection(justPressed) {
   return null;
 }
 
-export function getScopeState(currentWeapon, mouseButtons, debugForceAdsPreview) {
-  const isScoped = currentWeapon.canScope !== false && (mouseButtons.has(2) || debugForceAdsPreview);
+export function getScopeState(currentWeapon, actionPressed, debugForceAdsPreview) {
+  const isScoped = currentWeapon.canScope !== false && (actionPressed.has('scope') || debugForceAdsPreview);
   return {
     isScoped,
     showScopeOverlay: isScoped && currentWeapon.hasScopeOverlay,

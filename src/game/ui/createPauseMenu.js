@@ -1,5 +1,5 @@
-import { PAUSE_MENU_BINDINGS } from './pauseMenuBindings.js';
 import { TEAMS } from '../../shared/constants.js';
+import { ACTION_DEFINITIONS, getBindingLabel } from '../../core/input/keyBindings.js';
 
 const PANEL_KEYS = {
   bindings: 'bindings',
@@ -29,6 +29,9 @@ export function createPauseMenu({
   getMouseSensitivity,
   getHorizontalFov,
   getSelectedPlayerName,
+  getKeyBindings,
+  onRebindKeybind,
+  onResetKeybinds,
   isGamemodeEnabled = null,
 }) {
   let lastSelectedMapId = null;
@@ -39,6 +42,7 @@ export function createPauseMenu({
   let lastFov = null;
   let lastSelectedTeam = null;
   let activePanel = null;
+  let listeningActionId = null;
   const pause = document.createElement('div');
   pause.className = 'hud__pause';
   const sensitivityToPercent = () => Math.round(((getMouseSensitivity?.() ?? 0.0011) / 0.0022) * 100);
@@ -108,7 +112,17 @@ export function createPauseMenu({
       <div class="hud__pause-detail">
         <div class="hud__pause-panel-copy">Open a panel for controls or environment options.</div>
         <div class="hud__bindings">
-          ${PAUSE_MENU_BINDINGS.map((binding) => `<div><strong>${binding.label}</strong>: ${binding.value}</div>`).join('')}
+          <div class="hud__bindings-toolbar">
+            <button class="hud__pause-button hud__pause-button--secondary" type="button" data-action="reset-keybinds">Reset to Default</button>
+          </div>
+          <div class="hud__binding-list">
+            ${ACTION_DEFINITIONS.map((binding) => `
+              <button class="hud__binding-row" type="button" data-bind-action="${binding.id}">
+                <span class="hud__binding-label">${binding.label}</span>
+                <span class="hud__binding-value" data-role="binding-value-${binding.id}">${getBindingLabel(getKeyBindings?.()?.[binding.id] ?? binding.defaultBinding)}</span>
+              </button>
+            `).join('')}
+          </div>
         </div>
         <div class="hud__maps">
           ${maps.map((map) => `
@@ -168,9 +182,12 @@ export function createPauseMenu({
   const gamemodeButtons = [...pause.querySelectorAll('[data-gamemode-id]')];
   const skyboxButtons = [...pause.querySelectorAll('[data-skybox-id]')];
   const teamButtons = [...pause.querySelectorAll('[data-team-id]')];
+  const resetKeybindsButton = pause.querySelector('[data-action="reset-keybinds"]');
+  const bindingButtons = [...pause.querySelectorAll('[data-bind-action]')];
 
   function setActivePanel(nextPanel) {
     activePanel = activePanel === nextPanel ? null : nextPanel;
+    listeningActionId = null;
     bindingsEl.classList.toggle('hud__bindings--visible', activePanel === PANEL_KEYS.bindings);
     mapsEl.classList.toggle('hud__maps--visible', activePanel === PANEL_KEYS.maps);
     gamemodesEl.classList.toggle('hud__gamemodes--visible', activePanel === PANEL_KEYS.gamemodes);
@@ -181,7 +198,7 @@ export function createPauseMenu({
     skyboxesButton.classList.toggle('hud__pause-button--active', activePanel === PANEL_KEYS.skyboxes);
 
     const panelCopy = activePanel === PANEL_KEYS.bindings
-      ? 'Current controls and debug toggles.'
+      ? 'Click a control, then press a keyboard key or mouse button to rebind it.'
       : activePanel === PANEL_KEYS.maps
         ? 'Switch the active playspace runtime.'
         : activePanel === PANEL_KEYS.gamemodes
@@ -227,6 +244,64 @@ export function createPauseMenu({
   const handleTeamSelect = (event) => {
     onSelectTeam?.(event.currentTarget.dataset.teamId, getSelectedPlayerName?.());
   };
+  const handleResetKeybinds = () => {
+    onResetKeybinds?.();
+    listeningActionId = null;
+    syncBindingValues();
+  };
+  const handleBindingButtonClick = (event) => {
+    listeningActionId = String(event.currentTarget.dataset.bindAction ?? '');
+    syncBindingValues();
+  };
+
+  function syncBindingValues() {
+    const bindings = getKeyBindings?.() ?? {};
+    for (const button of bindingButtons) {
+      const actionId = String(button.dataset.bindAction ?? '');
+      const valueEl = button.querySelector(`[data-role="binding-value-${actionId}"]`);
+      if (!valueEl) {
+        continue;
+      }
+      valueEl.textContent = listeningActionId === actionId
+        ? 'Press a key...'
+        : getBindingLabel(bindings[actionId]);
+      button.classList.toggle('hud__binding-row--listening', listeningActionId === actionId);
+    }
+  }
+
+  function handleBindingCapture(event) {
+    if (!listeningActionId) {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof HTMLElement && target.closest('.hud__pause-panel') == null) {
+      return;
+    }
+
+    if (event instanceof KeyboardEvent) {
+      if (event.code === 'Escape') {
+        listeningActionId = null;
+        syncBindingValues();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (!event.code) {
+        return;
+      }
+      onRebindKeybind?.(listeningActionId, event.code);
+    } else if (event instanceof MouseEvent) {
+      onRebindKeybind?.(listeningActionId, `Mouse${event.button}`);
+    } else {
+      return;
+    }
+
+    listeningActionId = null;
+    syncBindingValues();
+    event.preventDefault();
+    event.stopPropagation();
+  }
 
   resumeButton.addEventListener('click', handleResume);
   volumeSlider.addEventListener('input', handleVolume);
@@ -240,6 +315,11 @@ export function createPauseMenu({
   gamemodeButtons.forEach((button) => button.addEventListener('click', handleGamemodeSelect));
   skyboxButtons.forEach((button) => button.addEventListener('click', handleSkyboxSelect));
   teamButtons.forEach((button) => button.addEventListener('click', handleTeamSelect));
+  resetKeybindsButton?.addEventListener('click', handleResetKeybinds);
+  bindingButtons.forEach((button) => button.addEventListener('click', handleBindingButtonClick));
+  window.addEventListener('keydown', handleBindingCapture, true);
+  window.addEventListener('mousedown', handleBindingCapture, true);
+  syncBindingValues();
 
   return {
     destroy() {
@@ -255,12 +335,18 @@ export function createPauseMenu({
       gamemodeButtons.forEach((button) => button.removeEventListener('click', handleGamemodeSelect));
       skyboxButtons.forEach((button) => button.removeEventListener('click', handleSkyboxSelect));
       teamButtons.forEach((button) => button.removeEventListener('click', handleTeamSelect));
+      resetKeybindsButton?.removeEventListener('click', handleResetKeybinds);
+      bindingButtons.forEach((button) => button.removeEventListener('click', handleBindingButtonClick));
+      window.removeEventListener('keydown', handleBindingCapture, true);
+      window.removeEventListener('mousedown', handleBindingCapture, true);
       pause.remove();
     },
     setVisible(visible) {
       pause.classList.toggle('hud__pause--active', visible);
       if (!visible) {
         setActivePanel(null);
+      } else {
+        syncBindingValues();
       }
     },
     updateSelections({ selectedMapId, selectedGamemodeId, selectedSkyboxId, selectedTeam }) {
@@ -323,6 +409,8 @@ export function createPauseMenu({
         fovValueEl.textContent = String(horizontalFov);
         lastFov = horizontalFov;
       }
+
+      syncBindingValues();
     },
   };
 }

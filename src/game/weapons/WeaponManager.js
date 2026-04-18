@@ -333,10 +333,10 @@ export class WeaponManager {
     const blockPrimaryAction = Boolean(options.blockPrimaryAction);
     const blockSecondaryAction = Boolean(options.blockSecondaryAction);
     const hideViewModel = Boolean(options.hideViewModel);
-    this.handleWeaponSwap(frameInput.justPressed);
+    this.handleWeaponSwap(frameInput.actionJustPressed ?? frameInput.justPressed);
     this.handleScope(
-      blockSecondaryAction ? new Set() : frameInput.mouseButtons,
-      blockSecondaryAction ? new Set() : frameInput.mouseButtonsJustPressed,
+      blockSecondaryAction ? new Set() : (frameInput.actionPressed ?? new Set()),
+      blockSecondaryAction ? new Set() : (frameInput.actionJustPressed ?? new Set()),
     );
 
     this.cooldown = Math.max(0, this.cooldown - delta);
@@ -366,13 +366,13 @@ export class WeaponManager {
     this.camera.fov = this.zoomFov;
     this.camera.updateProjectionMatrix();
 
-    const leftHeld = !blockPrimaryAction && frameInput.mouseButtons.has(0);
-    const leftJustPressed = !blockPrimaryAction && frameInput.mouseButtonsJustPressed.has(0);
+    const leftHeld = !blockPrimaryAction && frameInput.actionPressed.has('fire');
+    const leftJustPressed = !blockPrimaryAction && frameInput.actionJustPressed.has('fire');
     if (!this.currentWeapon?.automatic && leftJustPressed) {
       this.queuedSemiAutoShotTime = this.getSemiAutoInputBuffer();
     }
     const canViewModelFire = this.viewModelController?.canFire?.() ?? true;
-    if (frameInput.justPressed.has('KeyR')) {
+    if (frameInput.actionJustPressed.has('reload')) {
       this.startReload();
     }
     const ammoState = this.getCurrentAmmoState();
@@ -418,19 +418,19 @@ export class WeaponManager {
     }
   }
 
-  handleScope(mouseButtons, mouseButtonsJustPressed = new Set()) {
+  handleScope(actionPressed, actionJustPressed = new Set()) {
     const canViewModelFire = this.viewModelController?.canFire?.() ?? true;
     const sniperReadyForScope = this.activeWeaponKey !== 'sniper'
       || (this.cooldown === 0 && this.reloadTimeRemaining <= 0 && canViewModelFire);
     const previousScopeStage = this.scopeStage;
-    const scopeState = getScopeState(this.currentWeapon, mouseButtons, this.debugForceAdsPreview);
+    const scopeState = getScopeState(this.currentWeapon, actionPressed, this.debugForceAdsPreview);
 
     if (this.activeWeaponKey === 'sniper') {
       if (!sniperReadyForScope) {
         this.scopeStage = 0;
       } else if (this.debugForceAdsPreview) {
         this.scopeStage = 1;
-      } else if (mouseButtonsJustPressed?.has?.(2)) {
+      } else if (actionJustPressed?.has?.('scope')) {
         this.scopeStage = (this.scopeStage + 1) % 3;
       }
 

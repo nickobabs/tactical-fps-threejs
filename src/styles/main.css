@@ -1718,6 +1718,47 @@ canvas {
   display: block;
 }
 
+.hud__bindings-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.hud__binding-list {
+  display: grid;
+  gap: 10px;
+}
+
+.hud__binding-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid rgba(174, 211, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e6edf5;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hud__binding-row--listening {
+  background: rgba(176, 215, 255, 0.18);
+  border-color: rgba(176, 215, 255, 0.42);
+}
+
+.hud__binding-label {
+  color: rgba(230, 237, 245, 0.9);
+}
+
+.hud__binding-value {
+  color: rgba(174, 211, 255, 0.88);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .hud__maps,
 .hud__gamemodes,
 .hud__skyboxes {

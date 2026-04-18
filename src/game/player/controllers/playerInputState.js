@@ -8,12 +8,12 @@ export function getMovementInputSnapshot({
 }) {
   if (movementMode === 'fly') {
     return {
-      forward: input.isPressed('KeyW'),
-      backward: input.isPressed('KeyS'),
-      left: input.isPressed('KeyA'),
-      right: input.isPressed('KeyD'),
-      sprint: input.isPressed('ShiftLeft'),
-      descend: input.isPressed('KeyC'),
+      forward: input.isPressed('moveForward'),
+      backward: input.isPressed('moveBackward'),
+      left: input.isPressed('moveLeft'),
+      right: input.isPressed('moveRight'),
+      sprint: input.isPressed('walk'),
+      descend: input.isPressed('crouch'),
       jump: Boolean(jumpPressed),
       yaw: yawAngle,
       pitch: pitchAngle,
@@ -21,13 +21,13 @@ export function getMovementInputSnapshot({
   }
 
   return {
-    forward: input.isPressed('KeyW'),
-    backward: input.isPressed('KeyS'),
-    left: input.isPressed('KeyA'),
-    right: input.isPressed('KeyD'),
-    walk: input.isPressed('ShiftLeft'),
+    forward: input.isPressed('moveForward'),
+    backward: input.isPressed('moveBackward'),
+    left: input.isPressed('moveLeft'),
+    right: input.isPressed('moveRight'),
+    walk: input.isPressed('walk'),
     walkSpeedFactor: Number(walkSpeedFactor ?? 0.5),
-    crouch: input.isPressed('KeyC'),
+    crouch: input.isPressed('crouch'),
     jump: Boolean(jumpPressed),
     yaw: yawAngle,
     pitch: pitchAngle,
@@ -49,13 +49,13 @@ export function getImmediatePresentationVelocity({
 }) {
   if (movementMode === 'fly') {
     const speedMultiplier = getSpeedMultiplier();
-    const wantsSprint = input.isPressed('ShiftLeft');
-    const moveForward = input.isPressed('KeyW');
-    const moveBackward = input.isPressed('KeyS');
-    const moveLeft = input.isPressed('KeyA');
-    const moveRight = input.isPressed('KeyD');
-    const moveUp = input.isPressed('Space');
-    const moveDown = input.isPressed('KeyC');
+    const wantsSprint = input.isPressed('walk');
+    const moveForward = input.isPressed('moveForward');
+    const moveBackward = input.isPressed('moveBackward');
+    const moveLeft = input.isPressed('moveLeft');
+    const moveRight = input.isPressed('moveRight');
+    const moveUp = input.isPressed('jump');
+    const moveDown = input.isPressed('crouch');
 
     const forwardX = -Math.sin(yawAngle);
     const forwardZ = -Math.cos(yawAngle);
@@ -103,13 +103,13 @@ export function getImmediatePresentationVelocity({
   }
 
   const speedMultiplier = getSpeedMultiplier();
-  const wantsCrouch = input.isPressed('KeyC');
-  const wantsWalk = input.isPressed('ShiftLeft');
+  const wantsCrouch = input.isPressed('crouch');
+  const wantsWalk = input.isPressed('walk');
   const resolvedWalkSpeedFactor = Math.max(0.1, Number(walkSpeedFactor ?? 0.5));
-  const moveForward = input.isPressed('KeyW');
-  const moveBackward = input.isPressed('KeyS');
-  const moveLeft = input.isPressed('KeyA');
-  const moveRight = input.isPressed('KeyD');
+  const moveForward = input.isPressed('moveForward');
+  const moveBackward = input.isPressed('moveBackward');
+  const moveLeft = input.isPressed('moveLeft');
+  const moveRight = input.isPressed('moveRight');
 
   const forwardX = -Math.sin(yawAngle);
   const forwardZ = -Math.cos(yawAngle);

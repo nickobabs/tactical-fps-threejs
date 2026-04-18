@@ -373,6 +373,7 @@ export class GameApp {
       getMasterVolume: () => this.audioManager.getMasterVolume(),
       getMouseSensitivity: () => this.mouseSensitivity,
       getHorizontalFov: () => this.baseHorizontalFov,
+      getKeyBindings: () => this.input.getBindings(),
       onResume: () => this.resumeGame(),
       onSelectTeam: (team, playerName) => void this.selectTeam(team, playerName),
       onToggleHudMode: () => this.toggleHudMode(),
@@ -381,6 +382,8 @@ export class GameApp {
       onSensitivityChange: (value) => this.setMouseSensitivity(value),
       onFovChange: (value) => this.setHorizontalFov(value),
       onVolumeChange: (volume) => this.setMasterVolume(volume),
+      onRebindKeybind: (actionId, binding) => this.rebindKeybind(actionId, binding),
+      onResetKeybinds: () => this.resetKeybinds(),
       maps: MAP_OPTIONS,
       gamemodes: GAMEMODE_OPTIONS,
       getSelectedMapId: () => this.selectedMapId,
@@ -860,6 +863,19 @@ export class GameApp {
     this.persistRuntimeSettings();
   }
 
+  rebindKeybind(actionId, binding) {
+    const didSet = this.input.setBinding(actionId, binding);
+    if (didSet) {
+      this.input.clearGameplayState();
+    }
+    return didSet;
+  }
+
+  resetKeybinds() {
+    this.input.resetBindings();
+    this.input.clearGameplayState();
+  }
+
   persistRuntimeSettings() {
     persistSettings({
       mouseSensitivity: this.mouseSensitivity,
@@ -981,7 +997,7 @@ export class GameApp {
   }
 
   queueJumpIfRequested(frameInput) {
-    if (frameInput.justPressed.has('Space')) {
+    if (frameInput.actionJustPressed.has('jump')) {
       this.networkJumpQueued = true;
     }
   }

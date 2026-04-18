@@ -1,28 +1,49 @@
-const MOVEMENT_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
+import {
+  getBindingForAction,
+  getDefaultKeyBindings,
+  isActionId,
+  loadStoredKeyBindings,
+  persistKeyBindings,
+  sanitizeBindingValue,
+} from './keyBindings.js';
+
 const PREVENT_DEFAULT_KEYS = new Set(['F3', 'F6', 'F7', 'F9', 'F10', 'Tab']);
-const GAMEPLAY_SHORTCUT_BLOCK_KEYS = new Set([
-  'KeyW',
-  'KeyA',
-  'KeyS',
-  'KeyD',
-  'KeyC',
-  'Space',
-  'ShiftLeft',
-  'Digit1',
-  'Digit2',
-  'Digit3',
-  'Digit4',
-]);
+const CTRL_META_BLOCK_ACTIONS = [
+  'moveForward',
+  'moveBackward',
+  'moveLeft',
+  'moveRight',
+  'crouch',
+  'walk',
+  'jump',
+  'weaponRifle',
+  'weaponPistol',
+  'weaponKnife',
+  'weaponSniper',
+  'weaponBomb',
+  'weaponSmoke',
+];
+const PREVENT_DEFAULT_ACTIONS = [
+  'moveForward',
+  'moveBackward',
+  'moveLeft',
+  'moveRight',
+  'jump',
+  'walk',
+  'crouch',
+];
 
 export class InputManager {
   constructor(domElement) {
     this.domElement = domElement;
+    this.bindings = loadStoredKeyBindings();
     this.keys = new Set();
     this.justPressed = new Set();
     this.mouseButtons = new Set();
     this.mouseButtonsJustPressed = new Set();
     this.pointerLocked = false;
     this.lookDelta = { x: 0, y: 0 };
+    this.rebuildBindingCaches();
 
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleKeyUp = this.handleKeyUp.bind(this);
@@ -71,12 +92,99 @@ export class InputManager {
     this.lookDelta.y = 0;
   }
 
+  rebuildBindingCaches() {
+    this.keyboardBindingsByAction = new Map();
+    this.mouseBindingsByAction = new Map();
+    this.actionsByBinding = new Map();
+    this.preventDefaultBindings = new Set();
+    this.ctrlMetaBlockBindings = new Set();
+
+    for (const [actionId, binding] of Object.entries(this.bindings)) {
+      const normalized = sanitizeBindingValue(binding);
+      if (!normalized) {
+        continue;
+      }
+
+      this.actionsByBinding.set(normalized, actionId);
+      if (normalized.startsWith('Mouse')) {
+        this.mouseBindingsByAction.set(actionId, Number(normalized.slice(5)));
+      } else {
+        this.keyboardBindingsByAction.set(actionId, normalized);
+      }
+    }
+
+    for (const actionId of PREVENT_DEFAULT_ACTIONS) {
+      const binding = this.keyboardBindingsByAction.get(actionId);
+      if (binding) {
+        this.preventDefaultBindings.add(binding);
+      }
+    }
+
+    for (const actionId of CTRL_META_BLOCK_ACTIONS) {
+      const binding = this.keyboardBindingsByAction.get(actionId);
+      if (binding) {
+        this.ctrlMetaBlockBindings.add(binding);
+      }
+    }
+  }
+
+  getBindings() {
+    return { ...this.bindings };
+  }
+
+  getBinding(actionId) {
+    return getBindingForAction(this.bindings, actionId);
+  }
+
+  setBinding(actionId, binding) {
+    if (!isActionId(actionId)) {
+      return false;
+    }
+
+    const normalized = sanitizeBindingValue(binding);
+    if (!normalized) {
+      return false;
+    }
+
+    const nextBindings = getDefaultKeyBindings();
+    Object.assign(nextBindings, this.bindings);
+    nextBindings[actionId] = normalized;
+    this.bindings = nextBindings;
+    this.rebuildBindingCaches();
+    persistKeyBindings(this.bindings);
+    return true;
+  }
+
+  resetBindings() {
+    this.bindings = getDefaultKeyBindings();
+    this.rebuildBindingCaches();
+    persistKeyBindings(this.bindings);
+  }
+
+  isActionPressed(actionId) {
+    const mouseButton = this.mouseBindingsByAction.get(actionId);
+    if (mouseButton != null) {
+      return this.mouseButtons.has(mouseButton);
+    }
+    const keyCode = this.keyboardBindingsByAction.get(actionId);
+    return keyCode ? this.keys.has(keyCode) : false;
+  }
+
+  wasActionPressed(actionId) {
+    const mouseButton = this.mouseBindingsByAction.get(actionId);
+    if (mouseButton != null) {
+      return this.mouseButtonsJustPressed.has(mouseButton);
+    }
+    const keyCode = this.keyboardBindingsByAction.get(actionId);
+    return keyCode ? this.justPressed.has(keyCode) : false;
+  }
+
   handleKeyDown(event) {
     if (this.isEditableTarget(event.target)) {
       return;
     }
 
-    if (this.pointerLocked && GAMEPLAY_SHORTCUT_BLOCK_KEYS.has(event.code) && (event.ctrlKey || event.metaKey)) {
+    if (this.pointerLocked && this.ctrlMetaBlockBindings.has(event.code) && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
     }
 
@@ -90,7 +198,7 @@ export class InputManager {
 
     this.keys.add(event.code);
 
-    if (MOVEMENT_KEYS.has(event.code) || event.code === 'Space' || event.code === 'ShiftLeft') {
+    if (this.preventDefaultBindings.has(event.code)) {
       event.preventDefault();
     }
   }
@@ -157,10 +265,16 @@ export class InputManager {
   }
 
   isPressed(code) {
+    if (isActionId(code)) {
+      return this.isActionPressed(code);
+    }
     return this.keys.has(code);
   }
 
   wasPressed(code) {
+    if (isActionId(code)) {
+      return this.wasActionPressed(code);
+    }
     return this.justPressed.has(code);
   }
 
@@ -169,11 +283,24 @@ export class InputManager {
   }
 
   consumeFrameState() {
+    const actionPressed = new Set();
+    const actionJustPressed = new Set();
+    for (const actionId of Object.keys(this.bindings)) {
+      if (this.isActionPressed(actionId)) {
+        actionPressed.add(actionId);
+      }
+      if (this.wasActionPressed(actionId)) {
+        actionJustPressed.add(actionId);
+      }
+    }
+
     const frame = {
       lookDelta: { ...this.lookDelta },
       mouseButtons: new Set(this.mouseButtons),
       justPressed: new Set(this.justPressed),
       mouseButtonsJustPressed: new Set(this.mouseButtonsJustPressed),
+      actionPressed,
+      actionJustPressed,
     };
 
     this.lookDelta.x = 0;
