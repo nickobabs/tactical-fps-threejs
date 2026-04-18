@@ -259,6 +259,8 @@ export class GameApp {
       container: this.root,
       onToggleHudMode: () => this.toggleHudMode(),
       onForceSideSwap: () => this.forceDebugSideSwap(),
+      onToggleCollisionDebug: () => this.toggleCollisionDebug(),
+      getCollisionDebugEnabled: () => this.debugController.isCollisionDebugEnabled(),
       onToggleCrouchFatigueDebug: () => this.toggleCrouchFatigueDebug(),
       onToggleInfiniteAmmo: () => this.toggleInfiniteAmmoDebug(),
       getInfiniteAmmoEnabled: () => this.getInfiniteAmmoEnabled(),
@@ -374,6 +376,7 @@ export class GameApp {
       getMouseSensitivity: () => this.mouseSensitivity,
       getHorizontalFov: () => this.baseHorizontalFov,
       getKeyBindings: () => this.input.getBindings(),
+      getCompetitiveBuyState: () => this.getCompetitiveBuyState(),
       onResume: () => this.resumeGame(),
       onSelectTeam: (team, playerName) => void this.selectTeam(team, playerName),
       onToggleHudMode: () => this.toggleHudMode(),
@@ -383,6 +386,7 @@ export class GameApp {
       onFovChange: (value) => this.setHorizontalFov(value),
       onVolumeChange: (volume) => this.setMasterVolume(volume),
       onRebindKeybind: (actionId, binding) => this.rebindKeybind(actionId, binding),
+      onRequestCompetitiveBuy: (weaponKey) => this.requestCompetitiveBuyWeapon(weaponKey),
       onResetKeybinds: () => this.resetKeybinds(),
       maps: MAP_OPTIONS,
       gamemodes: GAMEMODE_OPTIONS,
@@ -811,6 +815,7 @@ export class GameApp {
         this.networkJumpQueued = false;
         this.input.clearGameplayState();
         this.runtime?.weaponManager?.refillAllAmmo?.();
+        this.runtime?.utilityManager?.setCanEquipWeaponResolver?.((weaponKey) => this.canLocalPlayerEquipWeapon(weaponKey));
         this.pauseController.pause(this.localSimulationLoop, {
           mode: 'team-select',
           canResume: false,
@@ -874,6 +879,93 @@ export class GameApp {
   resetKeybinds() {
     this.input.resetBindings();
     this.input.clearGameplayState();
+  }
+
+  canLocalPlayerEquipWeapon(weaponKey) {
+    if (weaponKey !== 'sniper') {
+      return true;
+    }
+
+    const roundState = this.networkClient.getRoundState?.() ?? null;
+    if (!isCompetitiveGamemode(roundState?.gamemode)) {
+      return true;
+    }
+
+    const localPlayerState = this.networkClient.getLocalPlayerState?.() ?? null;
+    return Boolean(localPlayerState?.ownsSniper);
+  }
+
+  getCompetitiveBuyState() {
+    const roundState = this.networkClient.getRoundState?.() ?? null;
+    const localPlayerState = this.networkClient.getLocalPlayerState?.() ?? null;
+    if (
+      !roundState
+      || !localPlayerState
+      || !localPlayerState.isAlive
+      || !isCompetitiveGamemode(roundState.gamemode)
+      || String(roundState.phase ?? '') !== 'freeze'
+    ) {
+      return {
+        available: false,
+        currentWeaponKey: 'rifle',
+        ownsSniper: false,
+        sniperAvailable: false,
+        sniperOwnerName: '',
+      };
+    }
+
+    const ownsSniper = Boolean(localPlayerState.ownsSniper);
+    const scoreboardState = this.networkClient.getScoreboardState?.() ?? { teams: [] };
+    const teammateTeam = scoreboardState.teams?.find?.(
+      (team) => String(team?.key ?? '') === String(localPlayerState.team ?? ''),
+    ) ?? null;
+    const teammates = teammateTeam?.players ?? [];
+    const sniperOwner = ownsSniper
+      ? localPlayerState
+      : (teammates.find((player) => Boolean(player?.ownsSniper)) ?? null);
+
+    return {
+      available: true,
+      currentWeaponKey: ownsSniper ? 'sniper' : 'rifle',
+      ownsSniper,
+      sniperAvailable: ownsSniper || !sniperOwner,
+      sniperOwnerName: sniperOwner
+        ? String(sniperOwner.playerId === localPlayerState.playerId ? 'You' : (sniperOwner.displayName ?? sniperOwner.playerId ?? 'Player'))
+        : '',
+    };
+  }
+
+  requestCompetitiveBuyWeapon(weaponKey) {
+    const buyState = this.getCompetitiveBuyState();
+    if (!buyState.available) {
+      return false;
+    }
+
+    const nextWeaponKey = String(weaponKey ?? 'rifle') === 'sniper' ? 'sniper' : 'rifle';
+    if (nextWeaponKey === 'sniper' && !buyState.sniperAvailable) {
+      return false;
+    }
+
+    if (!this.getGameplaySyncEnabled()) {
+      return false;
+    }
+
+    return this.networkClient.sendBuyRequest({ weaponKey: nextWeaponKey });
+  }
+
+  applyCompetitiveWeaponActionOverrides(frameInput) {
+    if (!frameInput?.actionJustPressed?.has?.('weaponRifle')) {
+      return;
+    }
+
+    const roundState = this.networkClient.getRoundState?.() ?? null;
+    const localPlayerState = this.networkClient.getLocalPlayerState?.() ?? null;
+    if (!isCompetitiveGamemode(roundState?.gamemode) || !Boolean(localPlayerState?.ownsSniper)) {
+      return;
+    }
+
+    frameInput.actionJustPressed.delete('weaponRifle');
+    frameInput.actionJustPressed.add('weaponSniper');
   }
 
   persistRuntimeSettings() {
@@ -956,9 +1048,6 @@ export class GameApp {
       this.dumpDebugMarkers();
     }
 
-    if (frameInput.justPressed.has('KeyB')) {
-      this.debugController.toggleCollisionDebug(this.runtime?.map?.collisionGeometry ?? null);
-    }
   }
 
   hasActiveRuntime() {
@@ -986,6 +1075,10 @@ export class GameApp {
     this.runtime.roundManager.startDebugSideSwapIntermission();
     this.rebuildHud();
     return true;
+  }
+
+  toggleCollisionDebug() {
+    this.debugController.toggleCollisionDebug(this.runtime?.map?.collisionGeometry ?? null);
   }
 
   syncCombatNetworkingMode() {
@@ -1023,6 +1116,7 @@ export class GameApp {
 
     this.syncCombatNetworkingMode();
     this.runtime.playerController.updateLook(frameInput.lookDelta);
+    this.applyCompetitiveWeaponActionOverrides(frameInput);
     this.runtime.utilityManager.syncFrameInput(frameInput, this.runtime.weaponManager);
 
     if (!localPlayerAlive) {
@@ -1124,6 +1218,24 @@ export class GameApp {
       const authoritativeCorrection = this.networkClient.consumeLocalCorrection();
       if (authoritativeCorrection && !this.debugController.getIgnoreLocalCorrections()) {
         this.runtime.playerController.reconcileAuthoritativeState(authoritativeCorrection);
+      }
+      const localPlayerState = this.networkClient.getLocalPlayerState?.() ?? null;
+      if (
+        this.spectatorMode === 'none'
+        && localPlayerState
+        && this.runtime?.weaponManager
+      ) {
+        const authoritativeWeaponKey = String(localPlayerState.activeWeaponKey ?? 'rifle');
+        const localWeaponKey = String(this.runtime.weaponManager.activeWeaponKey ?? 'rifle');
+        const shouldWaitForWeaponEcho = this.gameplayNetworking.shouldWaitForAuthoritativeWeapon({
+          authoritativeWeaponKey,
+          localWeaponKey,
+        });
+        if (authoritativeWeaponKey !== localWeaponKey && !shouldWaitForWeaponEcho) {
+          this.runtime.weaponManager.equipWeapon(authoritativeWeaponKey, {
+            suppressStatusSync: true,
+          });
+        }
       }
       return;
     }

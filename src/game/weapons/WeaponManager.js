@@ -200,10 +200,12 @@ export class WeaponManager {
     this.reloadTimeRemaining = 0;
   }
 
-  equipWeapon(weaponKey) {
+  equipWeapon(weaponKey, options = {}) {
     if (this.canEquipWeapon && !this.canEquipWeapon(weaponKey)) {
       return;
     }
+
+    const suppressStatusSync = Boolean(options?.suppressStatusSync);
 
     const previousWeaponKey = this.activeWeaponKey;
     const previousEquipSound = this.currentWeapon?.equipSound ?? null;
@@ -246,7 +248,9 @@ export class WeaponManager {
     if (previousWeaponKey === 'sniper' || weaponKey === 'sniper') {
       this.cooldown = Math.max(0, preservedCooldown);
     }
-    this.onWeaponChanged?.(weaponKey);
+    if (!suppressStatusSync) {
+      this.onWeaponChanged?.(weaponKey);
+    }
   }
 
   replayActiveWeaponEquip() {

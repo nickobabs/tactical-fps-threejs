@@ -127,9 +127,17 @@ export class UtilityManager {
     }
   }
 
+  setCanEquipWeaponResolver(resolver) {
+    this.canEquipWeaponResolver = typeof resolver === 'function' ? resolver : null;
+  }
+
   canEquipWeapon(weaponKey) {
     if (weaponKey === BOMB_UTILITY_KEY) {
       return this.state.localPlayerHasBomb;
+    }
+
+    if (this.canEquipWeaponResolver && !this.canEquipWeaponResolver(weaponKey)) {
+      return false;
     }
 
     return true;

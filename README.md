@@ -84,6 +84,7 @@ It already supports real play loops:
 - Replicated health, alive state, respawn timing, pitch, stance, weapon, presentation state, team, and display name
 - Server-authoritative round/objective snapshots for HUD and gameplay flow
 - Competitive MR24, halftime side swap, overtime, and match restart flow
+- Competitive freeze-time buy menu with one sniper per team
 - Server-authoritative remote audio events for weapon fire, smoke bloom, and audible footsteps
 - Shared movement now preserves takeoff speed while airborne, so weapon swaps or walk changes midair do not change velocity until landing
 - Landing now emits a single footstep on real air-to-ground transitions to close silent bunnyhop movement
@@ -128,6 +129,7 @@ It already supports real play loops:
 - Utility HUD feedback for smoke availability and throw prompt
 - Pause menu for map, skybox, sensitivity, volume, and FOV
 - Pause menu gamemode selector
+- Pause menu runtime key rebinding with localStorage persistence
 - Forced-scoreboard match/intermission messaging for side swap, overtime, and match restart
 - Top-right killfeed with rifle/pistol icon support and headshot marker
 - Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
@@ -161,7 +163,7 @@ It already supports real play loops:
 - Recoil tuning panel with live sliders and weapon JSON export
 - Movement tuning panel for footsteps, bob, and movement pull-back
 - HUD layout tuning panel with live element outlines, killfeed preview controls, drag-to-move panels, and localStorage-backed export/reset workflow
-- Collision wireframe and marker/position debug tools
+- Collision wireframe toggle inside the live debug menu plus marker/position debug tools
 - Offline navmesh generation script
 
 ## Current Gameplay Snapshot
@@ -189,7 +191,7 @@ It already supports real play loops:
 - remote players render with weapon and posture state
 - server validates hits and replicates combat state
 - `Debug` keeps the loose respawn/sandbox loop
-- `Competitive` on `Dust2 Test` now supports freeze, elimination, bomb rounds, halftime side swap, overtime, and match restart
+- `Competitive` on `Dust2 Test` now supports freeze, elimination, bomb rounds, halftime side swap, overtime, match restart, and a simple one-sniper-per-team buy menu
 - competitive intermissions still allow movement but now lock fire, smoke, and bomb actions
 - Railway deployment is working as a one-service frontend plus multiplayer backend setup
 
@@ -372,7 +374,7 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 - Smoke is currently a visual gameplay marker only and does not yet block line of sight or traces.
 - Smoke visuals and smoke bloom audio now replicate through multiplayer, but bomb explosion presentation is still local-only.
 - The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.
-- Competitive does not yet have economy, buy time, or spectate flow.
+- Competitive now has a simple freeze-time buy flow and teammate spectate, but still does not have money/economy.
 
 ## Repo Structure
 

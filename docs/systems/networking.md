@@ -15,6 +15,7 @@ The current networking slice supports:
 - Client-to-server bomb defuse requests
 - Client-to-server smoke-throw requests
 - Client-to-server chat messages
+- Client-to-server freeze-time buy requests
 - Server-authoritative player positions derived from those inputs
 - Server-authoritative player health / alive state for PvP
 - Server-authoritative round state
@@ -49,6 +50,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Replicated team/display-name state for scoreboard and remote presentation
 - Replicated round/objective snapshots for HUD and gameplay flow
 - Replicated chat-event stream for team/all chat HUD feed
+- Replicated competitive sniper-ownership state for buy UI / equip gating
 - richer disconnect diagnostics and automatic reconnect attempts after room closure
 
 ## Dependencies
@@ -128,6 +130,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - The room now also owns room-wide infinite-ammo state for live debugging / mode defaults:
   - competitive defaults this setting to `off`
   - non-competitive modes keep the easier baseline default of `on`
+- Competitive sniper ownership is also server-owned:
+  - clients send `buy-request`
+  - the server grants at most one sniper owner per team
+  - authoritative player state replicates `ownsSniper`
+  - client equip/buy UI consumes that replicated ownership
 
 ## Current Status
 
@@ -184,6 +191,7 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - that broader upper/lower-body locomotion layering path is currently paused and is not the active runtime baseline
 - Connection state and remote-player count are visible in the HUD
 - Team/all chat is now visible through a replicated bottom-left HUD feed
+- Competitive freeze-time buy UI now reflects authoritative team sniper ownership and disables sniper selection when a teammate already owns it
 - Server authority and reconciliation are wired end-to-end for player movement
 - Friendly fire is disabled in authoritative hit validation
 - Server authority now uses shared map collision for `Training Ground` and `Desert Compound`

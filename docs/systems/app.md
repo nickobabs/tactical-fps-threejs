@@ -83,10 +83,10 @@
 - Additional imported-map diagnostics are also coordinated here:
   - `V` toggles fly mode
   - `J`, `K`, `L` support coordinate/marker dumping
-  - `B` toggles collision wireframe overlay
 - Additional runtime tuning panels are also reachable from the active app flow:
   - backquote `` ` `` opens the general debug menu
   - the debug menu can open:
+    - collision wireframe toggle in `Live Debugging`
     - recoil tuning
     - movement tuning
     - viewmodel tuning

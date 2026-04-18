@@ -83,10 +83,16 @@
   - volume control
   - sensitivity control with numeric feedback
   - horizontal FOV control
+  - runtime key rebinding with reset-to-default
   - FPS display
   - scoped reticles
   - Enter-to-chat composer with `[ALL]` / `[TEAM]` mode indicator in the input row
   - centered map-loading overlay
+- Includes a competitive freeze-time buy menu:
+  - opened from the current `Open Buy Menu` binding (`B` by default)
+  - chooses between `Rifle` and `Sniper`
+  - shows who currently owns the team sniper slot
+  - disables sniper selection while a teammate owns it
 - Includes hold-`Tab` scoreboard overlay with two team panels, player name/kills/deaths/ping columns, and live team score display
 - Includes a toggleable classic HUD mode inspired by Source plus the older debug HUD mode
 - Includes planted-bomb timer/state and plant-progress feedback
@@ -166,6 +172,7 @@
     - `localStorage` export helper:
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
   - the live debug menu now includes a crouch-fatigue debug toggle for the movement line
+  - the live debug menu now also includes the collision wireframe toggle
     - `cf` = current crouch fatigue
     - `ct` = crouch toggle count in the active fatigue window
     - `cdt` = time since last crouch toggle

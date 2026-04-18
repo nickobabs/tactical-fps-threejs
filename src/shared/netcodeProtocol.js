@@ -79,6 +79,13 @@ export function createChatMessage(state) {
   };
 }
 
+export function createBuyRequestMessage(state) {
+  const weaponKey = String(state?.weaponKey ?? 'rifle');
+  return {
+    weaponKey: weaponKey === 'sniper' ? 'sniper' : 'rifle',
+  };
+}
+
 export function createGamemodeChangeMessage(state) {
   return {
     gamemode: String(state?.gamemode ?? 'debug'),
@@ -196,6 +203,7 @@ export function normalizeAuthoritativePlayerState(playerId, state) {
     deaths: Number(state?.deaths ?? 0),
     pingMs: Number(state?.pingMs ?? 0),
     activeWeaponKey: String(state?.activeWeaponKey ?? 'rifle'),
+    ownsSniper: Boolean(state?.ownsSniper ?? false),
     isScoped: Boolean(state?.isScoped ?? false),
     presentationState: String(state?.presentationState ?? 'idle'),
     deathClip: state?.deathClip ? String(state.deathClip) : null,
@@ -243,6 +251,7 @@ export function serializeAuthoritativePlayerState(playerId, player) {
     deaths: Number(player?.deaths ?? 0),
     pingMs: Number(player?.pingMs ?? 0),
     activeWeaponKey: String(player?.activeWeaponKey ?? 'rifle'),
+    ownsSniper: Boolean(player?.ownsSniper ?? false),
     isScoped: Boolean(player?.isScoped ?? false),
     presentationState: String(player?.presentationState ?? 'idle'),
     deathClip: player?.deathClip ? String(player.deathClip) : null,

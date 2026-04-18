@@ -53,6 +53,7 @@ export function createHud({
   getMouseSensitivity,
   getHorizontalFov,
   getKeyBindings,
+  getCompetitiveBuyState,
   onResume,
   onSelectTeam,
   onToggleHudMode,
@@ -62,6 +63,7 @@ export function createHud({
   onFovChange,
   onVolumeChange,
   onRebindKeybind,
+  onRequestCompetitiveBuy,
   onResetKeybinds,
   maps = [],
   gamemodes = [],
@@ -192,6 +194,18 @@ export function createHud({
         <input class="hud__chat-input" type="text" maxlength="180" spellcheck="false" />
       </div>
     </div>
+    <div class="hud__buy" aria-hidden="true">
+      <div class="hud__buy-panel">
+        <div class="hud__buy-kicker">Competitive Buy</div>
+        <div class="hud__buy-title">Choose Primary</div>
+        <div class="hud__buy-copy">Only one sniper per team. Choosing sniper replaces rifle.</div>
+        <div class="hud__buy-status"></div>
+        <div class="hud__buy-options">
+          <button class="hud__buy-option" type="button" data-buy-weapon="rifle">Rifle</button>
+          <button class="hud__buy-option" type="button" data-buy-weapon="sniper">Sniper</button>
+        </div>
+      </div>
+    </div>
     <div class="hud__plant-progress">
       <div class="hud__plant-progress-label"></div>
       <div class="hud__plant-progress-track">
@@ -311,6 +325,9 @@ export function createHud({
   const chatComposeEl = hud.querySelector('.hud__chat-compose');
   const chatScopeEl = hud.querySelector('.hud__chat-scope');
   const chatInputEl = hud.querySelector('.hud__chat-input');
+  const buyEl = hud.querySelector('.hud__buy');
+  const buyStatusEl = hud.querySelector('.hud__buy-status');
+  const buyOptionButtons = [...hud.querySelectorAll('[data-buy-weapon]')];
   const plantProgressEl = hud.querySelector('.hud__plant-progress');
   const plantProgressLabelEl = hud.querySelector('.hud__plant-progress-label');
   const plantProgressFillEl = hud.querySelector('.hud__plant-progress-fill');
@@ -366,6 +383,7 @@ export function createHud({
   let lastBombPlanted = false;
   let chatOpen = false;
   let chatScope = 'all';
+  let buyMenuOpen = false;
   let restorePointerLockAfterChat = false;
 
   function renderRoundRosterTeam(teamState, iconPath) {
@@ -508,6 +526,36 @@ export function createHud({
     input?.domElement?.requestPointerLock?.();
   }
 
+  function getBuyBindingCode() {
+    return String(getKeyBindings?.()?.openBuyMenu ?? 'KeyB');
+  }
+
+  function closeBuyMenu({ restorePointerLock = true } = {}) {
+    if (!buyMenuOpen) {
+      return;
+    }
+    buyMenuOpen = false;
+    if (restorePointerLock) {
+      tryRestorePointerLock();
+    } else {
+      restorePointerLockAfterChat = false;
+    }
+  }
+
+  function openBuyMenu() {
+    const buyState = getCompetitiveBuyState?.() ?? { available: false };
+    if (!buyState.available || buyMenuOpen || paused || chatOpen) {
+      return;
+    }
+
+    restorePointerLockAfterChat = Boolean(input?.pointerLocked);
+    input?.clearGameplayState?.();
+    if (document.pointerLockElement) {
+      document.exitPointerLock?.();
+    }
+    buyMenuOpen = true;
+  }
+
   function closeChat({ restorePointerLock = true } = {}) {
     if (!chatOpen) {
       return;
@@ -627,6 +675,20 @@ export function createHud({
       return;
     }
 
+    if (buyMenuOpen) {
+      if (event.code === 'Escape' || event.code === getBuyBindingCode()) {
+        closeBuyMenu({ restorePointerLock: true });
+        event.preventDefault();
+      }
+      return;
+    }
+
+    if (event.code === getBuyBindingCode() && !paused) {
+      openBuyMenu();
+      event.preventDefault();
+      return;
+    }
+
     if (event.code === 'Enter' && !paused) {
       openChat();
       event.preventDefault();
@@ -692,6 +754,15 @@ export function createHud({
       input?.clearGameplayState?.();
     }
     event.preventDefault();
+  });
+  buyOptionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const weaponKey = String(button.dataset.buyWeapon ?? 'rifle');
+      const didSend = onRequestCompetitiveBuy?.(weaponKey);
+      if (didSend) {
+        closeBuyMenu({ restorePointerLock: true });
+      }
+    });
   });
   syncChatComposerUi();
   const scoreboardController = createHudScoreboardController({
@@ -831,6 +902,10 @@ export function createHud({
         : chatEntries
           .filter((entry) => Number(entry?.expiresAt ?? 0) > now)
           .slice(-6);
+      const buyState = getCompetitiveBuyState?.() ?? { available: false };
+      if (!buyState.available && buyMenuOpen) {
+        closeBuyMenu({ restorePointerLock: false });
+      }
       const hudMode = getHudMode?.() ?? 'debug';
       const classicVisible = hudMode === 'classic' && !paused;
       const roundWinDebugPreview = isRoundWinDebugPreviewEnabled();
@@ -920,6 +995,20 @@ export function createHud({
       objectiveWidgetsController.update({
         paused,
         utilityHudState,
+      });
+      const sniperOwnerText = buyState.sniperOwnerName
+        ? `${buyState.sniperOwnerName} currently has sniper`
+        : 'No one on your team has sniper';
+      buyStatusEl.textContent = buyState.ownsSniper
+        ? 'You currently have sniper'
+        : sniperOwnerText;
+      buyEl.classList.toggle('hud__buy--active', buyMenuOpen && buyState.available);
+      buyOptionButtons.forEach((button) => {
+        const weaponKey = String(button.dataset.buyWeapon ?? 'rifle');
+        const isSelected = weaponKey === String(buyState.currentWeaponKey ?? 'rifle');
+        const disabled = weaponKey === 'sniper' && !buyState.sniperAvailable;
+        button.classList.toggle('hud__buy-option--active', isSelected);
+        button.disabled = disabled;
       });
       if (roundWinVisible !== lastRoundWinVisible) {
         roundWinEl.classList.toggle('hud__round-win--active', roundWinVisible);

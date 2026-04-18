@@ -55,6 +55,9 @@
 - Weapon shot effects now render through the shared `EffectsManager`, which also provides the baseline path for smoke and bomb-objective effects
 - Weapon swapping is slot-driven through config data, so adding new number-key weapons does not require another hardcoded branch in `WeaponManager`
 - Slot lookup now comes from config data rather than a per-frame scan across all weapons, which keeps input handling simpler as the arsenal grows
+- Competitive can now override primary-slot resolution at the app/input layer:
+  - if the player owns the team sniper slot, the primary-slot action resolves to `Sniper`
+  - otherwise the same action resolves to `Rifle`
 - `WeaponManager` now coordinates weapon runtime state while delegating hitscan/melee resolution, viewmodel presentation math, weapon policy, and active-viewmodel selection to smaller helpers, which lowers the cost of adding more weapons or expanding animation logic later
 - The active base FOV is now exposed to the player as horizontal FOV and is configurable from the pause menu
 - The current first-person prototype path includes a temporary `F4` live-tuning panel for viewmodel and muzzle alignment
@@ -73,6 +76,10 @@
 
 - Implemented and active
 - Includes `Rifle`, `Pistol`, `Knife`, and `Sniper` slots, weapon swapping on number keys, sniper scope-stage toggling, per-weapon damage values, weapon-dependent movement speed, and a basic knife thrust attack with dedicated audio
+- Competitive now layers a simple buy/loadout rule over that baseline:
+  - all players begin without sniper by default
+  - only one sniper can be owned per team
+  - choosing sniper replaces the player's primary-slot rifle behaviorally
 - Rifle damage is now hit-zone aware in the authoritative PvP path:
   - head shots are lethal
   - body shots use the main baseline damage

@@ -3,11 +3,13 @@ export class GameplayNetworkingCoordinator {
     this.networkClient = networkClient;
     this.lastSentWeaponKey = null;
     this.lastSentScopedState = false;
+    this.pendingWeaponKey = null;
   }
 
   resetTrackedStatus() {
     this.lastSentWeaponKey = null;
     this.lastSentScopedState = false;
+    this.pendingWeaponKey = null;
   }
 
   isGameplaySyncEnabled({ authoritativeNetworkingEnabled, playerController }) {
@@ -50,6 +52,7 @@ export class GameplayNetworkingCoordinator {
 
     this.lastSentWeaponKey = weaponManager?.activeWeaponKey ?? 'rifle';
     this.lastSentScopedState = Boolean(weaponManager?.isScoped);
+    this.pendingWeaponKey = null;
   }
 
   syncCombatNetworkingMode({
@@ -74,6 +77,7 @@ export class GameplayNetworkingCoordinator {
           return;
         }
 
+        this.pendingWeaponKey = activeWeaponKey;
         this.networkClient.sendPlayerStatus({
           activeWeaponKey,
           isScoped: Boolean(weaponManager?.isScoped),
@@ -99,9 +103,31 @@ export class GameplayNetworkingCoordinator {
       return;
     }
 
+    this.pendingWeaponKey = activeWeaponKey;
     this.networkClient.sendPlayerStatus({ activeWeaponKey, isScoped });
     this.lastSentWeaponKey = activeWeaponKey;
     this.lastSentScopedState = isScoped;
+  }
+
+  shouldWaitForAuthoritativeWeapon({ authoritativeWeaponKey, localWeaponKey }) {
+    const resolvedAuthoritativeWeaponKey = String(authoritativeWeaponKey ?? 'rifle');
+    const resolvedLocalWeaponKey = String(localWeaponKey ?? 'rifle');
+
+    if (this.pendingWeaponKey && resolvedAuthoritativeWeaponKey === this.pendingWeaponKey) {
+      this.pendingWeaponKey = null;
+      return false;
+    }
+
+    if (!this.pendingWeaponKey) {
+      return false;
+    }
+
+    if (resolvedLocalWeaponKey !== this.pendingWeaponKey) {
+      this.pendingWeaponKey = null;
+      return false;
+    }
+
+    return resolvedAuthoritativeWeaponKey !== this.pendingWeaponKey;
   }
 
   handleCombatEvents({

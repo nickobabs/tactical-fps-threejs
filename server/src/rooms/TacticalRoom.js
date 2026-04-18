@@ -16,6 +16,7 @@ import {
   NETCODE_SERVER_HITBOX_HISTORY_MS,
 } from '../../../src/shared/netcode.js';
 import {
+  createBuyRequestMessage,
   createChatMessage,
   createPlayerInputMessage,
   createPlayerFireMessage,
@@ -124,6 +125,10 @@ function createGameplaySettingsForGamemode(gamemode) {
     ...DEFAULT_GAMEPLAY_SETTINGS,
     infiniteAmmoEnabled: !isCompetitiveGamemode(gamemode),
   };
+}
+
+function isSniperWeaponKey(weaponKey) {
+  return String(weaponKey ?? '') === 'sniper';
 }
 
 function getFreezeLockedInput(input) {
@@ -841,6 +846,7 @@ export class TacticalRoom extends Room {
       player.kills = 0;
       player.deaths = 0;
       player.activeWeaponKey = 'rifle';
+      player.ownsSniper = false;
       player.isScoped = false;
       this.respawnPlayer(player, { broadcastEvent: false });
     }
@@ -912,6 +918,7 @@ export class TacticalRoom extends Room {
       }
 
       player.activeWeaponKey = 'rifle';
+      player.ownsSniper = false;
       player.isScoped = false;
       this.respawnPlayer(player, { broadcastEvent: false });
     }
@@ -1584,6 +1591,7 @@ export class TacticalRoom extends Room {
         player.health = player.maxHealth;
         player.isAlive = true;
         player.respawnAt = 0;
+        player.ownsSniper = false;
         player.activeWeaponKey = getSharedWeaponData(readyState.activeWeaponKey)
           ? readyState.activeWeaponKey
           : player.activeWeaponKey;
@@ -1609,9 +1617,12 @@ export class TacticalRoom extends Room {
         return;
       }
 
-      const fireRequest = createPlayerFireMessage(message, Number(message?.timestamp ?? Date.now()));
-      this.processPlayerFire(player, fireRequest);
-    });
+    const fireRequest = createPlayerFireMessage(message, Number(message?.timestamp ?? Date.now()));
+    if (isSniperWeaponKey(fireRequest.weaponKey) && !player.ownsSniper) {
+      return;
+    }
+    this.processPlayerFire(player, fireRequest);
+  });
 
     this.onMessage('player-status', (client, message) => {
       const player = this.players[client.sessionId];
@@ -1625,6 +1636,9 @@ export class TacticalRoom extends Room {
       const nextWeaponKey = getSharedWeaponData(nextStatus.activeWeaponKey)
         ? nextStatus.activeWeaponKey
         : player.activeWeaponKey;
+      if (isSniperWeaponKey(nextWeaponKey) && !player.ownsSniper) {
+        return;
+      }
       const nextScoped = Boolean(nextStatus.isScoped) && nextWeaponKey !== 'knife';
       if (nextWeaponKey === player.activeWeaponKey && nextScoped === player.isScoped) {
         return;
@@ -1656,6 +1670,45 @@ export class TacticalRoom extends Room {
       }
 
       this.emitChatEvent(player, chatMessage);
+    });
+
+    this.onMessage('buy-request', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (
+        !player?.isReady
+        || !player.isAlive
+        || !isCompetitiveGamemode(this.roundManager.gamemode)
+        || this.roundManager.phase !== 'freeze'
+      ) {
+        return;
+      }
+
+      const buyRequest = createBuyRequestMessage(message);
+      if (buyRequest.weaponKey === 'rifle') {
+        const changed = this.setPlayerSniperOwnership(player, false);
+        if (!isSniperWeaponKey(player.activeWeaponKey)) {
+          if (player.activeWeaponKey !== 'rifle') {
+            player.activeWeaponKey = 'rifle';
+            player.isScoped = false;
+            this.requestStateBroadcast();
+          }
+        } else {
+          this.requestStateBroadcast();
+        }
+        if (changed) {
+          this.requestStateBroadcast();
+        }
+        return;
+      }
+
+      if (!this.canPlayerOwnSniper(player)) {
+        return;
+      }
+
+      player.ownsSniper = true;
+      player.activeWeaponKey = 'sniper';
+      player.isScoped = false;
+      this.requestStateBroadcast();
     });
 
     this.onMessage('set-gamemode', (client, message) => {
@@ -1846,6 +1899,7 @@ export class TacticalRoom extends Room {
       lastFireAt: 0,
       pitch: 0,
       activeWeaponKey: 'rifle',
+      ownsSniper: false,
       isScoped: false,
       presentationState: 'idle',
       deathClip: null,
@@ -1945,6 +1999,44 @@ export class TacticalRoom extends Room {
       objective: this.getObjectiveSnapshot(),
       gameplay: { ...this.gameplaySettings },
     });
+  }
+
+  getSniperOwnerForTeam(teamKey, { excludePlayerId = null } = {}) {
+    return Object.values(this.players).find((player) => (
+      player?.isReady
+      && player?.team === teamKey
+      && player?.playerId !== excludePlayerId
+      && Boolean(player?.ownsSniper)
+    )) ?? null;
+  }
+
+  canPlayerOwnSniper(player) {
+    if (!player?.isReady || !isCompetitiveGamemode(this.roundManager.gamemode)) {
+      return false;
+    }
+
+    const existingOwner = this.getSniperOwnerForTeam(player.team, {
+      excludePlayerId: player.playerId,
+    });
+    return existingOwner == null;
+  }
+
+  setPlayerSniperOwnership(player, ownsSniper) {
+    if (!player) {
+      return false;
+    }
+
+    const nextOwnsSniper = Boolean(ownsSniper);
+    if (player.ownsSniper === nextOwnsSniper) {
+      return false;
+    }
+
+    player.ownsSniper = nextOwnsSniper;
+    if (!nextOwnsSniper && isSniperWeaponKey(player.activeWeaponKey)) {
+      player.activeWeaponKey = 'rifle';
+      player.isScoped = false;
+    }
+    return true;
   }
 
   requestStateBroadcast() {

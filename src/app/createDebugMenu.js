@@ -23,6 +23,8 @@ export function createDebugMenu({
   container,
   onToggleHudMode,
   onForceSideSwap,
+  onToggleCollisionDebug,
+  getCollisionDebugEnabled,
   onToggleCrouchFatigueDebug,
   onToggleInfiniteAmmo,
   getInfiniteAmmoEnabled,
@@ -80,6 +82,11 @@ export function createDebugMenu({
           getLabel: () => `Infinite Ammo: ${getInfiniteAmmoEnabled?.() ? 'ON' : 'OFF'}`,
           getDescription: () => 'Toggle the room-wide infinite-ammo setting for all connected players.',
           onClick: () => onToggleInfiniteAmmo?.(),
+        },
+        {
+          getLabel: () => `Collision Wireframe: ${getCollisionDebugEnabled?.() ? 'ON' : 'OFF'}`,
+          getDescription: () => 'Toggle the map collision wireframe overlay.',
+          onClick: () => onToggleCollisionDebug?.(),
         },
         {
           label: 'Crouch Fatigue Debug',

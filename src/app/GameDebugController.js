@@ -31,6 +31,10 @@ export class GameDebugController {
     this.ignoreLocalCorrections = !this.ignoreLocalCorrections;
   }
 
+  isCollisionDebugEnabled() {
+    return this.showCollisionDebug;
+  }
+
   requestDebugSnapshot() {
     this.markDebugSnapshotRequested = true;
   }

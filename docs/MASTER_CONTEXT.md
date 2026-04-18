@@ -203,7 +203,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `J`: log current position
   - `K`: save a debug marker
   - `L`: dump saved markers
-  - `B`: toggle collision wireframe overlay
+  - collision wireframe toggle now lives in the backquote debug menu under `Live Debugging`
 - Baked navmesh generation exists through `npm run build:navmesh`.
 - Imported map support is working through the current Dust2 imported-map path:
   - visual `.glb`
@@ -219,6 +219,12 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - `Debug`
   - `Competitive`
   - `Competitive` is currently only intended for `Dust2 Test`; other maps sanitize back to `Debug`
+- Competitive now also has a simple freeze-time buy flow:
+  - players begin without sniper by default
+  - `B` opens a buy menu during freeze
+  - players choose between `Rifle` and `Sniper`
+  - only one player per team can own sniper
+  - owning sniper makes the primary-slot action resolve to sniper instead of rifle
 - First bomb-objective slice is active:
   - attacker bomb carrier assigned after freeze
   - bomb is equipable with `5`
@@ -244,6 +250,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - side-swap / overtime intermissions with forced scoreboard and HUD messaging
   - dead players now auto-spectate alive teammates after `2` seconds if a valid teammate exists
   - competitive now defaults room-wide infinite ammo to `off`
+  - freeze-time buy flow now allows `Rifle` vs one team-limited `Sniper`
 
 ## Current Gameplay Snapshot
 
@@ -270,6 +277,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - volume slider
   - sensitivity slider
   - horizontal FOV slider
+  - runtime key rebinding with local browser persistence
 - Multiplayer:
   - Colyseus room
   - attacker/defender team selection
@@ -648,6 +656,7 @@ This project is a Counter-Strike-like tactical first-person shooter focused on g
   - current live round-control tooling includes:
     - force side swap
     - room-wide infinite ammo toggle
+    - collision wireframe toggle
     - crouch-fatigue debug toggle for the movement HUD line
   - the menu can also open:
     - recoil tuning

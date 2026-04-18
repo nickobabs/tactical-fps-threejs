@@ -8,6 +8,7 @@ import {
   createBombDropMessage,
   createBombDefuseMessage,
   createBombPlantMessage,
+  createBuyRequestMessage,
   createChatMessage,
   createDebugRoundControlMessage,
   createGamemodeChangeMessage,
@@ -711,6 +712,15 @@ export class NetworkClient {
     }
 
     this.room.send('chat-message', createChatMessage(state));
+    return true;
+  }
+
+  sendBuyRequest(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('buy-request', createBuyRequestMessage(state));
     return true;
   }
 

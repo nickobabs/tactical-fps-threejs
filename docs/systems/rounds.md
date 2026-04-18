@@ -75,11 +75,15 @@
 
 ## Limitations
 
-- No economy or buy phase
+- No money/economy system yet
 - Dead players now enter a simple teammate spectate flow after `2` seconds if a same-team alive player exists
 - This is currently a client-side observer pass only:
   - no killer cam
   - no free cam
   - no server-side observer permissions/rules yet
-- No competitive buy/loadout rules yet
+- Competitive now has a simple freeze-time buy/loadout rule:
+  - all players begin without sniper by default
+  - pressing `B` opens a small buy menu during freeze
+  - only one player per team can own sniper
+  - choosing sniper replaces the player's primary-slot rifle behavior for that round
 - Competitive intermissions still allow movement for pacing; only combat/objective actions are locked

@@ -37,6 +37,7 @@
 - Browser default actions are also suppressed for the main debug hotkeys (`F3`, `F6`, `F7`, `F9`, `F10`) so they behave as reliable in-game toggles.
 - Input buffers are cleared only when `consumeFrameState()` is called.
 - Frame input is intentionally lightweight and synchronous.
+- Input is now action-based and runtime-rebindable instead of gameplay code depending only on hardcoded raw keys.
 - Chat is still HUD-owned rather than `InputManager`-owned:
   - `Enter` opens the chat input
   - `Enter` sends
@@ -48,12 +49,17 @@
 
 - Implemented and active
 - Supports movement keys, jump, sprint, crouch, look, left/right mouse buttons, weapon swapping, pause detection via `Escape`, and pointer lock state tracking
+- Supports runtime key rebinding with browser-local persistence
 - Also supports HUD-driven chat entry with pointer-lock release/restore around typing
 - Current gameplay slot bindings are:
   - `1` rifle
   - `2` pistol
   - `3` knife
   - `4` sniper
+  - `5` bomb
+  - `6` smoke
+- Current menu/action bindings of note are:
+  - `B` open buy menu by default
 - Current movement bindings of note are:
   - `Shift` grounded walk
   - `C` crouch
@@ -65,3 +71,4 @@
   - `F8` net debug
   - `F9` correction toggle
   - `F10` movement trace capture
+  - collision wireframe now toggles from the debug menu instead of a dedicated raw-key hotkey
