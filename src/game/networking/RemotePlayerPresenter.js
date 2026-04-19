@@ -96,7 +96,7 @@ const REMOTE_BORROWED_WEAPON_DEFINITIONS = {
   pistol: {
     meshName: 'USP_1',
     rootNodeName: 'USP',
-    muzzlePosition: [0.72, 0.1, -0.86],
+    muzzlePosition: [0.21, 0.02, -0.92],
     targetLength: 0.34,
     hideFlash: false,
   },
@@ -140,6 +140,9 @@ const REMOTE_HITBOX_WORLD_POINT_B = new THREE.Vector3();
 const REMOTE_TRACER_ORIGIN = new THREE.Vector3();
 const REMOTE_BLOOD_ORIGIN = new THREE.Vector3();
 const REMOTE_BLOOD_OUTWARD = new THREE.Vector3();
+const REMOTE_DEFUSE_WIRE_START = new THREE.Vector3();
+const REMOTE_DEFUSE_WIRE_MIDPOINT = new THREE.Vector3();
+const REMOTE_DEFUSE_WIRE_END = new THREE.Vector3();
 let REMOTE_RIFLE_ASSET_PROMISE = null;
 let REMOTE_BORROWED_WEAPON_ASSET_PROMISE = null;
 let REMOTE_CCDIK_SOLVER_PROMISE = null;
@@ -152,6 +155,11 @@ const REMOTE_RIFLE_FALLBACK_SOCKET_PRESETS = {
     muzzle: { x: -0.01, y: 0.052, z: -0.618 },
   },
 };
+
+function isRemoteBallisticWeaponKey(weaponKey) {
+  const normalized = String(weaponKey ?? '');
+  return normalized === 'rifle' || normalized === 'sniper' || normalized === 'pistol';
+}
 
 const DEFAULT_REMOTE_CHARACTER_SETTINGS = {
   modelScale: REMOTE_CHARACTER_MODEL_SCALE,
@@ -717,6 +725,28 @@ function createRemoteHitCapsuleDebugMesh(color) {
   return { group, cylinder, top, bottom };
 }
 
+function createRemoteDefuseWireMesh() {
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x111111,
+    transparent: true,
+    opacity: 0.98,
+    depthTest: true,
+  });
+  const geometry = new THREE.CylinderGeometry(1, 1, 1, 8, 1, false);
+  const group = new THREE.Group();
+  const firstSegment = new THREE.Mesh(geometry, material);
+  const secondSegment = new THREE.Mesh(geometry, material);
+  firstSegment.castShadow = false;
+  firstSegment.receiveShadow = false;
+  secondSegment.castShadow = false;
+  secondSegment.receiveShadow = false;
+  group.add(firstSegment, secondSegment);
+  group.visible = false;
+  group.frustumCulled = false;
+  group.renderOrder = 2;
+  return { group, firstSegment, secondSegment };
+}
+
 function findRemoteHitBones(root, definition) {
   const skeleton = definition?.skeleton ?? {};
   return resolveRemoteHitBones(root, skeleton);
@@ -760,6 +790,7 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
   root.add(weaponAnchor);
 
   const debugAttachments = createRemoteDebugAttachments();
+  const defuseWire = createRemoteDefuseWireMesh();
 
   return {
     root,
@@ -807,6 +838,7 @@ function createRemotePlayerVisual(displayName, bodyMaterial) {
     characterModelScaleAtAttach: 1,
     characterBasePosition: new THREE.Vector3(),
     team: null,
+    defuseWire,
   };
 }
 
@@ -1344,7 +1376,62 @@ function updateRemoteFireFlashPresentation(visual, delta) {
   flash.scale.setScalar(0.6 + (1 - normalizedFlash) * 0.65);
 }
 
-function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bodyMaterials) {
+function updateRemoteDefuseWire(visual, objectiveState) {
+  const wire = visual.defuseWire?.group;
+  if (!wire) {
+    return;
+  }
+
+  const defuserPlayerId = objectiveState?.defuserPlayerId ? String(objectiveState.defuserPlayerId) : null;
+  const bombState = String(objectiveState?.bombState ?? '');
+  const bombPosition = objectiveState?.plantedPosition ?? null;
+  const handBone = visual.characterHitBones?.rightHand ?? visual.characterWeaponBone ?? null;
+  if (
+    bombState !== 'planted'
+    || !defuserPlayerId
+    || defuserPlayerId !== String(visual.playerId ?? '')
+    || !bombPosition
+    || !handBone?.getWorldPosition
+    || visual.root.visible === false
+  ) {
+    wire.visible = false;
+    return;
+  }
+
+  handBone.updateWorldMatrix?.(true, false);
+  handBone.getWorldPosition(REMOTE_DEFUSE_WIRE_START);
+  REMOTE_DEFUSE_WIRE_END.set(
+    Number(bombPosition.x ?? 0),
+    Number(bombPosition.y ?? 0) + 0.19,
+    Number(bombPosition.z ?? 0),
+  );
+  REMOTE_DEFUSE_WIRE_MIDPOINT
+    .copy(REMOTE_DEFUSE_WIRE_START)
+    .add(REMOTE_DEFUSE_WIRE_END)
+    .multiplyScalar(0.5);
+  REMOTE_DEFUSE_WIRE_MIDPOINT.y -= Math.min(
+    0.1,
+    REMOTE_DEFUSE_WIRE_START.distanceTo(REMOTE_DEFUSE_WIRE_END) * 0.08,
+  );
+  const segments = [
+    [REMOTE_DEFUSE_WIRE_START, REMOTE_DEFUSE_WIRE_MIDPOINT, visual.defuseWire.firstSegment],
+    [REMOTE_DEFUSE_WIRE_MIDPOINT, REMOTE_DEFUSE_WIRE_END, visual.defuseWire.secondSegment],
+  ];
+  for (const [segmentStart, segmentEnd, segmentMesh] of segments) {
+    REMOTE_HITBOX_SEGMENT_START.copy(segmentStart);
+    REMOTE_HITBOX_SEGMENT_END.copy(segmentEnd);
+    REMOTE_HITBOX_SEGMENT_CENTER.copy(REMOTE_HITBOX_SEGMENT_START).add(REMOTE_HITBOX_SEGMENT_END).multiplyScalar(0.5);
+    REMOTE_HITBOX_SEGMENT_DIRECTION.copy(REMOTE_HITBOX_SEGMENT_END).sub(REMOTE_HITBOX_SEGMENT_START);
+    const segmentLength = Math.max(0.001, REMOTE_HITBOX_SEGMENT_DIRECTION.length());
+    REMOTE_HITBOX_SEGMENT_DIRECTION.normalize();
+    segmentMesh.position.copy(REMOTE_HITBOX_SEGMENT_CENTER);
+    segmentMesh.quaternion.setFromUnitVectors(REMOTE_HITBOX_UP_AXIS, REMOTE_HITBOX_SEGMENT_DIRECTION);
+    segmentMesh.scale.set(0.02, segmentLength, 0.02);
+  }
+  wire.visible = true;
+}
+
+function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bodyMaterials, objectiveState) {
   const height = Math.max(
     0.8,
     Number(player.currentHeight ?? authoritativeState?.currentHeight ?? REMOTE_PLAYER_STAND_HEIGHT),
@@ -1431,6 +1518,7 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
 
   updateRemoteLeftHandIk(visual);
   updateRemoteFireFlashPresentation(visual, delta);
+  updateRemoteDefuseWire(visual, objectiveState);
 }
 
 function disposeRemotePlayerVisual(visual) {
@@ -1456,6 +1544,8 @@ function disposeRemotePlayerVisual(visual) {
   visual.bodyCylinder.geometry.dispose();
   visual.bodyTop.geometry.dispose();
   visual.bodyBottom.geometry.dispose();
+  visual.defuseWire?.firstSegment?.geometry?.dispose?.();
+  visual.defuseWire?.firstSegment?.material?.dispose?.();
 }
 
 export class RemotePlayerPresenter {
@@ -1471,6 +1561,7 @@ export class RemotePlayerPresenter {
     this.showHitVolumeDebug = this.hitboxDebugSettings.enabled;
     this.spectatorTargetPlayerId = null;
     this.debugPingRoundTripMs = 0;
+    this.objectiveState = null;
     this.weaponTuningPanel = createRemoteWeaponTuningPanel();
     this.characterTuningPanel = createRemoteCharacterTuningPanel();
     this.remotePlayerMaterial = new THREE.MeshStandardMaterial({
@@ -1488,6 +1579,7 @@ export class RemotePlayerPresenter {
   handleCombatEvent(event) {
     if (event?.type === 'player-fired') {
       const visual = this.remotePlayerMeshes.get(event.playerId);
+      const eventWeaponKey = String(event.weaponKey ?? visual?.weaponKey ?? 'rifle');
       if (visual) {
         if (event.weaponKey && event.weaponKey !== visual.weaponKey) {
           setRemotePlayerWeapon(visual, event.weaponKey);
@@ -1498,7 +1590,13 @@ export class RemotePlayerPresenter {
           captureAimBoneBasePose: captureRemoteAimBoneBasePose,
         });
       }
-      if (this.effectsManager && event?.playerId !== this.localPlayerId && event?.origin && event?.tracerEnd) {
+      if (
+        this.effectsManager
+        && event?.playerId !== this.localPlayerId
+        && event?.origin
+        && event?.tracerEnd
+        && isRemoteBallisticWeaponKey(eventWeaponKey)
+      ) {
         const flash = visual?.weaponMesh?.userData?.flash ?? null;
         const preferAuthoritativeOrigin = this.spectatorTargetPlayerId != null
           && String(event.playerId ?? '') === String(this.spectatorTargetPlayerId);
@@ -1598,6 +1696,7 @@ export class RemotePlayerPresenter {
         this.scene.add(visual.positionDebugGroup.group);
         this.scene.add(visual.rewoundHitVolumeDebugGroup.group);
         this.scene.add(visual.rewoundPositionDebugGroup.group);
+        this.scene.add(visual.defuseWire.group);
         visual.showHitVolumeDebug = this.showHitVolumeDebug;
         visual.hitVolumeDebugGroup.group.visible = this.showHitVolumeDebug;
         visual.positionDebugGroup.group.visible = this.showHitVolumeDebug;
@@ -1609,13 +1708,14 @@ export class RemotePlayerPresenter {
       const authoritativeSnapshots = authoritativeBuffers.get(player.playerId) ?? [];
       const authoritativeState = authoritativeSnapshots.at?.(-1) ?? null;
       const renderPlayer = player;
+      visual.playerId = String(player.playerId ?? '');
       visual.team = renderPlayer.team ?? authoritativeState?.team ?? null;
       ensureRemoteCharacterModel(visual);
       setRemotePlayerWeapon(visual, authoritativeState?.activeWeaponKey ?? renderPlayer.activeWeaponKey);
       updateRemotePlayerVisual(visual, renderPlayer, delta, authoritativeState, {
         alive: this.remotePlayerMaterial,
         dead: this.remotePlayerDeadMaterial,
-      });
+      }, this.objectiveState);
       const hideForSpectator = this.spectatorTargetPlayerId != null && player.playerId === this.spectatorTargetPlayerId;
       visual.root.visible = !hideForSpectator;
       const debugSettings = getRemoteDebugSettings();
@@ -1668,6 +1768,7 @@ export class RemotePlayerPresenter {
       this.scene.remove(visual.positionDebugGroup.group);
       this.scene.remove(visual.rewoundHitVolumeDebugGroup.group);
       this.scene.remove(visual.rewoundPositionDebugGroup.group);
+      this.scene.remove(visual.defuseWire.group);
       disposeRemotePlayerVisual(visual);
       this.remotePlayerMeshes.delete(playerId);
     }
@@ -1680,6 +1781,7 @@ export class RemotePlayerPresenter {
       this.scene.remove(visual.positionDebugGroup.group);
       this.scene.remove(visual.rewoundHitVolumeDebugGroup.group);
       this.scene.remove(visual.rewoundPositionDebugGroup.group);
+      this.scene.remove(visual.defuseWire.group);
       disposeRemotePlayerVisual(visual);
     }
 
@@ -1704,6 +1806,10 @@ export class RemotePlayerPresenter {
 
   setSpectatorTargetPlayerId(playerId) {
     this.spectatorTargetPlayerId = playerId ? String(playerId) : null;
+  }
+
+  setObjectiveState(objectiveState) {
+    this.objectiveState = objectiveState ?? null;
   }
 
   setLagCompensationDebug({ pingRoundTripMs = 0 } = {}) {

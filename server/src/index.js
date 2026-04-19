@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { Server } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import express from 'express';
+import {
+  avatarStorageDir,
+  saveProfileAvatarDataUrl,
+  saveProfileSprayDataUrl,
+  sprayStorageDir,
+} from './avatarStorage.js';
 import { TacticalRoom } from './rooms/TacticalRoom.js';
 
 const port = Number(process.env.PORT ?? 2567);
@@ -58,6 +64,32 @@ app.use('/debug/remote-animation-trace', (request, response, next) => {
   next();
 });
 
+app.use('/api/profile-avatar', (request, response, next) => {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (request.method === 'OPTIONS') {
+    response.status(204).end();
+    return;
+  }
+
+  next();
+});
+
+app.use('/api/profile-spray', (request, response, next) => {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (request.method === 'OPTIONS') {
+    response.status(204).end();
+    return;
+  }
+
+  next();
+});
+
 app.use(express.json({ limit: '25mb' }));
 
 app.post('/debug/movement-trace', async (request, response) => {
@@ -98,6 +130,44 @@ app.post('/debug/remote-animation-trace', async (request, response) => {
   }
 });
 
+app.post('/api/profile-avatar', async (request, response) => {
+  const profileId = request.body?.profileId ?? null;
+  const imageDataUrl = request.body?.imageDataUrl ?? null;
+
+  try {
+    const result = await saveProfileAvatarDataUrl(profileId, imageDataUrl);
+    response.status(200).json({ ok: true, ...result });
+  } catch (error) {
+    response.status(400).json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Failed to save avatar.',
+    });
+  }
+});
+
+app.post('/api/profile-spray', async (request, response) => {
+  const profileId = request.body?.profileId ?? null;
+  const imageDataUrl = request.body?.imageDataUrl ?? null;
+
+  try {
+    const result = await saveProfileSprayDataUrl(profileId, imageDataUrl);
+    response.status(200).json({ ok: true, sprayUrl: result.avatarUrl, sprayVersion: result.avatarVersion });
+  } catch (error) {
+    response.status(400).json({
+      ok: false,
+      error: error instanceof Error ? error.message : 'Failed to save spray.',
+    });
+  }
+});
+
+const uploadedMediaStaticOptions = {
+  setHeaders(response) {
+    response.setHeader('Access-Control-Allow-Origin', '*');
+  },
+};
+
+app.use('/uploads/avatars', express.static(avatarStorageDir, uploadedMediaStaticOptions));
+app.use('/uploads/sprays', express.static(sprayStorageDir, uploadedMediaStaticOptions));
 app.use(express.static(clientDistPath));
 
 app.get('/{*splat}', (request, response, next) => {

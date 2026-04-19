@@ -71,6 +71,30 @@ function getDefaultServerUrl() {
   return `${protocol}//${window.location.host}`;
 }
 
+function resolveServerAssetUrl(serverUrl, assetUrl) {
+  const normalizedAssetUrl = String(assetUrl ?? '').trim();
+  if (!normalizedAssetUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(normalizedAssetUrl).toString();
+  } catch {
+    // Fall through and resolve relative to the backend origin.
+  }
+
+  try {
+    const baseUrl = new URL(serverUrl);
+    baseUrl.protocol = baseUrl.protocol === 'wss:' ? 'https:' : 'http:';
+    baseUrl.pathname = '/';
+    baseUrl.search = '';
+    baseUrl.hash = '';
+    return new URL(normalizedAssetUrl, baseUrl).toString();
+  } catch {
+    return normalizedAssetUrl;
+  }
+}
+
 export class NetworkClient {
   constructor(options = {}) {
     this.instanceId = NEXT_NETWORK_CLIENT_INSTANCE_ID;
@@ -408,6 +432,8 @@ export class NetworkClient {
     for (const [playerId, playerState] of Object.entries(players)) {
       receivedPlayerStateCount += 1;
       const normalizedState = normalizeAuthoritativePlayerState(playerId, playerState);
+      normalizedState.avatarUrl = resolveServerAssetUrl(this.serverUrl, normalizedState.avatarUrl);
+      normalizedState.sprayUrl = resolveServerAssetUrl(this.serverUrl, normalizedState.sprayUrl);
 
       if (playerId === this.playerId) {
         if (activeMapId && normalizedState.mapId !== activeMapId) {
@@ -633,6 +659,52 @@ export class NetworkClient {
     return true;
   }
 
+  sendAvatarUpdate(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('player-avatar', {
+      profileId: String(state?.profileId ?? '').trim().toLowerCase(),
+      avatarVersion: Number(state?.avatarVersion ?? Date.now()),
+    });
+    return true;
+  }
+
+  sendSprayUpdate(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('player-spray', {
+      profileId: String(state?.profileId ?? '').trim().toLowerCase(),
+      sprayVersion: Number(state?.sprayVersion ?? Date.now()),
+    });
+    return true;
+  }
+
+  sendSprayPlacement(state) {
+    if (!this.room || !state) {
+      return false;
+    }
+
+    this.room.send('place-spray', {
+      mapId: String(state?.mapId ?? '').trim(),
+      position: {
+        x: Number(state?.position?.x ?? 0),
+        y: Number(state?.position?.y ?? 0),
+        z: Number(state?.position?.z ?? 0),
+      },
+      normal: {
+        x: Number(state?.normal?.x ?? 0),
+        y: Number(state?.normal?.y ?? 0),
+        z: Number(state?.normal?.z ?? 1),
+      },
+      rotation: Number(state?.rotation ?? 0),
+    });
+    return true;
+  }
+
   sendRemoteHitboxAudit(audit) {
     if (!this.room || !audit) {
       return false;
@@ -780,6 +852,10 @@ export class NetworkClient {
     }
 
     return interpolatedPlayers;
+  }
+
+  getSprays() {
+    return Array.isArray(this.sprays) ? this.sprays : [];
   }
 
   getRemotePlayerCount() {

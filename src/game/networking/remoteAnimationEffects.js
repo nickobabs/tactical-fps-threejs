@@ -2,6 +2,11 @@ import { REMOTE_CLIPS } from '../../shared/remoteCharacterConfig.js';
 import { shouldPlayRemoteFullBodyFire } from '../../shared/remotePosePlayback.js';
 import { playRemoteUpperBodyClip, setRemoteCharacterClip } from './remoteAnimationPlayback.js';
 
+function isRemoteBallisticWeaponKey(weaponKey) {
+  const normalized = String(weaponKey ?? '');
+  return normalized === 'rifle' || normalized === 'sniper' || normalized === 'pistol';
+}
+
 export function triggerRemotePlayerFireFlash(
   visual,
   {
@@ -14,7 +19,7 @@ export function triggerRemotePlayerFireFlash(
     return;
   }
 
-  visual.flashTime = fireFlashDuration;
+  visual.flashTime = isRemoteBallisticWeaponKey(visual.weaponKey) ? fireFlashDuration : 0;
   if (shouldPlayRemoteFullBodyFire({
     characterDefinition: visual.characterDefinition,
     weaponKey: visual.weaponKey,

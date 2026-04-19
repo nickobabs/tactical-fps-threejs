@@ -58,6 +58,7 @@ export function createHud({
   getCompetitiveBuyState,
   onResume,
   onSelectTeam,
+  onChangePlayerName,
   onToggleHudMode,
   onSelectMap,
   onSelectGamemode,
@@ -67,6 +68,8 @@ export function createHud({
   onRebindKeybind,
   onRequestCompetitiveBuy,
   onResetKeybinds,
+  onUploadAvatar,
+  onUploadSpray,
   maps = [],
   gamemodes = [],
   getSelectedMapId,
@@ -89,6 +92,8 @@ export function createHud({
   onSelectSkybox,
   skyboxes = [],
   getSelectedSkyboxId,
+  getProfileAvatarUrl,
+  getProfileSprayUrl,
 }) {
   const hud = document.createElement('div');
   hud.className = 'hud';
@@ -267,6 +272,7 @@ export function createHud({
     onFovChange,
     onVolumeChange,
     onSelectTeam,
+    onChangePlayerName,
     getKeyBindings,
     onRebindKeybind,
     onResetKeybinds,
@@ -274,6 +280,10 @@ export function createHud({
     getMouseSensitivity,
     getHorizontalFov,
     getSelectedPlayerName,
+    onUploadAvatar,
+    onUploadSpray,
+    getProfileAvatarUrl,
+    getProfileSprayUrl,
     isGamemodeEnabled: (gamemodeId, mapId) => (
       gamemodeId !== 'competitive' || mapId === 'dust2-map-test'
     ),
@@ -389,13 +399,16 @@ export function createHud({
   let buyMenuOpen = false;
   let restorePointerLockAfterChat = false;
 
-  function renderRoundRosterTeam(teamState, iconPath) {
+  function renderRoundRosterTeam(teamState, iconPath, teamKey) {
     const players = [...(teamState?.players ?? [])]
       .sort((left, right) => String(left.displayName ?? left.playerId).localeCompare(String(right.displayName ?? right.playerId)));
     return players.map((player) => {
       const deadClass = player?.isAlive === false ? ' hud__round-roster-slot--dead' : '';
+      const teamClass = teamKey ? ` hud__round-roster-slot--${teamKey}` : '';
       const title = String(player?.displayName ?? player?.playerId ?? '');
-      return `<div class="hud__round-roster-slot${deadClass}" title="${title}"><img class="hud__round-roster-icon" src="${iconPath}" alt="" /></div>`;
+      const imagePath = String(player?.avatarUrl ?? iconPath);
+      const avatarClass = player?.avatarUrl ? ' hud__round-roster-icon--avatar' : '';
+      return `<div class="hud__round-roster-slot${deadClass}${teamClass}" title="${title}"><img class="hud__round-roster-icon${avatarClass}" src="${imagePath}" alt="" /></div>`;
     }).join('');
   }
 
@@ -1049,8 +1062,8 @@ export function createHud({
         positionText,
         pointerText,
       });
-      const defendersRosterHtml = renderRoundRosterTeam(defendersTeam, DEFENDER_ROSTER_ICON);
-      const attackersRosterHtml = renderRoundRosterTeam(attackersTeam, ATTACKER_ROSTER_ICON);
+      const defendersRosterHtml = renderRoundRosterTeam(defendersTeam, DEFENDER_ROSTER_ICON, 'defenders');
+      const attackersRosterHtml = renderRoundRosterTeam(attackersTeam, ATTACKER_ROSTER_ICON, 'attackers');
       if (defendersRosterHtml !== lastRoundRosterDefendersHtml) {
         roundRosterDefendersEl.innerHTML = defendersRosterHtml;
         lastRoundRosterDefendersHtml = defendersRosterHtml;
@@ -1226,6 +1239,9 @@ export function createHud({
         selectedGamemodeId: getSelectedGamemodeId?.(),
         selectedSkyboxId: getSelectedSkyboxId?.(),
         selectedTeam: getSelectedTeam?.(),
+        selectedPlayerName: getSelectedPlayerName?.() ?? '',
+        profileAvatarUrl: getProfileAvatarUrl?.() ?? null,
+        profileSprayUrl: getProfileSprayUrl?.() ?? null,
       });
       teamSelectOverlay.updateSelection(getSelectedTeam?.() ?? null);
     },

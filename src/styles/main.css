@@ -476,13 +476,32 @@ canvas {
 }
 
 .hud__round-roster-slot {
-  width: 60px;
-  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  padding: 2px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0;
+  background: rgba(7, 11, 15, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.72),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
   opacity: 1;
+  overflow: hidden;
 }
 
 .hud__round-roster-slot--dead {
   opacity: 0.38;
+}
+
+.hud__round-roster-slot--defenders {
+  border-color: rgba(124, 169, 218, 0.72);
+}
+
+.hud__round-roster-slot--attackers {
+  border-color: rgba(213, 179, 101, 0.72);
 }
 
 .hud__round-roster-icon {
@@ -490,6 +509,12 @@ canvas {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  border-radius: 0;
+  background: rgba(6, 8, 12, 0.92);
+}
+
+.hud__round-roster-icon--avatar {
+  object-fit: cover;
 }
 
 .hud__round-roster-slot--dead .hud__round-roster-icon {
@@ -1454,6 +1479,44 @@ canvas {
   display: flex;
 }
 
+.hud__pause-avatar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hud__pause-avatar-preview-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border: 2px solid rgba(255, 219, 133, 0.32);
+  border-radius: 16px;
+  background: rgba(5, 8, 12, 0.88);
+  overflow: hidden;
+}
+
+.hud__pause-avatar-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hud__pause-avatar-preview--empty {
+  opacity: 0;
+}
+
+.hud__pause-avatar-copy {
+  display: grid;
+  gap: 4px;
+}
+
 .hud__team-select {
   position: absolute;
   inset: 0;
@@ -1681,7 +1744,6 @@ canvas {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
-  margin-top: 18px;
 }
 
 .hud__pause-tabs {
@@ -1703,6 +1765,90 @@ canvas {
   color: rgba(230, 237, 245, 0.7);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.hud__pause-panel-body {
+  display: none;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(174, 211, 255, 0.12);
+}
+
+.hud__pause-panel-body--active {
+  display: block;
+}
+
+.hud__pause-profile-grid,
+.hud__pause-settings-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.hud__pause-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hud__pause-card-title {
+  color: rgba(239, 243, 249, 0.92);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud__pause-card-copy {
+  color: rgba(230, 237, 245, 0.72);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.hud__pause-field {
+  display: grid;
+  gap: 8px;
+}
+
+.hud__pause-field-label {
+  color: rgba(239, 243, 249, 0.82);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hud__pause-text-input {
+  width: min(360px, 100%);
+  padding: 12px 14px;
+  border: 1px solid rgba(239, 198, 118, 0.22);
+  border-radius: 12px;
+  background: rgba(9, 12, 16, 0.82);
+  color: #f5f7fb;
+  font: inherit;
+  font-size: 15px;
+}
+
+.hud__pause-text-input:focus-visible {
+  outline: none;
+  border-color: rgba(255, 225, 167, 0.56);
+  box-shadow: 0 0 0 1px rgba(255, 225, 167, 0.32);
+}
+
+.hud__pause-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hud__pause-spray-placeholder {
+  padding: 14px;
+  border: 1px dashed rgba(174, 211, 255, 0.24);
+  border-radius: 12px;
+  color: rgba(174, 211, 255, 0.86);
+  font-size: 13px;
+  background: rgba(7, 13, 20, 0.42);
 }
 
 .hud__pause-footer {
@@ -1784,17 +1930,9 @@ canvas {
 }
 
 .hud__bindings {
-  display: none;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(174, 211, 255, 0.12);
   color: rgba(230, 237, 245, 0.9);
   font-size: 13px;
   line-height: 1.7;
-}
-
-.hud__bindings--visible {
-  display: block;
 }
 
 .hud__bindings-toolbar {
@@ -1841,15 +1979,6 @@ canvas {
 .hud__maps,
 .hud__gamemodes,
 .hud__skyboxes {
-  display: none;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(174, 211, 255, 0.12);
-}
-
-.hud__maps--visible,
-.hud__gamemodes--visible,
-.hud__skyboxes--visible {
   display: block;
 }
 
@@ -1908,6 +2037,11 @@ canvas {
   .hud__pause-summary,
   .hud__pause-controls {
     grid-template-columns: 1fr;
+  }
+
+  .hud__pause-avatar {
+    grid-template-columns: 1fr;
+    justify-items: start;
   }
 
   .hud__pause-button--primary {

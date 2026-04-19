@@ -32,6 +32,10 @@ See also:
   - visible remote animation now uses render-time interpolated state, and the rewound debug overlay is authoritative-derived from replicated snapshots/raw points
   - current status is good enough for checkpointing; next work here should be validation/hardening rather than more blind threshold tweaks
   - remaining head-fit issues are now understood as extreme-pitch orientation/anchor problems, not broad rewind-parity failures
+- [session-note-2026-04-19-profile-media-and-sprays.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-19-profile-media-and-sprays.md)
+  - profile media and sprays now use a persistent browser-local `profileId` plus server file storage
+  - pause-menu runtime UI now has a clearer `Profile` / `Settings` split
+  - world-spray rendering and upload/storage logic now live in dedicated modules instead of being folded into larger HUD/networking classes
 
 ## What Is Already In Better Shape
 
@@ -58,6 +62,10 @@ See also:
   - movement simulation is shared between client and server in [playerMovement.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/playerMovement.js)
   - remote interpolation / rewind helpers are now shared in [remoteTimeline.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteTimeline.js)
   - remote fire/clip transition timing now has an explicit shared contract in [remotePosePlayback.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remotePosePlayback.js)
+- Player profile / cosmetic helpers
+  - profile-id and local profile-media persistence now live in [playerProfile.js](/C:/Users/nicko/tactical-fps-threejs/src/app/playerProfile.js)
+  - uploaded avatar/spray file storage now lives in [avatarStorage.js](/C:/Users/nicko/tactical-fps-threejs/server/src/avatarStorage.js)
+  - world spray rendering now lives in [SprayManager.js](/C:/Users/nicko/tactical-fps-threejs/src/game/effects/SprayManager.js)
 - Audio / tuning surfaces
   - shared audio registration lives in [createGameAudioManager.js](/C:/Users/nicko/tactical-fps-threejs/src/app/createGameAudioManager.js)
   - movement tuning and recoil tuning are now separate runtime tools instead of being hidden inside larger gameplay classes
@@ -125,6 +133,7 @@ See also:
     - remote snapshot dedupe/pruning
     - event queue helpers
     - gameplay-state apply/reset helpers
+    - profile-media/spray URL resolution helpers
   - the remaining rule is important:
     - keep room-token guards and reconnect ownership local unless there is a very strong boundary
 - Server-side authoritative room / hitbox runtime
@@ -178,3 +187,4 @@ See also:
 5. Treat server payload shaping as mostly “done enough” unless a similarly clear serialization boundary appears.
 6. Treat Dust2 grounding notes and movement-feel tuning as debugging/tuning concerns, not refactor tasks.
 7. For the next substantial multiplayer-quality pass, prefer a shared remote pose/blend-state module used by both visible presentation and authoritative hitbox evaluation.
+8. Treat profile media and sprays as mostly â€œgood enoughâ€ unless identity/auth or moderation requirements become real.

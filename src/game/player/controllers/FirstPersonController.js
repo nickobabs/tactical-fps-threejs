@@ -701,7 +701,7 @@ export class FirstPersonController {
       left: false,
       right: false,
       walk: false,
-      crouch: this.interactionLockMode === 'plant' ? true : this.isCrouched,
+      crouch: this.interactionLockMode === 'plant' ? true : snapshot.crouch,
       jump: false,
     };
   }

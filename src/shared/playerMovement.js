@@ -10,6 +10,7 @@ export const PLAYER_MOVEMENT_DEFAULTS = {
   acceleration: 18,
   deceleration: 14,
   airControl: 0.35,
+  forwardAirControlBoost: 1.4,
   crouchLerpSpeed: 12,
   crouchFatigueGraceToggles: 2,
   crouchFatiguePerToggle: 0.45,
@@ -271,9 +272,20 @@ export function simulatePlayerMovement(
     ? groundedMaxSpeed
     : (Number.isFinite(state.airborneMaxSpeed) ? Number(state.airborneMaxSpeed) : groundedMaxSpeed);
 
-  const targetVelocityX = moveLength > 0 ? moveX * effectiveMaxSpeed : 0;
-  const targetVelocityZ = moveLength > 0 ? moveZ * effectiveMaxSpeed : 0;
-  const control = state.isGrounded ? 1 : config.airControl;
+  const targetVelocityX = moveLength > 0
+    ? moveX * effectiveMaxSpeed
+    : (state.isGrounded ? 0 : Number(state.velocity?.x ?? 0));
+  const targetVelocityZ = moveLength > 0
+    ? moveZ * effectiveMaxSpeed
+    : (state.isGrounded ? 0 : Number(state.velocity?.z ?? 0));
+  const forwardAirControlMultiplier = (
+    !state.isGrounded
+    && inputSnapshot?.forward
+    && !inputSnapshot?.backward
+  )
+    ? Math.max(1, Number(config.forwardAirControlBoost ?? 1))
+    : 1;
+  const control = state.isGrounded ? 1 : (config.airControl * forwardAirControlMultiplier);
   const currentHorizontalSpeed = Math.hypot(state.velocity.x, state.velocity.z);
   const speedAlpha = effectiveMaxSpeed > 1e-6
     ? clamp(currentHorizontalSpeed / effectiveMaxSpeed, 0, 1)
@@ -294,11 +306,25 @@ export function simulatePlayerMovement(
     ? config.deceleration * lerp(1, 2.4, reverseAlpha)
     : config.acceleration * control;
   const blend = moveLength <= 0
-    ? Math.min(1, groundedDeceleration * delta)
+    ? (state.isGrounded ? Math.min(1, groundedDeceleration * delta) : 0)
     : Math.min(1, config.acceleration * control * groundedAccelerationRamp * delta);
-
-  state.velocity.x = lerp(state.velocity.x, targetVelocityX, blend);
-  state.velocity.z = lerp(state.velocity.z, targetVelocityZ, blend);
+  if (!state.isGrounded && moveLength > 0 && currentHorizontalSpeed > 1e-6) {
+    const steeredX = lerp(state.velocity.x / currentHorizontalSpeed, moveX, blend);
+    const steeredZ = lerp(state.velocity.z / currentHorizontalSpeed, moveZ, blend);
+    const steeredLength = Math.hypot(steeredX, steeredZ);
+    const steeredDirectionX = steeredLength > 1e-6 ? (steeredX / steeredLength) : moveX;
+    const steeredDirectionZ = steeredLength > 1e-6 ? (steeredZ / steeredLength) : moveZ;
+    const acceleratedSpeed = Math.min(
+      effectiveMaxSpeed,
+      currentHorizontalSpeed + (config.acceleration * control * delta),
+    );
+    const preservedSpeed = Math.max(currentHorizontalSpeed, acceleratedSpeed);
+    state.velocity.x = steeredDirectionX * preservedSpeed;
+    state.velocity.z = steeredDirectionZ * preservedSpeed;
+  } else {
+    state.velocity.x = lerp(state.velocity.x, targetVelocityX, blend);
+    state.velocity.z = lerp(state.velocity.z, targetVelocityZ, blend);
+  }
 
   const wasGrounded = state.isGrounded;
   if (state.isGrounded && wantsJump) {

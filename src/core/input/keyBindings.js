@@ -17,6 +17,7 @@ export const ACTION_DEFINITIONS = [
   { id: 'weaponSniper', label: 'Equip Sniper', defaultBinding: 'Digit4' },
   { id: 'weaponBomb', label: 'Equip Bomb', defaultBinding: 'Digit5' },
   { id: 'weaponSmoke', label: 'Equip Smoke', defaultBinding: 'Digit6' },
+  { id: 'spray', label: 'Spray', defaultBinding: 'KeyT' },
   { id: 'openBuyMenu', label: 'Open Buy Menu', defaultBinding: 'KeyB' },
 ];
 

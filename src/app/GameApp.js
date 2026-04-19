@@ -24,9 +24,19 @@ import { createRemoteHitboxDebugPanel } from '../game/networking/createRemoteHit
 import { REMOTE_AUDIO_TUNING } from '../game/audio/remoteAudioTuning.js';
 import { createHudLayoutTuningPanel } from '../game/ui/createHudLayoutTuningPanel.js';
 import { HUD_LAYOUT_TUNING, applyHudLayoutTuningToRoot, loadHudLayoutTuning } from '../game/ui/hudLayoutTuning.js';
+import { SprayManager } from '../game/effects/SprayManager.js';
 import { TEAMS } from '../shared/constants.js';
 import { GAMEMODE_OPTIONS, GAMEMODES, isCompetitiveGamemode, sanitizeGamemodeForMap } from '../shared/gamemodes.js';
 import { VIEWMODEL_LAYER } from '../game/weapons/viewModels.js';
+import {
+  buildAvatarUploadDataUrl,
+  buildSprayUploadDataUrl,
+  getOrCreateLocalProfileId,
+  getStoredProfileAvatarUrl,
+  getStoredProfileSprayUrl,
+  setStoredProfileAvatarUrl,
+  setStoredProfileSprayUrl,
+} from './playerProfile.js';
 
 const DEFAULT_HORIZONTAL_FOV = 103;
 const DEFAULT_MOUSE_SENSITIVITY = 0.0011;
@@ -158,6 +168,50 @@ function getMovementTraceUploadUrl(serverUrl) {
 
 function getRemoteAnimationTraceUploadUrl(serverUrl) {
   return getDebugUploadUrl(serverUrl, '/debug/remote-animation-trace');
+}
+
+function getProfileAvatarUploadUrl(serverUrl) {
+  return getDebugUploadUrl(serverUrl, '/api/profile-avatar');
+}
+
+function getFallbackLocalUploadUrls(pathName) {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  const hostname = window.location.hostname;
+  const host = window.location.host;
+  const candidates = [];
+
+  if (hostname) {
+    candidates.push(`${protocol}//${hostname}:2567${pathName}`);
+  }
+  if (host) {
+    candidates.push(`${protocol}//${host}${pathName}`);
+  }
+
+  return candidates;
+}
+
+function getProfileAvatarUploadUrls(serverUrl) {
+  const urls = [
+    getProfileAvatarUploadUrl(serverUrl),
+    ...getFallbackLocalUploadUrls('/api/profile-avatar'),
+  ];
+  return Array.from(new Set(urls.filter((value) => typeof value === 'string' && value.length > 0)));
+}
+
+function getProfileSprayUploadUrl(serverUrl) {
+  return getDebugUploadUrl(serverUrl, '/api/profile-spray');
+}
+
+function getProfileSprayUploadUrls(serverUrl) {
+  const urls = [
+    getProfileSprayUploadUrl(serverUrl),
+    ...getFallbackLocalUploadUrls('/api/profile-spray'),
+  ];
+  return Array.from(new Set(urls.filter((value) => typeof value === 'string' && value.length > 0)));
 }
 
 function getHorizontalDistance(vector) {
@@ -523,6 +577,30 @@ function getDebugUploadUrl(serverUrl, pathName) {
   }
 }
 
+function resolveServerAssetUrl(serverUrl, assetUrl) {
+  const normalizedAssetUrl = String(assetUrl ?? '').trim();
+  if (!normalizedAssetUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(normalizedAssetUrl).toString();
+  } catch {
+    // Fall through and resolve relative to the backend origin.
+  }
+
+  const baseUrl = getDebugUploadUrl(serverUrl, '/');
+  if (!baseUrl) {
+    return normalizedAssetUrl;
+  }
+
+  try {
+    return new URL(normalizedAssetUrl, baseUrl).toString();
+  } catch {
+    return normalizedAssetUrl;
+  }
+}
+
 function getSafeRate(value, divisor) {
   if (!Number.isFinite(value) || !Number.isFinite(divisor) || divisor <= 0) {
     return 0;
@@ -563,6 +641,9 @@ export class GameApp {
     this.roundKillCounts = new Map();
     this.selectedTeam = null;
     this.selectedPlayerName = loadStoredPlayerName();
+    this.profileId = getOrCreateLocalProfileId();
+    this.profileAvatarUrl = getStoredProfileAvatarUrl();
+    this.profileSprayUrl = getStoredProfileSprayUrl();
     this.selectedGamemode = GAMEMODES.DEBUG;
     this.hudMode = loadStoredHudMode();
     this.lastLocalPlayerAlive = true;
@@ -592,6 +673,7 @@ export class GameApp {
     this.spectatorActivateAt = 0;
     this.activeSpectatorTargetState = null;
     this.remotePlayerPresenter = new RemotePlayerPresenter(this.scene);
+    this.sprayManager = new SprayManager(this.scene);
     const initialMapId = MAP_OPTIONS[0].id;
     this.selectedSkyboxId = SKYBOX_OPTIONS[0].id;
 
@@ -706,6 +788,7 @@ export class GameApp {
     this.hud.destroy();
     this.fatalErrorOverlay.destroy();
     this.remotePlayerPresenter.destroy();
+    this.sprayManager.destroy();
     this.unloadMap();
     this.skyboxManager.dispose();
     this.networkClient.destroy();
@@ -742,6 +825,7 @@ export class GameApp {
       getCompetitiveBuyState: () => this.getCompetitiveBuyState(),
       onResume: () => this.resumeGame(),
       onSelectTeam: (team, playerName) => void this.selectTeam(team, playerName),
+      onChangePlayerName: (playerName) => this.updateProfileName(playerName),
       onToggleHudMode: () => this.toggleHudMode(),
       onSelectMap: (mapId) => this.loadMap(mapId),
       onSelectGamemode: (gamemodeId) => this.selectGamemode(gamemodeId),
@@ -751,6 +835,8 @@ export class GameApp {
       onRebindKeybind: (actionId, binding) => this.rebindKeybind(actionId, binding),
       onRequestCompetitiveBuy: (weaponKey) => this.requestCompetitiveBuyWeapon(weaponKey),
       onResetKeybinds: () => this.resetKeybinds(),
+      onUploadAvatar: (file) => this.uploadProfileAvatar(file),
+      onUploadSpray: (file) => this.uploadProfileSpray(file),
       maps: MAP_OPTIONS,
       gamemodes: GAMEMODE_OPTIONS,
       getSelectedMapId: () => this.selectedMapId,
@@ -773,6 +859,8 @@ export class GameApp {
       onSelectSkybox: (skyboxId) => this.setSkybox(skyboxId),
       skyboxes: SKYBOX_OPTIONS,
       getSelectedSkyboxId: () => this.selectedSkyboxId,
+      getProfileAvatarUrl: () => this.profileAvatarUrl,
+      getProfileSprayUrl: () => this.profileSprayUrl,
     });
     this.pauseController.attachHud(this.hud);
   }
@@ -786,6 +874,7 @@ export class GameApp {
     this.lastLocalPlayerHasBomb = false;
     this.bombCarrierAnnouncementText = '';
     this.bombCarrierAnnouncementExpiresAt = 0;
+    this.sprayManager.clear();
     this.sessionController.unloadCurrentRuntime({
       remotePlayerPresenter: this.remotePlayerPresenter,
     });
@@ -1109,6 +1198,116 @@ export class GameApp {
     this.rebuildHud();
   }
 
+  async uploadProfileAvatar(file) {
+    const imageDataUrl = await buildAvatarUploadDataUrl(file);
+    const uploadUrls = getProfileAvatarUploadUrls(this.networkClient?.serverUrl);
+    if (uploadUrls.length === 0) {
+      throw new Error('Avatar upload URL is unavailable.');
+    }
+
+    let lastError = null;
+    for (const uploadUrl of uploadUrls) {
+      let response = null;
+      try {
+        response = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            profileId: this.profileId,
+            imageDataUrl,
+          }),
+        });
+        const responseText = await response.text();
+        const payload = (() => {
+          try {
+            return responseText ? JSON.parse(responseText) : null;
+          } catch {
+            return null;
+          }
+        })();
+        if (!response.ok || !payload?.ok || !payload?.avatarUrl) {
+          const detail = payload?.error
+            ?? responseText?.trim()
+            ?? `HTTP ${response.status}`;
+          throw new Error(`Failed to upload avatar via ${uploadUrl} (${response.status}): ${detail}`);
+        }
+
+        this.profileAvatarUrl = resolveServerAssetUrl(this.networkClient?.serverUrl, payload.avatarUrl);
+        setStoredProfileAvatarUrl(this.profileAvatarUrl);
+        this.networkClient.sendAvatarUpdate({
+          profileId: this.profileId,
+          avatarVersion: payload.avatarVersion,
+        });
+        this.rebuildHud();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (response && response.status !== 404) {
+          break;
+        }
+      }
+    }
+
+    throw lastError ?? new Error('Failed to upload avatar.');
+  }
+
+  async uploadProfileSpray(file) {
+    const imageDataUrl = await buildSprayUploadDataUrl(file);
+    const uploadUrls = getProfileSprayUploadUrls(this.networkClient?.serverUrl);
+    if (uploadUrls.length === 0) {
+      throw new Error('Spray upload URL is unavailable.');
+    }
+
+    let lastError = null;
+    for (const uploadUrl of uploadUrls) {
+      let response = null;
+      try {
+        response = await fetch(uploadUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            profileId: this.profileId,
+            imageDataUrl,
+          }),
+        });
+        const responseText = await response.text();
+        const payload = (() => {
+          try {
+            return responseText ? JSON.parse(responseText) : null;
+          } catch {
+            return null;
+          }
+        })();
+        if (!response.ok || !payload?.ok || !payload?.sprayUrl) {
+          const detail = payload?.error
+            ?? responseText?.trim()
+            ?? `HTTP ${response.status}`;
+          throw new Error(`Failed to upload spray via ${uploadUrl} (${response.status}): ${detail}`);
+        }
+
+        this.profileSprayUrl = resolveServerAssetUrl(this.networkClient?.serverUrl, payload.sprayUrl);
+        setStoredProfileSprayUrl(this.profileSprayUrl);
+        this.networkClient.sendSprayUpdate({
+          profileId: this.profileId,
+          sprayVersion: payload.sprayVersion,
+        });
+        this.rebuildHud();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (response && response.status !== 404) {
+          break;
+        }
+      }
+    }
+
+    throw lastError ?? new Error('Failed to upload spray.');
+  }
+
   toggleFlyMode() {
     if (!this.runtime?.playerController) {
       return;
@@ -1134,6 +1333,7 @@ export class GameApp {
         mapId: this.selectedMapId,
         team: this.selectedTeam ?? TEAMS.ATTACKERS,
         displayName: this.selectedPlayerName,
+        profileId: this.profileId,
         playerController: this.runtime.playerController,
         weaponManager: this.runtime.weaponManager,
       });
@@ -1795,6 +1995,7 @@ export class GameApp {
   updateRemotePlayers(delta) {
     this.remotePlayerPresenter.setEffectsManager(this.runtime?.effectsManager ?? null);
     this.remotePlayerPresenter.setLocalPlayerId(this.networkClient.playerId ?? null);
+    this.remotePlayerPresenter.setObjectiveState(this.networkClient.getObjectiveState?.() ?? null);
     this.remotePlayerPresenter.setLagCompensationDebug({
       pingRoundTripMs: this.networkClient.getDebugState?.().pingAverageMs ?? 0,
     });
@@ -1813,9 +2014,69 @@ export class GameApp {
     this.remoteHitboxDebugPanel?.sync?.();
   }
 
+  updateSprays(frameInput) {
+    const resolvedSprays = (this.networkClient.getSprays?.() ?? []).map((spray) => ({
+      ...spray,
+      sprayUrl: resolveServerAssetUrl(this.networkClient?.serverUrl, spray?.sprayUrl),
+    }));
+    this.sprayManager.syncSprays(
+      resolvedSprays,
+      this.selectedMapId,
+    );
+
+    if (this.pauseController.isPaused) {
+      return;
+    }
+
+    if (
+      !frameInput?.actionJustPressed?.has?.('spray')
+      || !this.runtime?.map?.shootables?.length
+      || !this.runtime?.playerController
+      || !this.profileSprayUrl
+    ) {
+      return;
+    }
+
+    const localPlayerState = this.networkClient.getLocalPlayerState?.();
+    if (localPlayerState?.isAlive === false) {
+      return;
+    }
+
+    const raycaster = this.runtime.weaponManager?.raycaster ?? new THREE.Raycaster();
+    raycaster.layers.set(0);
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    const hit = raycaster.intersectObjects(this.runtime.map.shootables, false)[0];
+    if (!hit?.point || !hit?.face || !hit?.object) {
+      return;
+    }
+
+    const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+    const sprayRotation = this.runtime.playerController.yawAngle ?? 0;
+    this.networkClient.sendSprayPlacement({
+      mapId: this.selectedMapId,
+      position: hit.point,
+      normal: worldNormal,
+      rotation: sprayRotation,
+    });
+  }
+
   updateGameplayFrame(delta, frameInput) {
     this.updateRoundStartResets();
     const localCombatState = this.networkClient.getLocalPlayerState?.();
+    const authoritativeAvatarUrl = localCombatState?.avatarUrl
+      ? resolveServerAssetUrl(this.networkClient?.serverUrl, localCombatState.avatarUrl)
+      : null;
+    if (authoritativeAvatarUrl !== this.profileAvatarUrl) {
+      this.profileAvatarUrl = authoritativeAvatarUrl;
+      setStoredProfileAvatarUrl(this.profileAvatarUrl);
+    }
+    const authoritativeSprayUrl = localCombatState?.sprayUrl
+      ? resolveServerAssetUrl(this.networkClient?.serverUrl, localCombatState.sprayUrl)
+      : null;
+    if (authoritativeSprayUrl !== this.profileSprayUrl) {
+      this.profileSprayUrl = authoritativeSprayUrl;
+      setStoredProfileSprayUrl(this.profileSprayUrl);
+    }
     const authoritativeLocalTeam = localCombatState?.team;
     if (authoritativeLocalTeam === TEAMS.ATTACKERS || authoritativeLocalTeam === TEAMS.DEFENDERS) {
       this.selectedTeam = authoritativeLocalTeam;
@@ -1833,6 +2094,7 @@ export class GameApp {
       this.updateNetworkState(delta);
       this.updateEffects(delta);
       this.updatePlayerPresentation(delta);
+      this.updateSprays(frameInput);
       this.updateRemotePlayers(delta);
       this.applySpectatorView(delta);
       return;
@@ -1847,6 +2109,7 @@ export class GameApp {
     this.updateEffects(delta);
     this.updatePlayerPresentation(delta);
     this.updateTargets(delta);
+    this.updateSprays(frameInput);
     this.updateRemotePlayers(delta);
     this.applySpectatorView(delta);
     this.recordMovementTraceIfNeeded();
@@ -2375,6 +2638,7 @@ export class GameApp {
         mapId: this.selectedMapId,
         team: this.selectedTeam,
         displayName: this.selectedPlayerName,
+        profileId: this.profileId,
         playerController: this.runtime.playerController,
         weaponManager: this.runtime.weaponManager,
       });
@@ -2394,6 +2658,33 @@ export class GameApp {
       });
     } catch (error) {
       console.error('Failed to resume pointer lock after team selection.', error);
+    }
+  }
+
+  updateProfileName(playerName) {
+    const resolvedPlayerName = sanitizePlayerName(playerName, this.selectedPlayerName);
+    if (resolvedPlayerName === this.selectedPlayerName) {
+      return;
+    }
+
+    this.selectedPlayerName = resolvedPlayerName;
+    persistPlayerName(resolvedPlayerName);
+    this.rebuildHud();
+
+    if (!this.runtime?.playerController || !this.runtime?.weaponManager) {
+      return;
+    }
+
+    if (this.getGameplaySyncEnabled()) {
+      this.gameplayNetworking.syncLocalPlayer({
+        authoritativeNetworkingEnabled: this.authoritativeNetworkingEnabled,
+        mapId: this.selectedMapId,
+        team: this.selectedTeam ?? TEAMS.ATTACKERS,
+        displayName: this.selectedPlayerName,
+        profileId: this.profileId,
+        playerController: this.runtime.playerController,
+        weaponManager: this.runtime.weaponManager,
+      });
     }
   }
 }

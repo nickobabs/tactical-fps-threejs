@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { Room } from '@colyseus/core';
 import { CollisionWorld } from '../../../src/core/physics/CollisionWorld.js';
 import {
+  resolveStoredProfileAvatarUrl,
+  resolveStoredProfileSprayUrl,
+  sanitizeProfileId,
+} from '../avatarStorage.js';
+import {
   createPlayerMovementState,
   isPlayerPresentationCrouched,
   simulatePlayerMovement,
@@ -109,6 +114,8 @@ const BOMB_EXPLOSION_MAX_RADIUS = 100;
 const FOOTSTEP_POSITION_Y_OFFSET = 0.08;
 const SMOKE_BLOOM_MAX_VALIDATE_DISTANCE = 32;
 const SMOKE_THROW_MAX_VALIDATE_DISTANCE = 3;
+const SPRAY_MAX_VALIDATE_DISTANCE = 3.5;
+const MAX_ACTIVE_SPRAYS = 48;
 const DEFAULT_GAMEPLAY_SETTINGS = Object.freeze({
   infiniteAmmoEnabled: true,
 });
@@ -340,6 +347,9 @@ export class TacticalRoom extends Room {
 
     this.roundManager.beginFreeze();
     this.resetObjectiveState();
+    if (isCompetitiveGamemode(this.roundManager.gamemode)) {
+      this.resetPlayersForNextRound();
+    }
     return true;
   }
 
@@ -356,6 +366,7 @@ export class TacticalRoom extends Room {
     this.roundManager.startDebugSideSwapIntermission();
     this.swapReadyPlayerSides();
     this.resetObjectiveState();
+    this.clearSprays();
     this.requestStateBroadcast();
     return true;
   }
@@ -374,6 +385,7 @@ export class TacticalRoom extends Room {
     const nextGamemode = sanitizeGamemodeForMap(gamemode, mapId);
     this.roundManager.resetMatch(nextGamemode);
     this.resetObjectiveState();
+    this.clearSprays();
     this.gameplaySettings = createGameplaySettingsForGamemode(nextGamemode);
 
     for (const player of Object.values(this.players)) {
@@ -394,6 +406,7 @@ export class TacticalRoom extends Room {
   }
 
   resetPlayersForNextRound() {
+    this.clearSprays();
     const spawnPoolsByMapTeam = new Map();
 
     for (const player of Object.values(this.players)) {
@@ -890,6 +903,14 @@ export class TacticalRoom extends Room {
     return createObjectiveSnapshot(this.objectiveState);
   }
 
+  clearSprays() {
+    if (!Array.isArray(this.sprays) || this.sprays.length === 0) {
+      return false;
+    }
+    this.sprays = [];
+    return true;
+  }
+
   onCreate() {
     this.setPrivate(false);
     this.players = {};
@@ -906,6 +927,7 @@ export class TacticalRoom extends Room {
     this.objectiveState = this.createObjectiveState();
     this.roundManager.setGamemode(GAMEMODES.DEBUG);
     this.gameplaySettings = createGameplaySettingsForGamemode(this.roundManager.gamemode);
+    this.sprays = [];
     void Promise.all([
       createRemoteHitboxRig(TEAMS.ATTACKERS),
       createRemoteHitboxRig(TEAMS.DEFENDERS),
@@ -1080,6 +1102,13 @@ export class TacticalRoom extends Room {
         player.mapId = readyState.mapId;
         player.team = this.sanitizeTeam(readyState.team);
         player.displayName = this.sanitizeDisplayName(readyState.displayName, player.displayName);
+        player.profileId = sanitizeProfileId(readyState.profileId);
+        player.avatarUrl = player.profileId
+          ? await resolveStoredProfileAvatarUrl(player.profileId)
+          : null;
+        player.sprayUrl = player.profileId
+          ? await resolveStoredProfileSprayUrl(player.profileId)
+          : null;
         player.isReady = false;
         player.pendingInputs.length = 0;
         player.footstepDistance = 0;
@@ -1357,7 +1386,93 @@ export class TacticalRoom extends Room {
         roundManager: this.roundManager,
         objectiveState: this.objectiveState,
         gameplaySettings: this.gameplaySettings,
+        sprays: this.sprays,
       }));
+    });
+
+    this.onMessage('player-avatar', async (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player?.isReady || !player.profileId) {
+        return;
+      }
+
+      const messageProfileId = sanitizeProfileId(message?.profileId);
+      if (!messageProfileId || messageProfileId !== player.profileId) {
+        return;
+      }
+
+      player.avatarUrl = await resolveStoredProfileAvatarUrl(player.profileId);
+      this.requestStateBroadcast();
+    });
+
+    this.onMessage('player-spray', async (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player?.isReady || !player.profileId) {
+        return;
+      }
+
+      const messageProfileId = sanitizeProfileId(message?.profileId);
+      if (!messageProfileId || messageProfileId !== player.profileId) {
+        return;
+      }
+
+      player.sprayUrl = await resolveStoredProfileSprayUrl(player.profileId);
+      this.requestStateBroadcast();
+    });
+
+    this.onMessage('place-spray', (client, message) => {
+      const player = this.players[client.sessionId];
+      if (!player?.isReady || !player?.isAlive || !player?.sprayUrl) {
+        return;
+      }
+
+      const mapId = String(message?.mapId ?? '');
+      if (!mapId || mapId !== player.mapId) {
+        return;
+      }
+
+      const position = {
+        x: Number(message?.position?.x ?? 0),
+        y: Number(message?.position?.y ?? 0),
+        z: Number(message?.position?.z ?? 0),
+      };
+      const normal = {
+        x: Number(message?.normal?.x ?? 0),
+        y: Number(message?.normal?.y ?? 0),
+        z: Number(message?.normal?.z ?? 1),
+      };
+      const normalLength = Math.hypot(normal.x, normal.y, normal.z);
+      if (!Number.isFinite(normalLength) || normalLength <= 1e-4) {
+        return;
+      }
+      normal.x /= normalLength;
+      normal.y /= normalLength;
+      normal.z /= normalLength;
+
+      const distanceFromPlayer = Math.hypot(
+        position.x - Number(player.motionState?.position?.x ?? 0),
+        position.y - (Number(player.motionState?.position?.y ?? 0) + Number(player.motionState?.currentHeight ?? 1.72) * 0.5),
+        position.z - Number(player.motionState?.position?.z ?? 0),
+      );
+      if (!Number.isFinite(distanceFromPlayer) || distanceFromPlayer > SPRAY_MAX_VALIDATE_DISTANCE) {
+        return;
+      }
+
+      this.sprays = this.sprays.filter((spray) => String(spray?.playerId ?? '') !== String(player.playerId));
+      this.sprays.push({
+        id: `spray-${player.playerId}`,
+        playerId: player.playerId,
+        mapId,
+        sprayUrl: player.sprayUrl,
+        rotation: Number(message?.rotation ?? 0),
+        createdAt: Date.now(),
+        position,
+        normal,
+      });
+      while (this.sprays.length > MAX_ACTIVE_SPRAYS) {
+        this.sprays.shift();
+      }
+      this.requestStateBroadcast();
     });
 
     this.onMessage('remote-hitbox-audit', (client, message) => {
@@ -1423,6 +1538,9 @@ export class TacticalRoom extends Room {
       authoritativeHitboxes: null,
       hitboxHistory: [],
       missingHitboxBonesLogged: false,
+      profileId: null,
+      avatarUrl: null,
+      sprayUrl: null,
     };
     this.nextPlayerNumber += 1;
     void createRemoteHitboxRig()
@@ -1514,6 +1632,7 @@ export class TacticalRoom extends Room {
       roundManager: this.roundManager,
       objectiveState: this.objectiveState,
       gameplaySettings: this.gameplaySettings,
+      sprays: this.sprays,
     }));
   }
 

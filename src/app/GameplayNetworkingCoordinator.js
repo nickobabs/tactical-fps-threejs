@@ -21,6 +21,7 @@ export class GameplayNetworkingCoordinator {
     mapId,
     team,
     displayName,
+    profileId,
     playerController,
     weaponManager,
   }) {
@@ -32,6 +33,7 @@ export class GameplayNetworkingCoordinator {
       mapId,
       team,
       displayName,
+      profileId,
       position: {
         x: playerController.position.x,
         y: playerController.position.y,

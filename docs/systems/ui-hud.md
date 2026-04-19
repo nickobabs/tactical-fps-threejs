@@ -64,6 +64,7 @@
 - Multiplayer debug tooling is intentionally kept in the HUD path for now because it is the fastest way to compare local feel against network/correction state during active development
 - HUD responsibilities are now split by controller instead of keeping all rendering logic in one file
 - Pause-menu settings now use real runtime values and persist locally in browser `localStorage`
+- Pause-menu information architecture now separates player-profile actions from gameplay/settings controls so the main pause surface is less overwhelming
 - The top-center round HUD is now the primary round timer surface:
   - player icons are team-colored and fade/greyscale on death
   - the round score stays center-anchored between the two teams
@@ -77,17 +78,23 @@
 - Includes:
   - pause/resume flow
   - team-select flow with player-name input
-  - key bindings view
+  - profile panel for:
+    - player name
+    - avatar preview/upload
+    - spray preview/upload
+  - settings panel for:
+    - key bindings
+    - volume control
+    - sensitivity control with numeric feedback
+    - horizontal FOV control
   - map selection view
   - skybox selection view
-  - volume control
-  - sensitivity control with numeric feedback
-  - horizontal FOV control
   - runtime key rebinding with reset-to-default
   - FPS display
   - scoped reticles
   - Enter-to-chat composer with `[ALL]` / `[TEAM]` mode indicator in the input row
   - centered map-loading overlay
+  - no expanded pause-menu panels by default on open
 - Includes a competitive freeze-time buy menu:
   - opened from the current `Open Buy Menu` binding (`B` by default)
   - chooses between `Rifle` and `Sniper`

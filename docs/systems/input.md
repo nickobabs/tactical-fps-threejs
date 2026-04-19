@@ -60,6 +60,7 @@
   - `6` smoke
 - Current menu/action bindings of note are:
   - `B` open buy menu by default
+  - `T` spray by default
 - Current movement bindings of note are:
   - `Shift` grounded walk
   - `C` crouch

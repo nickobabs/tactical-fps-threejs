@@ -10,6 +10,7 @@ The project is aiming for a Counter-Strike-like feel:
 - server-authoritative multiplayer
 - visible remote players backed by authoritative hit validation
 - round-based attacker/defender play with a first bomb-objective slice
+- lightweight persistent player profile media and replicated sprays
 
 This repo should be read as a playable multiplayer game-tech prototype, not just a rendering demo.
 
@@ -29,11 +30,13 @@ The current build is a real multiplayer-capable tactical FPS foundation with:
 - server-authoritative segmented remote hit volumes
 - server-authoritative round state and first bomb-objective flow
 - first authoritative remote-audio slice for weapon fire, smoke bloom, and audible footsteps
+- persistent browser-local profile identity with backend-stored avatars and sprays
 - live in-browser debug tooling for movement, networking, recoil, remote audio, footsteps/bob, hitboxes, and weapon/model tuning
 
 It already supports real play loops:
 
 - choose a team and player name
+- set a persistent local profile with avatar and spray
 - choose a gamemode
 - spawn into a map
 - move, walk, crouch, jump, and fight
@@ -41,6 +44,7 @@ It already supports real play loops:
 - equip and throw a smoke grenade
 - carry, drop, recover, and plant the bomb
 - play through freeze, live, planted, intermission, and match-restart states
+- place one replicated world spray per round and replace it with a new one
 - inspect network/movement state live
 - validate remote pose/hitbox parity with debug overlays
 
@@ -82,6 +86,7 @@ It already supports real play loops:
 - RTT-based scoreboard ping
 - Server-authoritative fire requests and hit validation
 - Replicated health, alive state, respawn timing, pitch, stance, weapon, presentation state, team, and display name
+- Replicated profile avatar/spray URLs plus authoritative active-spray room state
 - Server-authoritative round/objective snapshots for HUD and gameplay flow
 - Competitive MR24, halftime side swap, overtime, and match restart flow
 - Competitive freeze-time buy menu with one sniper per team
@@ -121,15 +126,18 @@ It already supports real play loops:
 - Top-center round HUD with team player icons, live round score, and planted-bomb icon/timer state
 - Hold-`Tab` scoreboard with team panels, player names, kills, deaths, and ping
 - Team-select overlay with player-name entry
+- Persistent local profile ID stored in browser `localStorage` for name/avatar/spray ownership
 - Scope overlay and ADS reticle handling
 - Sniper scope overlay now also blurs/fades to represent current sniper inaccuracy
 - Bomb-planted state and planted-bomb timer feedback
 - Planted-bomb HUD pulse synced to authoritative bomb beep cadence
 - Plant progress feedback
 - Utility HUD feedback for smoke availability and throw prompt
-- Pause menu for map, skybox, sensitivity, volume, and FOV
+- Pause menu `Profile` panel for name/avatar/spray management
+- Pause menu `Settings` panel for sensitivity, FOV, volume, and keybinds
 - Pause menu gamemode selector
 - Pause menu runtime key rebinding with localStorage persistence
+- Top-center roster now supports per-player uploaded avatars while preserving team-color framing
 - Forced-scoreboard match/intermission messaging for side swap, overtime, and match restart
 - Top-right killfeed with rifle/pistol icon support and headshot marker
 - Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
@@ -140,6 +148,7 @@ It already supports real play loops:
 ### Audio / Effects
 
 - Shared `EffectsManager` path for weapon tracers/impacts, smoke clouds, and bomb explosion presentation
+- Replicated world sprays rendered as upright surface-aligned planes
 - Bomb planted and bomb defused announcement stingers
 - Bomb planted now also emits a world-positioned replicated beep that follows the planted countdown cadence
 - Local footstep pool with movement-tuned duration trimming
@@ -160,6 +169,7 @@ It already supports real play loops:
 - Debug menu remote-audio tuning panel for live footstep attenuation/range tuning
 - `F9` ignore-local-corrections toggle
 - `F10` movement trace capture to `debug/movement-traces/`
+- `T` spray placement by default
 - Recoil tuning panel with live sliders and weapon JSON export
 - Movement tuning panel for footsteps, bob, and movement pull-back
 - HUD layout tuning panel with live element outlines, killfeed preview controls, drag-to-move panels, and localStorage-backed export/reset workflow
@@ -252,6 +262,7 @@ The active multiplayer baseline includes:
 - replicated gamemode and match-flow state
 - replicated authoritative audio events for weapon fire, smoke bloom, and audible footsteps
 - replicated smoke throws now rebroadcast as shared combat events so remote clients spawn matching smoke projectiles/clouds
+- replicated sprays now rebroadcast as authoritative room-state entries keyed by player and map
 - RTT ping probes for scoreboard/network diagnostics
 
 ### Remote Presentation
@@ -374,6 +385,8 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 - Audio does not yet have separate buses for weapons, footsteps, ambience, or UI.
 - Smoke is currently a visual gameplay marker only and does not yet block line of sight or traces.
 - Smoke visuals and smoke bloom audio now replicate through multiplayer, but bomb explosion presentation is still local-only.
+- Profile media is persistent on the same browser profile, not account-backed across devices/browsers.
+- Spray presentation is intentionally a simple upright textured-plane system, not a full projected decal solution.
 - The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.
 - Competitive now has a simple freeze-time buy flow and teammate spectate, but still does not have money/economy.
 

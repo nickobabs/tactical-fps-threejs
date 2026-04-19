@@ -14,6 +14,8 @@ The current networking slice supports:
 - Client-to-server bomb plant requests
 - Client-to-server bomb defuse requests
 - Client-to-server smoke-throw requests
+- Client-to-server profile avatar / spray update requests
+- Client-to-server spray placement requests
 - Client-to-server chat messages
 - Client-to-server freeze-time buy requests
 - Server-authoritative player positions derived from those inputs
@@ -51,6 +53,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Replicated round/objective snapshots for HUD and gameplay flow
 - Replicated chat-event stream for team/all chat HUD feed
 - Replicated competitive sniper-ownership state for buy UI / equip gating
+- Replicated avatar and spray asset URLs in player state
+- Replicated active world sprays in room state
 - richer disconnect diagnostics and automatic reconnect attempts after room closure
 
 ## Dependencies
@@ -145,6 +149,11 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - remote clients spawn matching smoke projectiles/blooms locally
   - smoke bloom audio also replicates as positional `audio-event` traffic
   - planted-bomb defuse ownership is now also server-owned through replicated `defuserPlayerId`
+- Cosmetic/profile replication now also has a narrow authoritative slice:
+  - clients upload processed avatar/spray media to the backend
+  - the server stores files and replicates only asset URLs, not raw image payloads
+  - world sprays are authoritative room-state entries keyed by player and map
+  - each player currently gets at most one active spray at a time
 - Short-range replicated utility/weapon-side audio now also includes the sniper scope-in cue:
   - scope-in is emitted from the authoritative server when a sniper transitions into scoped state
   - current audible range is intentionally short at `10`
@@ -225,6 +234,8 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
 - Server-authoritative round state and bomb/objective state are active
 - Server-authoritative imported-map bomb-site validation now supports `plantable_*` markers
 - Server-authoritative smoke throw validation and rebroadcast are active
+- Replicated avatar/spray profile media is active through backend file storage plus authoritative URL replication
+- Replicated world sprays are active and currently reset per round
 - A first server-authoritative PvP combat slice is now live:
   - clients send fire requests
   - the server validates hits against lag-compensated authoritative player hitboxes
@@ -280,6 +291,9 @@ Multiplayer is still optional. If no Colyseus server is reachable, the game cont
   - smoke projectile/bloom replication exists
   - smoke still does not block line of sight or traces
   - bomb explosion presentation is still local-only
+- Profile media identity is still browser-local, not account-backed:
+  - the current `profileId` persists on the same browser profile
+  - clearing browser storage causes a new identity and requires re-uploading avatar/spray media
 - Local movement feel is now materially improved by correction deadzone/hysteresis, but this still needs validation across more cases like ramps, jump arcs, and future combat-driven correction
 - PvP shot validation is intentionally simple for now:
   - player hit detection is currently split between:

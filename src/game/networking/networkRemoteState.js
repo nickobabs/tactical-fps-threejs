@@ -139,6 +139,8 @@ export function pushRemotePlayerSnapshot(remotePlayerBuffers, playerId, normaliz
     && previousSnapshot.currentHeight === normalizedState.currentHeight
     && previousSnapshot.isCrouched === normalizedState.isCrouched
     && previousSnapshot.displayName === normalizedState.displayName
+    && previousSnapshot.avatarUrl === normalizedState.avatarUrl
+    && previousSnapshot.sprayUrl === normalizedState.sprayUrl
     && previousSnapshot.team === normalizedState.team
     && previousSnapshot.activeWeaponKey === normalizedState.activeWeaponKey
     && previousSnapshot.isScoped === normalizedState.isScoped

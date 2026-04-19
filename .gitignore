@@ -2,6 +2,7 @@ debug/
 dist/
 node_modules/
 server/node_modules/
+server/uploads/
 run both.bat
 run local.bat
 run server.bat
