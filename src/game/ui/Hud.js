@@ -7,6 +7,7 @@ import { createHudObjectiveWidgetsController } from './hudObjectiveWidgets.js';
 import { createHudScoreboardController } from './hudScoreboard.js';
 import { collectHudDebugState } from './hudDebugState.js';
 import { getBombPulseIntervalSeconds } from '../../shared/bombObjective.js';
+import { isCompetitiveGamemode } from '../../shared/gamemodes.js';
 
 const ATTACKER_ROSTER_ICON = '/icons/k3FcN65.png';
 const DEFENDER_ROSTER_ICON = '/icons/zcqziFR.png';
@@ -17,6 +18,7 @@ const KILLFEED_WEAPON_ICONS = {
   sniper: '/icons/sniper.svg',
 };
 const KILLFEED_HEADSHOT_ICON = '/icons/headshot.png';
+const COMPETITIVE_PLAYER_COLORS = ['#d65cff', '#4ed7b7', '#f1db4b', '#ff9d3c', '#6ec6ff'];
 
 function formatClock(seconds, { ceil = true } = {}) {
   const safeSeconds = Math.max(0, Number(seconds ?? 0));
@@ -37,6 +39,22 @@ function restartBombFlash(iconEl, flashDurationSeconds) {
   iconEl.classList.add('hud__round-roster-timer-icon--bomb-flash');
 }
 
+function getCompetitivePlayerColorAssignments(scoreboardState) {
+  const assignments = new Map();
+  const teams = Array.isArray(scoreboardState?.teams) ? scoreboardState.teams : [];
+  for (const team of teams) {
+    const players = Array.isArray(team?.players) ? team.players : [];
+    for (let index = 0; index < players.length; index += 1) {
+      const playerId = String(players[index]?.playerId ?? '');
+      if (!playerId || assignments.has(playerId)) {
+        continue;
+      }
+      assignments.set(playerId, COMPETITIVE_PLAYER_COLORS[index % COMPETITIVE_PLAYER_COLORS.length]);
+    }
+  }
+  return assignments;
+}
+
 export function createHud({
   container,
   input,
@@ -50,10 +68,13 @@ export function createHud({
   getDamageIndicators,
   getHitDamagePopups,
   getRoundMvpText,
+  getRoundDamageStatsForPlayer,
+  getDebugToolsEnabled,
   getFps,
   getMasterVolume,
   getMouseSensitivity,
   getHorizontalFov,
+  getMinimapSize,
   getKeyBindings,
   getCompetitiveBuyState,
   onResume,
@@ -64,6 +85,7 @@ export function createHud({
   onSelectGamemode,
   onSensitivityChange,
   onFovChange,
+  onMinimapSizeChange,
   onVolumeChange,
   onRebindKeybind,
   onRequestCompetitiveBuy,
@@ -94,6 +116,10 @@ export function createHud({
   getSelectedSkyboxId,
   getProfileAvatarUrl,
   getProfileSprayUrl,
+  getMinimapState,
+  onMinimapCalibrationClick,
+  getSelectedRadarCalibrationLabel,
+  getRadarCalibrationClickModeEnabled,
 }) {
   const hud = document.createElement('div');
   hud.className = 'hud';
@@ -118,6 +144,7 @@ export function createHud({
       <div class="hud__round"></div>
       <div class="hud__fps"></div>
     </div>
+    <div class="hud__minimap" aria-hidden="true"></div>
     <div class="hud__round-roster" aria-hidden="true">
       <div class="hud__round-roster-team hud__round-roster-team--defenders"></div>
       <div class="hud__round-roster-center">
@@ -270,6 +297,7 @@ export function createHud({
     skyboxes,
     onSensitivityChange,
     onFovChange,
+    onMinimapSizeChange,
     onVolumeChange,
     onSelectTeam,
     onChangePlayerName,
@@ -279,6 +307,7 @@ export function createHud({
     getMasterVolume,
     getMouseSensitivity,
     getHorizontalFov,
+    getMinimapSize,
     getSelectedPlayerName,
     onUploadAvatar,
     onUploadSpray,
@@ -330,6 +359,7 @@ export function createHud({
   const loadingEl = hud.querySelector('.hud__loading');
   const loadingStatusEl = hud.querySelector('.hud__loading-status');
   const topClusterEl = hud.querySelector('.hud__top');
+  const minimapEl = hud.querySelector('.hud__minimap');
   const bottomClusterEl = hud.querySelector('.hud__bottom');
   const scoreboardEl = hud.querySelector('.hud__scoreboard');
   const killfeedEl = hud.querySelector('.hud__killfeed');
@@ -389,6 +419,7 @@ export function createHud({
   let lastRoundRosterTimerHtml = '';
   let lastRoundRosterDefendersScore = '';
   let lastRoundRosterAttackersScore = '';
+  let lastMinimapHtml = '';
   let lastKillfeedHtml = '';
   let lastChatHtml = '';
   let lastHudUpdateAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -399,7 +430,7 @@ export function createHud({
   let buyMenuOpen = false;
   let restorePointerLockAfterChat = false;
 
-  function renderRoundRosterTeam(teamState, iconPath, teamKey) {
+  function renderRoundRosterTeam(teamState, iconPath, teamKey, playerColorAssignments, { showDamageStats = false } = {}) {
     const players = [...(teamState?.players ?? [])]
       .sort((left, right) => String(left.displayName ?? left.playerId).localeCompare(String(right.displayName ?? right.playerId)));
     return players.map((player) => {
@@ -408,7 +439,19 @@ export function createHud({
       const title = String(player?.displayName ?? player?.playerId ?? '');
       const imagePath = String(player?.avatarUrl ?? iconPath);
       const avatarClass = player?.avatarUrl ? ' hud__round-roster-icon--avatar' : '';
-      return `<div class="hud__round-roster-slot${deadClass}${teamClass}" title="${title}"><img class="hud__round-roster-icon${avatarClass}" src="${imagePath}" alt="" /></div>`;
+      const playerColor = String(
+        playerColorAssignments?.get?.(String(player?.playerId ?? ''))
+        ?? 'rgba(255, 255, 255, 0.4)',
+      );
+      const slotStyle = ` style="--hud-player-color:${playerColor};"`;
+      const damageStats = showDamageStats ? (getRoundDamageStatsForPlayer?.(player?.playerId) ?? null) : null;
+      const damageStatsHtml = damageStats
+        ? `<div class="hud__round-roster-damage">
+            ${damageStats.damageDealt > 0 ? `<span class="hud__round-roster-damage-value hud__round-roster-damage-value--dealt">${Math.round(damageStats.damageDealt)}</span>` : ''}
+            ${damageStats.damageReceived > 0 ? `<span class="hud__round-roster-damage-value hud__round-roster-damage-value--received">${Math.round(damageStats.damageReceived)}</span>` : ''}
+          </div>`
+        : '';
+      return `<div class="hud__round-roster-slot-wrap"><div class="hud__round-roster-slot${deadClass}${teamClass}" title="${title}"${slotStyle}><img class="hud__round-roster-icon${avatarClass}" src="${imagePath}" alt="" /></div>${damageStatsHtml}</div>`;
     }).join('');
   }
 
@@ -525,6 +568,58 @@ export function createHud({
         <span class="hud__chat-text">${escapeHtml(entry.text)}</span>
       </div>`;
     }).join('');
+  }
+
+  function renderMinimap(minimapState, playerColorAssignments) {
+    const imagePath = String(minimapState?.imagePath ?? '').trim();
+    if (!imagePath) {
+      return '';
+    }
+    const rotationQuarterTurns = ((Math.trunc(Number(minimapState?.rotationQuarterTurns ?? 0)) % 4) + 4) % 4;
+    const rotationDegrees = rotationQuarterTurns * 90;
+
+    const markersHtml = (minimapState?.markers ?? []).map((marker) => {
+      const x = `${(Number(marker?.x ?? 0) * 100).toFixed(2)}%`;
+      const y = `${(Number(marker?.y ?? 0) * 100).toFixed(2)}%`;
+      const rotation = Number(marker?.rotation ?? 0);
+      const markerType = String(marker?.type ?? 'teammate');
+      const modifierClass = markerType ? ` hud__minimap-marker--${markerType}` : '';
+      const directionalMarker = markerType === 'local' || markerType === 'teammate';
+      const rotationStyle = directionalMarker
+        ? `translate(-50%, -50%) rotate(${(-rotation) - (Math.PI / 2)}rad)`
+        : 'translate(-50%, -50%)';
+      const markerColor = directionalMarker
+        ? String(playerColorAssignments?.get?.(String(marker?.playerId ?? '')) ?? '#f4f7fb')
+        : null;
+      const colorStyle = markerColor ? `--hud-minimap-marker-color:${markerColor};` : '';
+      const pulseDelayStyle = markerType === 'bomb-dropped'
+        ? `animation-delay:-${Number(marker?.animationTimeSeconds ?? 0).toFixed(3)}s;`
+        : '';
+      const markerStyle = `${colorStyle}${pulseDelayStyle}left:${x};top:${y};transform:${rotationStyle};`;
+      const directionalInnerHtml = directionalMarker
+        ? '<span class="hud__minimap-player-pin"><span class="hud__minimap-player-pin-arrow"></span><span class="hud__minimap-player-pin-dot"></span></span>'
+        : '';
+      const labelHtml = markerType === 'calibration' && marker?.label
+        ? `<span class="hud__minimap-marker-label">${escapeHtml(marker.label)}</span>`
+        : markerType === 'calibration-target' && marker?.label
+          ? `<span class="hud__minimap-marker-label hud__minimap-marker-label--target">${escapeHtml(marker.label)}</span>`
+        : '';
+      return `<div class="hud__minimap-marker${modifierClass}" style="${markerStyle}">${directionalInnerHtml}${labelHtml}</div>`;
+    }).join('');
+
+    const hintText = getSelectedRadarCalibrationLabel?.()
+      ? (getRadarCalibrationClickModeEnabled?.()
+        ? `Target sample ${escapeHtml(getSelectedRadarCalibrationLabel())} • click map`
+        : `Sample ${escapeHtml(getSelectedRadarCalibrationLabel())} selected • press L for click mode`)
+      : '';
+
+    return `<div class="hud__minimap-frame">
+      <div class="hud__minimap-content" style="transform: rotate(${rotationDegrees}deg);">
+        <img class="hud__minimap-image" src="${imagePath}" alt="" />
+        <div class="hud__minimap-markers">${markersHtml}</div>
+      </div>
+      ${hintText ? `<div class="hud__minimap-hint">${hintText}</div>` : ''}
+    </div>`;
   }
 
   function syncChatComposerUi() {
@@ -676,6 +771,7 @@ export function createHud({
   }
 
   function handleKeyDown(event) {
+    const debugToolsEnabled = Boolean(getDebugToolsEnabled?.());
     const eventTarget = event.target;
     if (
       eventTarget instanceof HTMLElement
@@ -711,7 +807,7 @@ export function createHud({
       return;
     }
 
-    if (event.code === 'F8') {
+    if (debugToolsEnabled && event.code === 'F8') {
       showNetDebug = !showNetDebug;
       netDebugEl.hidden = !showNetDebug;
       netDebugCopyEl.hidden = !showNetDebug;
@@ -741,8 +837,32 @@ export function createHud({
     event.preventDefault();
   }
 
+  function handleMinimapClick(event) {
+    if (!onMinimapCalibrationClick || !(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const frame = event.target.closest('.hud__minimap-frame');
+    if (!(frame instanceof HTMLElement)) {
+      return;
+    }
+    const rect = frame.getBoundingClientRect();
+    if (!(rect.width > 0) || !(rect.height > 0)) {
+      return;
+    }
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    onMinimapCalibrationClick({ x, y });
+  }
+
+  function handleMinimapPointerDown(event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   window.addEventListener('keydown', handleKeyDown);
   window.addEventListener('keyup', handleKeyUp);
+  minimapEl?.addEventListener('pointerdown', handleMinimapPointerDown);
+  minimapEl?.addEventListener('click', handleMinimapClick);
   chatInputEl.addEventListener('keydown', (event) => {
     if (event.code === 'Tab') {
       chatScope = chatScope === 'team' ? 'all' : 'team';
@@ -821,6 +941,8 @@ export function createHud({
     destroy() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      minimapEl?.removeEventListener('pointerdown', handleMinimapPointerDown);
+      minimapEl?.removeEventListener('click', handleMinimapClick);
       debugPanelsController.destroy();
       pauseMenu.destroy();
       teamSelectOverlay.destroy();
@@ -876,12 +998,16 @@ export function createHud({
       const utilityStatusSuffix = utilityHudState?.statusText ? ` - ${utilityHudState.statusText}` : '';
       const utilityText = `Utility: ${utilityManager?.activeUtility ?? '--'}${utilityStatusSuffix}`;
       const remotePlayerCount = networkClient?.getRemotePlayerCount?.() ?? 0;
-      const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount} - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}${networkDebug.remoteTraceRecording ? ' - RTRACE(F11)' : ''}`;
+      const debugToolsEnabled = Boolean(getDebugToolsEnabled?.());
+      const networkDebugSuffix = debugToolsEnabled
+        ? ` - Corr: ${getIgnoreLocalCorrections?.() ? 'OFF(F9)' : 'ON(F9)'}${networkDebug.remoteTraceRecording ? ' - RTRACE(F11)' : ''}`
+        : '';
+      const networkText = `Network: ${networkClient?.connectionState ?? 'offline'} - Remote players: ${remotePlayerCount}${networkDebugSuffix}`;
       const supportText = ` - support ${Number(movement.supportRatio ?? 0).toFixed(2)} - gd ${Number(movement.groundDistance ?? 0).toFixed(2)}`;
       const crouchFatigueText = getShowCrouchFatigueDebug?.()
         ? ` - cf ${Number(movement.crouchFatigue ?? 0).toFixed(2)} - ct ${Math.max(0, Math.floor(Number(movement.crouchToggleCount ?? 0)))} - cdt ${Number.isFinite(movement.timeSinceCrouchToggle) ? Number(movement.timeSinceCrouchToggle).toFixed(2) : '--'}s - CFD`
         : '';
-      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${supportText}${movement.traceRecording ? ' - TRACE(F10)' : ''}${crouchFatigueText}`;
+      const movementText = `State: ${movement.grounded ? 'Grounded' : 'Air'} - ${movement.crouched ? 'Crouched' : 'Standing'} - raw ${movement.speed.toFixed(1)} m/s - disp ${displaySpeed.toFixed(1)} m/s${supportText}${debugToolsEnabled && movement.traceRecording ? ' - TRACE(F10)' : ''}${crouchFatigueText}`;
       const supportHeightText = Number.isFinite(movement.supportHeight) ? Number(movement.supportHeight).toFixed(2) : '--';
       const positionText = `Pos: ${movement.positionText ?? '0.00, 0.00, 0.00'} - ${movement.movementMode ?? 'grounded'} - floor ${supportHeightText}`;
       const pointerText = paused
@@ -895,6 +1021,16 @@ export function createHud({
           : 'Click to capture mouse';
       const forcedScoreboard = Boolean(roundManager?.matchEnded || roundManager?.phase === 'intermission');
       const scoreboardVisible = (showScoreboard || forcedScoreboard) && !paused;
+      const playerColorAssignments = getCompetitivePlayerColorAssignments(scoreboardState);
+      const minimapHtml = renderMinimap(getMinimapState?.() ?? null, playerColorAssignments);
+      const minimapSize = Math.max(180, Math.min(420, Number(getMinimapSize?.() ?? 320)));
+      minimapEl.style.width = `${minimapSize}px`;
+      minimapEl.style.height = `${minimapSize}px`;
+      const showRoundDamageStats = Boolean(
+        !paused
+        && isCompetitiveGamemode(roundManager?.gamemode)
+        && (roundManager?.roundEnded || roundManager?.phase === 'intermission' || roundManager?.matchEnded),
+      );
       const killfeedEntries = getKillfeedEntries?.() ?? [];
       const chatEntries = getChatEntries?.() ?? [];
       const visibleChatEntries = chatOpen
@@ -1062,8 +1198,17 @@ export function createHud({
         positionText,
         pointerText,
       });
-      const defendersRosterHtml = renderRoundRosterTeam(defendersTeam, DEFENDER_ROSTER_ICON, 'defenders');
-      const attackersRosterHtml = renderRoundRosterTeam(attackersTeam, ATTACKER_ROSTER_ICON, 'attackers');
+      if (minimapHtml !== lastMinimapHtml) {
+        minimapEl.innerHTML = minimapHtml;
+        minimapEl.hidden = !minimapHtml;
+        lastMinimapHtml = minimapHtml;
+      }
+      const defendersRosterHtml = renderRoundRosterTeam(defendersTeam, DEFENDER_ROSTER_ICON, 'defenders', playerColorAssignments, {
+        showDamageStats: showRoundDamageStats,
+      });
+      const attackersRosterHtml = renderRoundRosterTeam(attackersTeam, ATTACKER_ROSTER_ICON, 'attackers', playerColorAssignments, {
+        showDamageStats: showRoundDamageStats,
+      });
       if (defendersRosterHtml !== lastRoundRosterDefendersHtml) {
         roundRosterDefendersEl.innerHTML = defendersRosterHtml;
         lastRoundRosterDefendersHtml = defendersRosterHtml;

@@ -17,6 +17,7 @@
 - Map selection callback plus map option data
 - Skybox selection callback plus skybox option data
 - Sensitivity getter and change callback
+- Minimap-size getter and change callback
 - Network/correction debug getters and snapshot callbacks
 
 ## Outputs
@@ -36,6 +37,7 @@
 - Killfeed rendering with weapon/headshot icons
 - Bottom-left chat log and chat composer
 - HUD layout tuning/debug overlays
+- Dust2 minimap/radar rendering plus optional calibration overlay
 
 ## Dependencies
 
@@ -64,6 +66,7 @@
 - Multiplayer debug tooling is intentionally kept in the HUD path for now because it is the fastest way to compare local feel against network/correction state during active development
 - HUD responsibilities are now split by controller instead of keeping all rendering logic in one file
 - Pause-menu settings now use real runtime values and persist locally in browser `localStorage`
+- Pause-menu settings now also include local minimap sizing
 - Pause-menu information architecture now separates player-profile actions from gameplay/settings controls so the main pause surface is less overwhelming
 - The top-center round HUD is now the primary round timer surface:
   - player icons are team-colored and fade/greyscale on death
@@ -87,6 +90,7 @@
     - volume control
     - sensitivity control with numeric feedback
     - horizontal FOV control
+    - minimap size control
   - map selection view
   - skybox selection view
   - runtime key rebinding with reset-to-default
@@ -113,6 +117,13 @@
   - dead-state greyscale/fade
   - center-anchored round score
   - top round timer that swaps to a C4 icon while the bomb is planted
+- Includes a Dust2 minimap/radar with:
+  - calibrated authored-image projection
+  - shared 5-color competitive player colors reused across both teams
+  - colored local/teammate dots
+  - small white aim-direction arrows
+  - attacker bomb tracking
+  - defender LOS-gated ground-bomb visibility
 - Includes a centered round-win banner with win-reason subtitle and a simple winning-team MVP line
 - Includes timed transition banners for side swap, overtime start, and match restart
 - Includes a top-right killfeed with:
@@ -180,6 +191,7 @@
       - `copy(localStorage.getItem('tactical-fps-threejs-movement-trace'))`
   - the live debug menu now includes a crouch-fatigue debug toggle for the movement line
   - the live debug menu now also includes the collision wireframe toggle
+  - the live debug menu also includes a `Radar Calibration` toggle for Dust2 tuning
     - `cf` = current crouch fatigue
     - `ct` = crouch toggle count in the active fatigue window
     - `cdt` = time since last crouch toggle
@@ -193,3 +205,4 @@
 
 - Keep the current multiplayer debug surface available while movement, jumps, ramps, and future combat authority are validated
 - Revisit whether some of the debug dump logic should move out of the HUD once multiplayer behavior is more settled
+- If more maps get minimaps, keep the calibration workflow debug-only and move finalized transforms into map-manifest data rather than HUD-specific heuristics

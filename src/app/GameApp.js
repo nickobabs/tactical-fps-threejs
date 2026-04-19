@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { InputManager } from '../core/input/InputManager.js';
-import { MAP_OPTIONS, preloadMapOptions } from '../game/maps/mapOptions.js';
+import { MAP_OPTIONS, getMapManifest, preloadMapOptions } from '../game/maps/mapOptions.js';
 import { createHud } from '../game/ui/Hud.js';
 import { SKYBOX_OPTIONS, getSkyboxOption } from '../game/skyboxes/skyboxOptions.js';
 import { SkyboxManager, preloadSkyboxModules } from '../game/skyboxes/SkyboxManager.js';
@@ -31,6 +31,7 @@ import { VIEWMODEL_LAYER } from '../game/weapons/viewModels.js';
 import {
   buildAvatarUploadDataUrl,
   buildSprayUploadDataUrl,
+  canAccessDebugTools,
   getOrCreateLocalProfileId,
   getStoredProfileAvatarUrl,
   getStoredProfileSprayUrl,
@@ -41,8 +42,11 @@ import {
 const DEFAULT_HORIZONTAL_FOV = 103;
 const DEFAULT_MOUSE_SENSITIVITY = 0.0011;
 const DEFAULT_MASTER_VOLUME = 0.6;
+const DEFAULT_MINIMAP_SIZE = 320;
 const MOVEMENT_TRACE_STORAGE_KEY = 'tactical-fps-threejs-movement-trace';
 const REMOTE_ANIMATION_TRACE_STORAGE_KEY = 'tactical-fps-threejs-remote-animation-trace';
+const RADAR_CALIBRATION_SAMPLES_STORAGE_KEY = 'tactical-fps-threejs-radar-calibration-samples';
+const RADAR_CALIBRATION_TARGETS_STORAGE_KEY = 'tactical-fps-threejs-radar-calibration-targets';
 const PLAYER_NAME_STORAGE_KEY = 'tactical-fps-threejs-player-name';
 const HUD_MODE_STORAGE_KEY = 'tactical-fps-threejs-hud-mode';
 const SETTINGS_STORAGE_KEY = 'tactical-fps-threejs-settings';
@@ -106,12 +110,36 @@ function persistHudMode(hudMode) {
   }
 }
 
+function loadStoredJsonValue(storageKey, fallbackValue) {
+  if (typeof window === 'undefined') {
+    return fallbackValue;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(storageKey);
+    return rawValue ? JSON.parse(rawValue) : fallbackValue;
+  } catch {
+    return fallbackValue;
+  }
+}
+
+function persistJsonValue(storageKey, value) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(value));
+  } catch {
+    // Ignore localStorage write failures.
+  }
+}
+
 function loadStoredSettings() {
   if (typeof window === 'undefined') {
     return {
       mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
       horizontalFov: DEFAULT_HORIZONTAL_FOV,
       masterVolume: DEFAULT_MASTER_VOLUME,
+      minimapSize: DEFAULT_MINIMAP_SIZE,
     };
   }
 
@@ -122,6 +150,7 @@ function loadStoredSettings() {
         mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
         horizontalFov: DEFAULT_HORIZONTAL_FOV,
         masterVolume: DEFAULT_MASTER_VOLUME,
+        minimapSize: DEFAULT_MINIMAP_SIZE,
       };
     }
 
@@ -136,17 +165,21 @@ function loadStoredSettings() {
       masterVolume: Number.isFinite(parsed?.masterVolume)
         ? THREE.MathUtils.clamp(Number(parsed.masterVolume), 0, 1)
         : DEFAULT_MASTER_VOLUME,
+      minimapSize: Number.isFinite(parsed?.minimapSize)
+        ? THREE.MathUtils.clamp(Number(parsed.minimapSize), 180, 420)
+        : DEFAULT_MINIMAP_SIZE,
     };
   } catch {
     return {
       mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY,
       horizontalFov: DEFAULT_HORIZONTAL_FOV,
       masterVolume: DEFAULT_MASTER_VOLUME,
+      minimapSize: DEFAULT_MINIMAP_SIZE,
     };
   }
 }
 
-function persistSettings({ mouseSensitivity, horizontalFov, masterVolume }) {
+function persistSettings({ mouseSensitivity, horizontalFov, masterVolume, minimapSize }) {
   if (typeof window === 'undefined') {
     return;
   }
@@ -156,6 +189,7 @@ function persistSettings({ mouseSensitivity, horizontalFov, masterVolume }) {
       mouseSensitivity: Math.max(0.0001, Number(mouseSensitivity ?? DEFAULT_MOUSE_SENSITIVITY)),
       horizontalFov: THREE.MathUtils.clamp(Number(horizontalFov ?? DEFAULT_HORIZONTAL_FOV), 80, 120),
       masterVolume: THREE.MathUtils.clamp(Number(masterVolume ?? DEFAULT_MASTER_VOLUME), 0, 1),
+      minimapSize: THREE.MathUtils.clamp(Number(minimapSize ?? DEFAULT_MINIMAP_SIZE), 180, 420),
     }));
   } catch {
     // Ignore localStorage write failures.
@@ -617,6 +651,7 @@ export class GameApp {
     const storedSettings = loadStoredSettings();
     this.mouseSensitivity = storedSettings.mouseSensitivity;
     this.baseHorizontalFov = storedSettings.horizontalFov;
+    this.minimapSize = storedSettings.minimapSize;
     this.networkJumpQueued = false;
     this.lastMovementTraceSampleAt = 0;
     this.movementTraceSamples = [];
@@ -639,9 +674,17 @@ export class GameApp {
     this.killfeedEntries = [];
     this.chatEntries = [];
     this.roundKillCounts = new Map();
+    this.roundDamageExchanges = new Map();
+    this.radarCalibrationSamples = loadStoredJsonValue(RADAR_CALIBRATION_SAMPLES_STORAGE_KEY, []);
+    this.radarCalibrationTargets = loadStoredJsonValue(RADAR_CALIBRATION_TARGETS_STORAGE_KEY, {});
+    this.selectedRadarCalibrationLabel = null;
+    this.radarCalibrationClickMode = false;
+    this.radarCalibrationEnabled = false;
+    this.minimapMarkerDisplayState = new Map();
     this.selectedTeam = null;
     this.selectedPlayerName = loadStoredPlayerName();
     this.profileId = getOrCreateLocalProfileId();
+    this.debugToolsEnabled = canAccessDebugTools(this.profileId);
     this.profileAvatarUrl = getStoredProfileAvatarUrl();
     this.profileSprayUrl = getStoredProfileSprayUrl();
     this.selectedGamemode = GAMEMODES.DEBUG;
@@ -695,18 +738,22 @@ export class GameApp {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.92;
     this.root.appendChild(this.renderer.domElement);
-    this.debugMenu = createDebugMenu({
-      container: this.root,
-      onToggleHudMode: () => this.toggleHudMode(),
-      onForceSideSwap: () => this.forceDebugSideSwap(),
-      onToggleCollisionDebug: () => this.toggleCollisionDebug(),
-      getCollisionDebugEnabled: () => this.debugController.isCollisionDebugEnabled(),
-      onToggleCrouchFatigueDebug: () => this.toggleCrouchFatigueDebug(),
-      onToggleInfiniteAmmo: () => this.toggleInfiniteAmmoDebug(),
-      getInfiniteAmmoEnabled: () => this.getInfiniteAmmoEnabled(),
-      onToggleDamageNumbers: () => this.toggleDamageNumbers(),
-      getDamageNumbersEnabled: () => this.showDamageNumbers,
-    });
+    this.debugMenu = this.debugToolsEnabled
+      ? createDebugMenu({
+        container: this.root,
+        onToggleHudMode: () => this.toggleHudMode(),
+        onForceSideSwap: () => this.forceDebugSideSwap(),
+        onToggleCollisionDebug: () => this.toggleCollisionDebug(),
+        getCollisionDebugEnabled: () => this.debugController.isCollisionDebugEnabled(),
+        onToggleCrouchFatigueDebug: () => this.toggleCrouchFatigueDebug(),
+        onToggleInfiniteAmmo: () => this.toggleInfiniteAmmoDebug(),
+        getInfiniteAmmoEnabled: () => this.getInfiniteAmmoEnabled(),
+        onToggleDamageNumbers: () => this.toggleDamageNumbers(),
+        getDamageNumbersEnabled: () => this.showDamageNumbers,
+        onToggleRadarCalibration: () => this.toggleRadarCalibration(),
+        getRadarCalibrationEnabled: () => this.radarCalibrationEnabled,
+      })
+      : null;
     applyHudLayoutTuningToRoot();
     this.hudLayoutTuningPanel = createHudLayoutTuningPanel();
     this.movementTuningPanel = createMovementTuningPanel();
@@ -817,10 +864,17 @@ export class GameApp {
       getDamageIndicators: () => this.damageIndicators,
       getHitDamagePopups: () => this.hitDamagePopups,
       getRoundMvpText: () => this.getRoundMvpText(),
+      getRoundDamageStatsForPlayer: (playerId) => this.getRoundDamageStatsForPlayer(playerId),
+      getMinimapState: () => this.getMinimapState(),
+      onMinimapCalibrationClick: ({ x, y }) => this.handleMinimapCalibrationClick({ x, y }),
+      getSelectedRadarCalibrationLabel: () => (this.radarCalibrationEnabled ? this.selectedRadarCalibrationLabel : null),
+      getRadarCalibrationClickModeEnabled: () => this.radarCalibrationEnabled && this.radarCalibrationClickMode,
+      getDebugToolsEnabled: () => this.debugToolsEnabled,
       getFps: () => this.currentFps,
       getMasterVolume: () => this.audioManager.getMasterVolume(),
       getMouseSensitivity: () => this.mouseSensitivity,
       getHorizontalFov: () => this.baseHorizontalFov,
+      getMinimapSize: () => this.minimapSize,
       getKeyBindings: () => this.input.getBindings(),
       getCompetitiveBuyState: () => this.getCompetitiveBuyState(),
       onResume: () => this.resumeGame(),
@@ -831,6 +885,7 @@ export class GameApp {
       onSelectGamemode: (gamemodeId) => this.selectGamemode(gamemodeId),
       onSensitivityChange: (value) => this.setMouseSensitivity(value),
       onFovChange: (value) => this.setHorizontalFov(value),
+      onMinimapSizeChange: (value) => this.setMinimapSize(value),
       onVolumeChange: (volume) => this.setMasterVolume(volume),
       onRebindKeybind: (actionId, binding) => this.rebindKeybind(actionId, binding),
       onRequestCompetitiveBuy: (weaponKey) => this.requestCompetitiveBuyWeapon(weaponKey),
@@ -871,6 +926,7 @@ export class GameApp {
     this.lastAmmoResetRoundKey = null;
     this.lastObservedRoundPhaseKey = null;
     this.roundKillCounts.clear();
+    this.roundDamageExchanges.clear();
     this.lastLocalPlayerHasBomb = false;
     this.bombCarrierAnnouncementText = '';
     this.bombCarrierAnnouncementExpiresAt = 0;
@@ -898,7 +954,240 @@ export class GameApp {
 
     this.lastAmmoResetRoundKey = roundKey;
     this.roundKillCounts.clear();
+    this.roundDamageExchanges.clear();
     this.runtime?.weaponManager?.refillAllAmmo?.();
+  }
+
+  getRoundDamageStatsForPlayer(playerId) {
+    const localPlayerId = String(this.networkClient.playerId ?? '');
+    const targetPlayerId = String(playerId ?? '');
+    if (!localPlayerId || !targetPlayerId || localPlayerId === targetPlayerId) {
+      return null;
+    }
+
+    const dealtKey = `${localPlayerId}->${targetPlayerId}`;
+    const receivedKey = `${targetPlayerId}->${localPlayerId}`;
+    const damageDealt = Number(this.roundDamageExchanges.get(dealtKey) ?? 0);
+    const damageReceived = Number(this.roundDamageExchanges.get(receivedKey) ?? 0);
+    if (damageDealt <= 0 && damageReceived <= 0) {
+      return null;
+    }
+
+    return {
+      damageDealt,
+      damageReceived,
+    };
+  }
+
+  getMinimapState() {
+    const manifest = getMapManifest(this.selectedMapId);
+    const radar = manifest?.assets?.radar;
+    const sceneBounds = this.runtime?.map?.sceneBounds;
+    const playerController = this.runtime?.playerController;
+    if (
+      !radar?.imagePath
+      || !playerController
+    ) {
+      return null;
+    }
+
+    const yawOffsetRadians = Number(radar.yawOffsetRadians ?? 0);
+
+    const projectWorldToRadar = (position) => {
+      const x = Number(position?.x ?? 0);
+      const z = Number(position?.z ?? 0);
+      let uv = null;
+
+      if (radar.projection === 'affine-world-xz') {
+        const transform = radar.affineTransform ?? {};
+        uv = {
+          x: Number(transform?.u?.x ?? 0) * x + Number(transform?.u?.z ?? 0) * z + Number(transform?.u?.offset ?? 0),
+          y: Number(transform?.v?.x ?? 0) * x + Number(transform?.v?.z ?? 0) * z + Number(transform?.v?.offset ?? 0),
+        };
+      } else if (radar.projection === 'scene-bounds') {
+        if (!sceneBounds || sceneBounds.isEmpty?.()) {
+          return { x: 0.5, y: 0.5 };
+        }
+        const minX = Number(sceneBounds.min?.x ?? 0);
+        const maxX = Number(sceneBounds.max?.x ?? 0);
+        const minZ = Number(sceneBounds.min?.z ?? 0);
+        const maxZ = Number(sceneBounds.max?.z ?? 0);
+        const spanX = maxX - minX;
+        const spanZ = maxZ - minZ;
+        if (!(spanX > 0) || !(spanZ > 0)) {
+          return { x: 0.5, y: 0.5 };
+        }
+        let u = (x - minX) / spanX;
+        let v = (z - minZ) / spanZ;
+        if (radar.flipX) {
+          u = 1 - u;
+        }
+        if (radar.flipY !== false) {
+          v = 1 - v;
+        }
+        uv = {
+          x: Math.min(1, Math.max(0, u)),
+          y: Math.min(1, Math.max(0, v)),
+        };
+      } else {
+        return { x: 0.5, y: 0.5 };
+      }
+
+      return {
+        x: Math.min(1, Math.max(0, Number(uv?.x ?? 0.5))),
+        y: Math.min(1, Math.max(0, Number(uv?.y ?? 0.5))),
+      };
+    };
+    const localEyePosition = playerController.getEyePosition(new THREE.Vector3());
+    const localViewDirection = new THREE.Vector3();
+    this.camera?.getWorldDirection?.(localViewDirection);
+    const bombDirection = new THREE.Vector3();
+    const bombVisibilityTarget = new THREE.Vector3();
+    const canLocalDefenderSeeGroundBomb = (bombPosition) => {
+      if (localTeam !== 'defenders' || !bombPosition) {
+        return false;
+      }
+      bombVisibilityTarget.set(
+        Number(bombPosition.x ?? 0),
+        Number(bombPosition.y ?? 0) + 0.35,
+        Number(bombPosition.z ?? 0),
+      );
+      bombDirection.copy(bombVisibilityTarget).sub(localEyePosition);
+      const distance = bombDirection.length();
+      if (distance <= 0.001) {
+        return true;
+      }
+      bombDirection.divideScalar(distance);
+      if (localViewDirection.lengthSq() > 0.0001 && localViewDirection.dot(bombDirection) < 0.2) {
+        return false;
+      }
+      return this.runtime?.collisionWorld?.hasLineOfSight?.(localEyePosition, bombVisibilityTarget, 0.08) ?? true;
+    };
+
+    const smoothMinimapMarkerPoint = (id, point, smoothing = 0.28) => {
+      const key = String(id ?? '');
+      const targetX = Math.min(1, Math.max(0, Number(point?.x ?? 0.5)));
+      const targetY = Math.min(1, Math.max(0, Number(point?.y ?? 0.5)));
+      if (!key) {
+        return { x: targetX, y: targetY };
+      }
+      const previous = this.minimapMarkerDisplayState.get(key);
+      if (!previous) {
+        const initial = { x: targetX, y: targetY };
+        this.minimapMarkerDisplayState.set(key, initial);
+        return initial;
+      }
+      const next = {
+        x: previous.x + ((targetX - previous.x) * smoothing),
+        y: previous.y + ((targetY - previous.y) * smoothing),
+      };
+      this.minimapMarkerDisplayState.set(key, next);
+      return next;
+    };
+
+    const markers = [];
+    const activeMarkerIds = new Set();
+    const localPlayerState = this.networkClient.getLocalPlayerState?.() ?? null;
+    const localTeam = String(localPlayerState?.team ?? '');
+    const localPlayerId = String(this.networkClient.playerId ?? '');
+    activeMarkerIds.add('local-player');
+    markers.push({
+      id: 'local-player',
+      type: 'local',
+      playerId: localPlayerId,
+      ...smoothMinimapMarkerPoint('local-player', projectWorldToRadar(playerController.position)),
+      rotation: Number(playerController.yawAngle ?? 0) + yawOffsetRadians,
+    });
+
+    const remotePlayers = this.networkClient.getRemotePlayers?.() ?? [];
+    for (const remotePlayer of remotePlayers) {
+      if (String(remotePlayer?.team ?? '') !== localTeam) {
+        continue;
+      }
+      const markerId = `teammate-${remotePlayer.playerId}`;
+      activeMarkerIds.add(markerId);
+      markers.push({
+        id: markerId,
+        type: 'teammate',
+        playerId: String(remotePlayer.playerId ?? ''),
+        ...smoothMinimapMarkerPoint(markerId, projectWorldToRadar(remotePlayer.position)),
+        rotation: Number(remotePlayer.yaw ?? 0) + yawOffsetRadians,
+      });
+    }
+
+    const objectiveState = this.networkClient.getObjectiveState?.() ?? null;
+    const bombCarrierPlayerId = String(objectiveState?.bombCarrierPlayerId ?? '');
+    const attackersCanTrackBomb = localTeam === 'attackers';
+    const defendersCanSeeDroppedBomb = canLocalDefenderSeeGroundBomb(objectiveState?.droppedPosition);
+    const defendersCanSeePlantedBomb = canLocalDefenderSeeGroundBomb(objectiveState?.plantedPosition);
+    if (attackersCanTrackBomb && bombCarrierPlayerId) {
+      if (bombCarrierPlayerId === localPlayerId) {
+        markers.push({
+          id: 'bomb-carried-local',
+          type: 'bomb',
+          ...projectWorldToRadar(playerController.position),
+        });
+      } else {
+        const carrier = remotePlayers.find((player) => String(player?.playerId ?? '') === bombCarrierPlayerId);
+        if (carrier?.position) {
+          markers.push({
+            id: `bomb-carried-${bombCarrierPlayerId}`,
+            type: 'bomb',
+            ...projectWorldToRadar(carrier.position),
+          });
+        }
+      }
+    }
+
+    if ((attackersCanTrackBomb || defendersCanSeeDroppedBomb) && objectiveState?.droppedPosition) {
+      markers.push({
+        id: 'bomb-dropped',
+        type: 'bomb-dropped',
+        animationTimeSeconds: (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000,
+        ...projectWorldToRadar(objectiveState.droppedPosition),
+      });
+    }
+
+    if ((attackersCanTrackBomb || defendersCanSeePlantedBomb) && objectiveState?.plantedPosition) {
+      markers.push({
+        id: 'bomb-planted',
+        type: 'bomb-planted',
+        ...projectWorldToRadar(objectiveState.plantedPosition),
+      });
+    }
+
+    if (this.radarCalibrationEnabled) {
+      for (const sample of this.radarCalibrationSamples) {
+        markers.push({
+          id: sample.id,
+          type: 'calibration',
+          label: sample.label,
+          ...projectWorldToRadar(sample.position),
+        });
+        const target = this.radarCalibrationTargets?.[sample.label];
+        if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+          markers.push({
+            id: `radar-target-${sample.label}`,
+            type: 'calibration-target',
+            label: sample.label,
+            x: Number(target.x),
+            y: Number(target.y),
+          });
+        }
+      }
+    }
+
+    for (const markerId of [...this.minimapMarkerDisplayState.keys()]) {
+      if (!activeMarkerIds.has(markerId)) {
+        this.minimapMarkerDisplayState.delete(markerId);
+      }
+    }
+
+    return {
+      imagePath: radar.imagePath,
+      rotationQuarterTurns: ((Math.trunc(Number(radar.rotationQuarterTurns ?? 0)) % 4) + 4) % 4,
+      markers,
+    };
   }
 
   getRoundMvpText() {
@@ -1360,6 +1649,95 @@ export class GameApp {
     this.debugController.saveDebugMarker(this.runtime?.playerController ?? null, this.selectedMapId);
   }
 
+  addRadarCalibrationSample() {
+    const playerController = this.runtime?.playerController;
+    if (!playerController) {
+      return;
+    }
+
+    const label = String(this.radarCalibrationSamples.length + 1);
+    const sample = {
+      id: `radar-sample-${label}`,
+      label,
+      mapId: this.selectedMapId,
+      position: {
+        x: Number(playerController.position.x ?? 0),
+        y: Number(playerController.position.y ?? 0),
+        z: Number(playerController.position.z ?? 0),
+      },
+      yaw: Number(playerController.yawAngle ?? 0),
+    };
+    this.radarCalibrationSamples = [...this.radarCalibrationSamples, sample].slice(-12);
+    persistJsonValue(RADAR_CALIBRATION_SAMPLES_STORAGE_KEY, this.radarCalibrationSamples);
+    this.selectedRadarCalibrationLabel = label;
+    console.log('[RadarCalibration] Added sample', sample);
+  }
+
+  clearRadarCalibrationSamples() {
+    this.radarCalibrationSamples = [];
+    this.radarCalibrationTargets = {};
+    this.selectedRadarCalibrationLabel = null;
+    persistJsonValue(RADAR_CALIBRATION_SAMPLES_STORAGE_KEY, this.radarCalibrationSamples);
+    persistJsonValue(RADAR_CALIBRATION_TARGETS_STORAGE_KEY, this.radarCalibrationTargets);
+    console.log('[RadarCalibration] Cleared samples');
+  }
+
+  cycleRadarCalibrationSelection(direction = 1) {
+    if (!Array.isArray(this.radarCalibrationSamples) || this.radarCalibrationSamples.length === 0) {
+      this.selectedRadarCalibrationLabel = null;
+      return;
+    }
+    const labels = this.radarCalibrationSamples.map((sample) => String(sample.label));
+    const currentIndex = Math.max(0, labels.indexOf(String(this.selectedRadarCalibrationLabel ?? '')));
+    const nextIndex = (currentIndex + direction + labels.length) % labels.length;
+    this.selectedRadarCalibrationLabel = labels[nextIndex];
+    console.log('[RadarCalibration] Selected sample', this.selectedRadarCalibrationLabel);
+  }
+
+  handleMinimapCalibrationClick({ x, y }) {
+    if (!this.debugToolsEnabled || !this.selectedRadarCalibrationLabel || !this.radarCalibrationClickMode) {
+      return;
+    }
+    const clampedTarget = {
+      x: Math.min(1, Math.max(0, Number(x ?? 0))),
+      y: Math.min(1, Math.max(0, Number(y ?? 0))),
+    };
+    this.radarCalibrationTargets = {
+      ...this.radarCalibrationTargets,
+      [this.selectedRadarCalibrationLabel]: clampedTarget,
+    };
+    persistJsonValue(RADAR_CALIBRATION_TARGETS_STORAGE_KEY, this.radarCalibrationTargets);
+    console.log('[RadarCalibration] Set target', {
+      label: this.selectedRadarCalibrationLabel,
+      target: clampedTarget,
+    });
+  }
+
+  toggleRadarCalibration() {
+    if (!this.debugToolsEnabled) {
+      return;
+    }
+    this.radarCalibrationEnabled = !this.radarCalibrationEnabled;
+    if (!this.radarCalibrationEnabled) {
+      this.radarCalibrationClickMode = false;
+    }
+    console.log('[RadarCalibration] Enabled', this.radarCalibrationEnabled);
+  }
+
+  toggleRadarCalibrationClickMode() {
+    if (!this.debugToolsEnabled || !this.radarCalibrationEnabled) {
+      return;
+    }
+    this.radarCalibrationClickMode = !this.radarCalibrationClickMode;
+    if (this.radarCalibrationClickMode) {
+      this.input?.clearGameplayState?.();
+      if (document.pointerLockElement) {
+        document.exitPointerLock?.();
+      }
+    }
+    console.log('[RadarCalibration] Click mode', this.radarCalibrationClickMode ? 'ON' : 'OFF');
+  }
+
   dumpDebugMarkers() {
     this.debugController.dumpDebugMarkers();
   }
@@ -1429,6 +1807,11 @@ export class GameApp {
     this.camera.updateProjectionMatrix();
     this.runtime?.weaponManager?.setBaseFov(verticalFov);
     this.runtime?.playerController?.setBaseFov(verticalFov);
+    this.persistRuntimeSettings();
+  }
+
+  setMinimapSize(size) {
+    this.minimapSize = THREE.MathUtils.clamp(Number(size ?? DEFAULT_MINIMAP_SIZE), 180, 420);
     this.persistRuntimeSettings();
   }
 
@@ -1537,6 +1920,7 @@ export class GameApp {
       mouseSensitivity: this.mouseSensitivity,
       horizontalFov: this.baseHorizontalFov,
       masterVolume: this.audioManager.getMasterVolume(),
+      minimapSize: this.minimapSize,
     });
   }
 
@@ -1578,6 +1962,10 @@ export class GameApp {
       return;
     }
 
+    if (!this.debugToolsEnabled) {
+      return;
+    }
+
     if (frameInput.justPressed.has('F9')) {
       this.debugController.toggleIgnoreLocalCorrections();
     }
@@ -1616,6 +2004,30 @@ export class GameApp {
 
     if (frameInput.justPressed.has('KeyK')) {
       this.saveDebugMarker();
+    }
+
+    if (!this.radarCalibrationEnabled) {
+      return;
+    }
+
+    if (frameInput.justPressed.has('KeyU')) {
+      this.addRadarCalibrationSample();
+    }
+
+    if (frameInput.justPressed.has('KeyI')) {
+      this.clearRadarCalibrationSamples();
+    }
+
+    if (frameInput.justPressed.has('KeyO')) {
+      this.cycleRadarCalibrationSelection(-1);
+    }
+
+    if (frameInput.justPressed.has('KeyP')) {
+      this.cycleRadarCalibrationSelection(1);
+    }
+
+    if (frameInput.justPressed.has('KeyL')) {
+      this.toggleRadarCalibrationClickMode();
     }
 
     if (frameInput.justPressed.has('KeyL')) {
@@ -1820,11 +2232,25 @@ export class GameApp {
   }
 
   handleCombatEventForUi(event) {
-    if (event?.type !== 'player-hit' || !event?.killed) {
+    if (event?.type !== 'player-hit') {
       return;
     }
 
     const attackerPlayerId = String(event.attackerPlayerId ?? '');
+    const victimPlayerId = String(event.victimPlayerId ?? '');
+    const damage = Math.max(0, Number(event.damage ?? 0));
+    if (attackerPlayerId && victimPlayerId && damage > 0) {
+      const damageKey = `${attackerPlayerId}->${victimPlayerId}`;
+      this.roundDamageExchanges.set(
+        damageKey,
+        Number(this.roundDamageExchanges.get(damageKey) ?? 0) + damage,
+      );
+    }
+
+    if (!event?.killed) {
+      return;
+    }
+
     if (attackerPlayerId) {
       this.roundKillCounts.set(
         attackerPlayerId,

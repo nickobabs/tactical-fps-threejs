@@ -36,6 +36,10 @@ See also:
   - profile media and sprays now use a persistent browser-local `profileId` plus server file storage
   - pause-menu runtime UI now has a clearer `Profile` / `Settings` split
   - world-spray rendering and upload/storage logic now live in dedicated modules instead of being folded into larger HUD/networking classes
+- [session-note-2026-04-19-dust2-radar-and-hud-colors.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-19-dust2-radar-and-hud-colors.md)
+  - Dust2 minimap/radar now uses a calibrated affine projection instead of the early scene-bounds guess
+  - HUD roster framing and minimap markers now share a compact competitive player-color system
+  - radar calibration remains a debug-gated authoring/tuning workflow rather than normal player UI
 
 ## What Is Already In Better Shape
 
@@ -56,6 +60,8 @@ See also:
 - HUD / objective flow
   - planted-bomb visual and objective state are extracted
   - HUD pieces are split across classic/debug/scoreboard/objective/helper modules
+  - first minimap/radar slice is now live for `Dust2 Test`
+  - pause-menu settings now also own local minimap-size tuning
 - Shared gameplay helpers
   - bomb helpers/constants are shared
   - plant-zone helpers are shared
@@ -66,6 +72,9 @@ See also:
   - profile-id and local profile-media persistence now live in [playerProfile.js](/C:/Users/nicko/tactical-fps-threejs/src/app/playerProfile.js)
   - uploaded avatar/spray file storage now lives in [avatarStorage.js](/C:/Users/nicko/tactical-fps-threejs/server/src/avatarStorage.js)
   - world spray rendering now lives in [SprayManager.js](/C:/Users/nicko/tactical-fps-threejs/src/game/effects/SprayManager.js)
+- HUD / radar calibration helpers
+  - Dust2 radar fitting now lives in shared map-manifest metadata rather than hardcoded HUD guesses
+  - temporary calibration state is persisted locally and kept behind explicit debug gating
 - Audio / tuning surfaces
   - shared audio registration lives in [createGameAudioManager.js](/C:/Users/nicko/tactical-fps-threejs/src/app/createGameAudioManager.js)
   - movement tuning and recoil tuning are now separate runtime tools instead of being hidden inside larger gameplay classes

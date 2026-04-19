@@ -11,6 +11,7 @@ The project is aiming for a Counter-Strike-like feel:
 - visible remote players backed by authoritative hit validation
 - round-based attacker/defender play with a first bomb-objective slice
 - lightweight persistent player profile media and replicated sprays
+- Dust2 radar/minimap support with per-player colors and local size tuning
 
 This repo should be read as a playable multiplayer game-tech prototype, not just a rendering demo.
 
@@ -32,6 +33,7 @@ The current build is a real multiplayer-capable tactical FPS foundation with:
 - first authoritative remote-audio slice for weapon fire, smoke bloom, and audible footsteps
 - persistent browser-local profile identity with backend-stored avatars and sprays
 - live in-browser debug tooling for movement, networking, recoil, remote audio, footsteps/bob, hitboxes, and weapon/model tuning
+- first Dust2 radar/minimap slice with calibrated map projection
 
 It already supports real play loops:
 
@@ -47,6 +49,7 @@ It already supports real play loops:
 - place one replicated world spray per round and replace it with a new one
 - inspect network/movement state live
 - validate remote pose/hitbox parity with debug overlays
+- use the Dust2 minimap with teammate colors, aim arrows, and bomb tracking rules
 
 ## Feature Snapshot
 
@@ -138,6 +141,8 @@ It already supports real play loops:
 - Pause menu gamemode selector
 - Pause menu runtime key rebinding with localStorage persistence
 - Top-center roster now supports per-player uploaded avatars while preserving team-color framing
+- Dust2 minimap with calibrated world projection, teammate/local markers, and bomb markers
+- Competitive roster and minimap now share a five-color per-player palette across both teams
 - Forced-scoreboard match/intermission messaging for side swap, overtime, and match restart
 - Top-right killfeed with rifle/pistol icon support and headshot marker
 - Damage vignette, 4-way directional damage indicators, hit damage numbers, dead overlay, and respawn countdown
@@ -170,6 +175,7 @@ It already supports real play loops:
 - `F9` ignore-local-corrections toggle
 - `F10` movement trace capture to `debug/movement-traces/`
 - `T` spray placement by default
+- minimap/radar calibration workflow behind the gameplay debug menu for Dust2 authoring/tuning
 - Recoil tuning panel with live sliders and weapon JSON export
 - Movement tuning panel for footsteps, bob, and movement pull-back
 - HUD layout tuning panel with live element outlines, killfeed preview controls, drag-to-move panels, and localStorage-backed export/reset workflow
@@ -263,6 +269,7 @@ The active multiplayer baseline includes:
 - replicated authoritative audio events for weapon fire, smoke bloom, and audible footsteps
 - replicated smoke throws now rebroadcast as shared combat events so remote clients spawn matching smoke projectiles/clouds
 - replicated sprays now rebroadcast as authoritative room-state entries keyed by player and map
+- minimap radar projection now supports fitted affine transforms per map instead of only broad scene-bounds projection
 - RTT ping probes for scoreboard/network diagnostics
 
 ### Remote Presentation
@@ -387,6 +394,8 @@ Recent RTT-based ping readings against Railway EU West (Amsterdam) have tested i
 - Smoke visuals and smoke bloom audio now replicate through multiplayer, but bomb explosion presentation is still local-only.
 - Profile media is persistent on the same browser profile, not account-backed across devices/browsers.
 - Spray presentation is intentionally a simple upright textured-plane system, not a full projected decal solution.
+- The current minimap is only authored/calibrated for `Dust2 Test`.
+- Defender bomb visibility on radar is intentionally LOS-gated rather than globally omniscient.
 - The recoil and movement tuning panels are still active debug tooling rather than polished player-facing settings.
 - Competitive now has a simple freeze-time buy flow and teammate spectate, but still does not have money/economy.
 

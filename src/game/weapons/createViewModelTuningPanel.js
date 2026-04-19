@@ -6,11 +6,13 @@ import {
 } from './weaponConfigs.js';
 import { DEBUG_MENU_EVENT_TOGGLE_VIEWMODEL_TUNING } from '../../app/debugMenuEvents.js';
 import { makeDebugPanelDraggable } from '../../app/makeDebugPanelDraggable.js';
+import { canAccessDebugTools, getOrCreateLocalProfileId } from '../../app/playerProfile.js';
 
 export function createViewModelTuningPanel(getWeaponKey, options = {}) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return null;
   }
+  const debugToolsEnabled = canAccessDebugTools(getOrCreateLocalProfileId());
 
   const overlay = document.createElement('div');
   overlay.style.position = 'fixed';
@@ -248,6 +250,9 @@ export function createViewModelTuningPanel(getWeaponKey, options = {}) {
   });
 
   const handleKeyDown = (event) => {
+    if (!debugToolsEnabled) {
+      return;
+    }
     if (event.code !== 'F4') {
       return;
     }
@@ -259,6 +264,9 @@ export function createViewModelTuningPanel(getWeaponKey, options = {}) {
     event.preventDefault();
   };
   const handleDebugMenuToggle = () => {
+    if (!debugToolsEnabled) {
+      return;
+    }
     const nextVisible = overlay.style.display === 'none';
     overlay.style.display = nextVisible ? 'block' : 'none';
     if (nextVisible) {

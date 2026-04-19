@@ -31,6 +31,8 @@ export function createDebugMenu({
   getInfiniteAmmoEnabled,
   onToggleDamageNumbers,
   getDamageNumbersEnabled,
+  onToggleRadarCalibration,
+  getRadarCalibrationEnabled,
 }) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return null;
@@ -150,6 +152,11 @@ export function createDebugMenu({
           label: 'Remote Weapon Tuning',
           description: 'Tune third-person weapon socket poses and animation freeze state.',
           onClick: () => dispatchDebugMenuEvent(DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING),
+        },
+        {
+          getLabel: () => `Radar Calibration: ${getRadarCalibrationEnabled?.() ? 'ON' : 'OFF'}`,
+          getDescription: () => 'Enable the Dust2 minimap calibration workflow and its temporary markers/hotkeys.',
+          onClick: () => onToggleRadarCalibration?.(),
         },
       ],
     },

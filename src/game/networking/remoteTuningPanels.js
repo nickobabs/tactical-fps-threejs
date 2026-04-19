@@ -3,6 +3,9 @@ import {
   DEBUG_MENU_EVENT_TOGGLE_REMOTE_WEAPON_TUNING,
 } from '../../app/debugMenuEvents.js';
 import { makeDebugPanelDraggable } from '../../app/makeDebugPanelDraggable.js';
+import { canAccessDebugTools, getOrCreateLocalProfileId } from '../../app/playerProfile.js';
+
+const DEBUG_TOOLS_ENABLED = canAccessDebugTools(getOrCreateLocalProfileId());
 
 function clonePose(pose) {
   return {
@@ -251,6 +254,9 @@ export function createRemoteWeaponTuningPanelUi({
   });
 
   function togglePanel() {
+    if (!DEBUG_TOOLS_ENABLED) {
+      return;
+    }
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
     if (panel.style.display !== 'none') {
       syncInputsFromPose();
@@ -258,6 +264,9 @@ export function createRemoteWeaponTuningPanelUi({
   }
 
   function handleKeyDown(event) {
+    if (!DEBUG_TOOLS_ENABLED) {
+      return;
+    }
     if (event.code !== 'F7') {
       return;
     }
@@ -682,6 +691,9 @@ export function createRemoteCharacterTuningPanelUi({
   });
 
   function togglePanel() {
+    if (!DEBUG_TOOLS_ENABLED) {
+      return;
+    }
     panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
     if (panel.style.display !== 'none') {
       syncModelScale();
@@ -689,6 +701,9 @@ export function createRemoteCharacterTuningPanelUi({
   }
 
   function handleKeyDown(event) {
+    if (!DEBUG_TOOLS_ENABLED) {
+      return;
+    }
     if (event.code !== 'F6') {
       return;
     }

@@ -142,6 +142,24 @@ export const MAP_MANIFEST = [
       plantableMarkerPrefix: 'plantable_',
     },
     assets: {
+      radar: {
+        imagePath: '/minimap/dust2.jpg',
+        projection: 'affine-world-xz',
+        affineTransform: {
+          u: {
+            x: 0.00003567787472850601,
+            z: 0.009600130343976259,
+            offset: -12.358641183854274,
+          },
+          v: {
+            x: -0.00963583196851231,
+            z: -0.000048537183691921835,
+            offset: 0.5100328014245527,
+          },
+        },
+        rotationQuarterTurns: 1,
+        yawOffsetRadians: 0,
+      },
       navigation: {
         format: 'recast-navmesh-binary',
         path: '/navmeshes/dust2-import-test.bin',

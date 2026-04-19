@@ -24,12 +24,14 @@ export function createPauseMenu({
   skyboxes = [],
   onSensitivityChange,
   onFovChange,
+  onMinimapSizeChange,
   onVolumeChange,
   onSelectTeam,
   onChangePlayerName,
   getMasterVolume,
   getMouseSensitivity,
   getHorizontalFov,
+  getMinimapSize,
   getSelectedPlayerName,
   getKeyBindings,
   onRebindKeybind,
@@ -50,6 +52,7 @@ export function createPauseMenu({
   let lastVolume = null;
   let lastSensitivity = null;
   let lastFov = null;
+  let lastMinimapSize = null;
   let activePanel = null;
   let listeningActionId = null;
   let avatarUploadPending = false;
@@ -60,6 +63,7 @@ export function createPauseMenu({
   const sensitivityToPercent = () => Math.round(((getMouseSensitivity?.() ?? 0.0011) / 0.0022) * 100);
   const currentFov = () => Math.round(getHorizontalFov?.() ?? 103);
   const currentVolume = () => Math.round((getMasterVolume?.() ?? 0.6) * 100);
+  const currentMinimapSize = () => Math.round(getMinimapSize?.() ?? 320);
 
   pause.innerHTML = `
     <div class="hud__pause-panel">
@@ -172,6 +176,13 @@ export function createPauseMenu({
                   </span>
                   <input class="hud__fov-slider" type="range" min="80" max="120" step="1" value="${currentFov()}" />
                 </label>
+                <label class="hud__volume">
+                  <span class="hud__slider-header">
+                    <span class="hud__volume-label">Minimap Size</span>
+                    <span class="hud__minimap-size-value hud__slider-value">${currentMinimapSize()}</span>
+                  </span>
+                  <input class="hud__minimap-size-slider" type="range" min="180" max="420" step="1" value="${currentMinimapSize()}" />
+                </label>
               </div>
             </div>
             <div class="hud__pause-card">
@@ -241,6 +252,8 @@ export function createPauseMenu({
   const sensitivityValueEl = pause.querySelector('[data-role="sensitivity-value"]');
   const fovSlider = pause.querySelector('.hud__fov-slider');
   const fovValueEl = pause.querySelector('.hud__fov-value');
+  const minimapSizeSlider = pause.querySelector('.hud__minimap-size-slider');
+  const minimapSizeValueEl = pause.querySelector('.hud__minimap-size-value');
   const mapButtons = [...pause.querySelectorAll('[data-map-id]')];
   const gamemodeButtons = [...pause.querySelectorAll('[data-gamemode-id]')];
   const skyboxButtons = [...pause.querySelectorAll('[data-skybox-id]')];
@@ -300,6 +313,11 @@ export function createPauseMenu({
     const horizontalFov = Number(event.currentTarget.value);
     fovValueEl.textContent = String(horizontalFov);
     onFovChange?.(horizontalFov);
+  };
+  const handleMinimapSize = (event) => {
+    const minimapSize = Number(event.currentTarget.value);
+    minimapSizeValueEl.textContent = String(minimapSize);
+    onMinimapSizeChange?.(minimapSize);
   };
   const handleMapSelect = (event) => onSelectMap?.(event.currentTarget.dataset.mapId);
   const handleSkyboxSelect = (event) => onSelectSkybox?.(event.currentTarget.dataset.skyboxId);
@@ -442,6 +460,7 @@ export function createPauseMenu({
   volumeSlider.addEventListener('input', handleVolume);
   sensitivitySlider.addEventListener('input', handleSensitivity);
   fovSlider.addEventListener('input', handleFov);
+  minimapSizeSlider.addEventListener('input', handleMinimapSize);
   mapButtons.forEach((button) => button.addEventListener('click', handleMapSelect));
   gamemodeButtons.forEach((button) => button.addEventListener('click', handleGamemodeSelect));
   skyboxButtons.forEach((button) => button.addEventListener('click', handleSkyboxSelect));
@@ -467,6 +486,7 @@ export function createPauseMenu({
       volumeSlider.removeEventListener('input', handleVolume);
       sensitivitySlider.removeEventListener('input', handleSensitivity);
       fovSlider.removeEventListener('input', handleFov);
+      minimapSizeSlider.removeEventListener('input', handleMinimapSize);
       mapButtons.forEach((button) => button.removeEventListener('click', handleMapSelect));
       gamemodeButtons.forEach((button) => button.removeEventListener('click', handleGamemodeSelect));
       skyboxButtons.forEach((button) => button.removeEventListener('click', handleSkyboxSelect));
@@ -589,6 +609,13 @@ export function createPauseMenu({
         fovSlider.value = String(horizontalFov);
         fovValueEl.textContent = String(horizontalFov);
         lastFov = horizontalFov;
+      }
+
+      const minimapSize = currentMinimapSize();
+      if (minimapSize !== lastMinimapSize) {
+        minimapSizeSlider.value = String(minimapSize);
+        minimapSizeValueEl.textContent = String(minimapSize);
+        lastMinimapSize = minimapSize;
       }
 
       syncBindingValues();

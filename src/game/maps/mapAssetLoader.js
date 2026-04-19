@@ -551,6 +551,7 @@ export async function createMapFromManifest(entry) {
     gameplayState.groundHeight,
   );
   const plantZones = resolvePlantZones(entry, renderMap);
+  const sceneBounds = renderMap?.scene ? new THREE.Box3().setFromObject(renderMap.scene) : null;
 
   return {
     ...renderMap,
@@ -561,6 +562,7 @@ export async function createMapFromManifest(entry) {
     allowGroundedMode: gameplayState.allowGroundedMode ?? true,
     teamSpawnPoints,
     plantZones,
+    sceneBounds,
     collisionGeometry,
     shootables: renderMap.shootables ?? [],
     targets: renderMap.targets ?? [],

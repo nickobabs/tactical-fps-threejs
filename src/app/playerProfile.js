@@ -1,6 +1,10 @@
 const PROFILE_ID_STORAGE_KEY = 'tactical-fps-threejs.profile-id';
 const PROFILE_AVATAR_URL_STORAGE_KEY = 'tactical-fps-threejs.profile-avatar-url';
 const PROFILE_SPRAY_URL_STORAGE_KEY = 'tactical-fps-threejs.profile-spray-url';
+export const MAX_PROFILE_UPLOAD_FILE_BYTES = 5 * 1024 * 1024;
+const DEBUG_TOOL_PROFILE_IDS = new Set([
+  'p_9c10846dccb74081bc8081daff4e4170',
+]);
 
 function generateProfileId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -24,6 +28,11 @@ export function getOrCreateLocalProfileId() {
   const nextProfileId = generateProfileId();
   window.localStorage.setItem(PROFILE_ID_STORAGE_KEY, nextProfileId);
   return nextProfileId;
+}
+
+export function canAccessDebugTools(profileId) {
+  const normalizedProfileId = String(profileId ?? '').trim().toLowerCase();
+  return DEBUG_TOOL_PROFILE_IDS.has(normalizedProfileId);
 }
 
 export function getStoredProfileAvatarUrl() {
@@ -89,6 +98,12 @@ async function buildSquareImageDataUrl(file, {
 } = {}) {
   if (!(file instanceof File)) {
     throw new Error('Image upload requires an image file.');
+  }
+  if (!Number.isFinite(file.size) || file.size <= 0) {
+    throw new Error('Image upload requires a non-empty image file.');
+  }
+  if (file.size > MAX_PROFILE_UPLOAD_FILE_BYTES) {
+    throw new Error('Image upload must be 5 MB or smaller.');
   }
 
   const image = await loadImageFromFile(file);
