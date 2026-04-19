@@ -116,6 +116,7 @@ export function createRemoteHitboxDebugPanel({ remotePlayerPresenter }) {
       `Latest xz gap: ${Number(debugState?.horizontalDistance ?? 0).toFixed(3)}`,
       `Rewound xz gap: ${Number(debugState?.rewoundHorizontalDistance ?? 0).toFixed(3)}`,
       `Anim: ${debugState?.animation?.presentationState ?? 'none'} target=${debugState?.animation?.targetClip ?? 'none'} base=${debugState?.animation?.baseClip ?? 'none'}`,
+      `Auth: target=${debugState?.animation?.authoritativeTargetClip ?? 'none'} base=${debugState?.animation?.authoritativeBaseClip ?? 'none'} active=${debugState?.animation?.authoritativeActiveClip ?? 'none'}`,
       `Layers: active=${debugState?.animation?.activeCharacterClip ?? 'none'} upper=${debugState?.animation?.activeUpperBodyClip ?? 'none'} full=${debugState?.animation?.fullBodyActionClip ?? 'none'} lock=${debugState?.animation?.fireBaseLocked ? 'yes' : 'no'}`,
     ].join('\n');
   }

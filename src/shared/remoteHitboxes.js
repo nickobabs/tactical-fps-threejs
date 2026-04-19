@@ -245,6 +245,14 @@ export function createRemoteHitboxPointCache() {
   return Object.fromEntries(REMOTE_HITBOX_BONE_KEYS.map((key) => [key, createPoint()]));
 }
 
+export function interpolateRemoteHitboxPoints(startPoints, endPoints, alpha, target = createRemoteHitboxPointCache()) {
+  const t = Math.max(0, Math.min(1, Number(alpha ?? 0)));
+  for (const key of REMOTE_HITBOX_BONE_KEYS) {
+    lerpPoint(target[key], startPoints?.[key], endPoints?.[key], t);
+  }
+  return target;
+}
+
 export function createRemoteHitboxSnapshot() {
   return {
     head: {

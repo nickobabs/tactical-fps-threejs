@@ -24,15 +24,13 @@ import {
   createRemoteClipTransitionState,
   REMOTE_BASE_CLIP_FADE_DURATION,
   REMOTE_FULL_BODY_FIRE_ACTION_DURATION,
-  shouldPlayRemoteFullBodyFire,
   stepRemoteClipTransitionState,
 } from '../../src/shared/remotePosePlayback.js';
 import {
   clearRemoteIdleEntryState,
   getRemoteMovementPlaybackScale as getSharedRemoteMovementPlaybackScale,
-  resolveRemoteIdleEntryTarget,
-  selectRemoteMovementClip,
 } from '../../src/shared/remotePoseState.js';
+import { resolveRemotePoseClipIntent } from '../../src/shared/remotePoseEvaluation.js';
 import {
   describeRemoteHitboxAudit,
   resolveRemoteHitBones,
@@ -363,6 +361,25 @@ function captureHitboxPoints(target, bones) {
   }
 }
 
+function cloneHitboxPoints(points) {
+  if (!points) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    Object.entries(points).map(([key, point]) => [
+      key,
+      point
+        ? {
+          x: Number(point.x ?? 0),
+          y: Number(point.y ?? 0),
+          z: Number(point.z ?? 0),
+        }
+        : null,
+    ]),
+  );
+}
+
 function captureAimBoneBasePose(rig) {
   for (const entry of rig.aimBones ?? []) {
     entry.baseQuaternion.copy(entry.bone.quaternion);
@@ -418,22 +435,6 @@ function clearRigIdleEntryCarryover(rig) {
   rig.idleEntryCandidateClip = resetState.idleEntryCandidateClip;
   rig.idleEntryElapsed = resetState.idleEntryElapsed;
   rig.lastNonIdleMovementClip = resetState.lastNonIdleClip;
-}
-
-function resolveRigMovementClipWithIdleEntryDelay(rig, targetClip, delta) {
-  const resolved = resolveRemoteIdleEntryTarget({
-    targetClip,
-    idleEntryCandidateClip: rig.idleEntryCandidateClip,
-    idleEntryElapsed: rig.idleEntryElapsed,
-    lastNonIdleClip: rig.lastNonIdleMovementClip,
-    delta,
-    idleEntryDelay: REMOTE_IDLE_ENTRY_DELAY,
-    clips: CLIPS,
-  });
-  rig.idleEntryCandidateClip = resolved.idleEntryCandidateClip;
-  rig.idleEntryElapsed = resolved.idleEntryElapsed;
-  rig.lastNonIdleMovementClip = resolved.lastNonIdleClip;
-  return resolved.resolvedClip;
 }
 
 function createServerRifleGroup(asset) {
@@ -661,22 +662,31 @@ export function updateRemoteHitboxRig(rig, player, delta) {
     clearRigIdleEntryCarryover(rig);
   }
   rig.lastRawCrouchState = rawCrouchState;
-  const movementClip = resolveRigMovementClipWithIdleEntryDelay(rig, selectRemoteMovementClip({
-    ...player?.motionState,
-    activeWeaponKey: player?.activeWeaponKey,
+  const clipIntent = resolveRemotePoseClipIntent({
+    state: {
+      ...player?.motionState,
+      activeWeaponKey: player?.activeWeaponKey,
+      presentationState: player?.presentationState,
+      isAlive: player?.isAlive,
+    },
     presentationState: player?.presentationState,
-    isAlive: player?.isAlive,
-  }, player?.presentationState, CLIPS), delta);
-  const targetClip = rig.fireTime > 0 && shouldPlayRemoteFullBodyFire({
     characterDefinition: {
       prefersFullBodyRifleFire: true,
       prefersFullBodyPistolFire: true,
     },
     weaponKey: player?.activeWeaponKey,
-    presentationState: player?.presentationState,
-  })
-    ? CLIPS.fire
-    : movementClip;
+    fireActionTime: rig.fireTime,
+    idleEntryCandidateClip: rig.idleEntryCandidateClip,
+    idleEntryElapsed: rig.idleEntryElapsed,
+    lastNonIdleClip: rig.lastNonIdleMovementClip,
+    delta,
+    idleEntryDelay: REMOTE_IDLE_ENTRY_DELAY,
+    clips: CLIPS,
+  });
+  rig.idleEntryCandidateClip = clipIntent.idleEntryCandidateClip;
+  rig.idleEntryElapsed = clipIntent.idleEntryElapsed;
+  rig.lastNonIdleMovementClip = clipIntent.lastNonIdleClip;
+  const targetClip = clipIntent.presentationClip;
   const movementPlaybackScale = getRigMovementPlaybackScale(player, targetClip);
   stepRemoteClipTransitionState(rig.clipTransition, {
     nextClip: targetClip,
@@ -732,19 +742,19 @@ export function updateRemoteHitboxRig(rig, player, delta) {
   rig.container.updateMatrixWorld(true);
   captureHitboxPoints(rig.hitboxPoints, rig.bones);
   rig.debugState = {
+    targetClip: clipIntent.targetClip,
+    delayedBaseTargetClip: clipIntent.delayedBaseTargetClip,
+    baseClip: clipIntent.baseClip,
+    presentationClip: clipIntent.presentationClip,
     activeClip: rig.activeClip,
     clipTime: Number(activeEntry.action.time ?? 0),
     clipPlaybackSpeed: Number(activeEntry.action.getEffectiveTimeScale?.() ?? activeEntry.playbackSpeed ?? 1),
     fireTime: Number(rig.fireTime ?? 0),
+    fireBaseLocked: Boolean(clipIntent.fireBaseLocked),
     clipTransition: {
       ...rig.clipTransition,
     },
-    points: {
-      head: rig.hitboxPoints.head ? { ...rig.hitboxPoints.head } : null,
-      neck: rig.hitboxPoints.neck ? { ...rig.hitboxPoints.neck } : null,
-      spine: rig.hitboxPoints.spine ? { ...rig.hitboxPoints.spine } : null,
-      pelvis: rig.hitboxPoints.pelvis ? { ...rig.hitboxPoints.pelvis } : null,
-    },
+    points: cloneHitboxPoints(rig.hitboxPoints),
   };
   restoreAimBoneBasePose(rig);
   rig.container.updateMatrixWorld(true);

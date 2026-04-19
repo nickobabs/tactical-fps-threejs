@@ -4,11 +4,13 @@ import {
   buildRemoteHitboxSnapshotFromPoints,
   createRemoteHitboxPointCache,
   createRemoteHitboxSnapshot,
+  interpolateRemoteHitboxPoints,
   REMOTE_HITBOX_HEAD_OFFSET,
 } from '../../shared/remoteHitboxes.js';
 import { REMOTE_CHARACTER_HITBOX_SETTINGS } from '../../shared/remoteCharacterConfig.js';
 import {
   getLagCompensationRewindMs,
+  getSnapshotPairAtTime,
   getTimelineNow,
   interpolateRemotePlayerSnapshotAtTime,
 } from '../../shared/remoteTimeline.js';
@@ -33,6 +35,8 @@ const REMOTE_DEBUG_AUTHORITATIVE_POSITION = new THREE.Vector3();
 const REMOTE_DEBUG_POSITION_DELTA = new THREE.Vector3();
 const REMOTE_LOCAL_HITBOX_POINTS = createRemoteHitboxPointCache();
 const REMOTE_LOCAL_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
+const REMOTE_REWOUND_HITBOX_POINTS = createRemoteHitboxPointCache();
+const REMOTE_REWOUND_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 const DEBUG_BASIS_RIGHT = new THREE.Vector3();
 const DEBUG_BASIS_UP = new THREE.Vector3();
 const DEBUG_BASIS_FORWARD = new THREE.Vector3();
@@ -79,7 +83,49 @@ function getPoseError(a, b) {
   };
 }
 
-function buildPoseComparisonState(meshSnapshot, latestHitboxes, rewoundHitboxes) {
+function buildPointComparisonState(localPoints, latestAuthoritativePoints, rewoundAuthoritativePoints) {
+  return {
+    local: {
+      head: cloneVector3Like(localPoints?.head),
+      neck: cloneVector3Like(localPoints?.neck),
+      spine: cloneVector3Like(localPoints?.spine),
+      pelvis: cloneVector3Like(localPoints?.pelvis),
+    },
+    latest: {
+      head: cloneVector3Like(latestAuthoritativePoints?.head),
+      neck: cloneVector3Like(latestAuthoritativePoints?.neck),
+      spine: cloneVector3Like(latestAuthoritativePoints?.spine),
+      pelvis: cloneVector3Like(latestAuthoritativePoints?.pelvis),
+    },
+    rewound: {
+      head: cloneVector3Like(rewoundAuthoritativePoints?.head),
+      neck: cloneVector3Like(rewoundAuthoritativePoints?.neck),
+      spine: cloneVector3Like(rewoundAuthoritativePoints?.spine),
+      pelvis: cloneVector3Like(rewoundAuthoritativePoints?.pelvis),
+    },
+    latestError: {
+      head: getPoseError(localPoints?.head, latestAuthoritativePoints?.head),
+      neck: getPoseError(localPoints?.neck, latestAuthoritativePoints?.neck),
+      spine: getPoseError(localPoints?.spine, latestAuthoritativePoints?.spine),
+      pelvis: getPoseError(localPoints?.pelvis, latestAuthoritativePoints?.pelvis),
+    },
+    rewoundError: {
+      head: getPoseError(localPoints?.head, rewoundAuthoritativePoints?.head),
+      neck: getPoseError(localPoints?.neck, rewoundAuthoritativePoints?.neck),
+      spine: getPoseError(localPoints?.spine, rewoundAuthoritativePoints?.spine),
+      pelvis: getPoseError(localPoints?.pelvis, rewoundAuthoritativePoints?.pelvis),
+    },
+  };
+}
+
+function buildPoseComparisonState(
+  meshSnapshot,
+  latestHitboxes,
+  rewoundHitboxes,
+  localPoints,
+  latestAuthoritativePoints,
+  rewoundAuthoritativePoints,
+) {
   const meshHead = getHitboxCenter(meshSnapshot?.head);
   const meshTorso = getHitboxCenter(meshSnapshot?.torso);
   const meshPelvis = getHitboxCenter(meshSnapshot?.pelvis);
@@ -116,6 +162,7 @@ function buildPoseComparisonState(meshSnapshot, latestHitboxes, rewoundHitboxes)
       torso: getPoseError(meshTorso, rewoundTorso),
       pelvis: getPoseError(meshPelvis, rewoundPelvis),
     },
+    points: buildPointComparisonState(localPoints, latestAuthoritativePoints, rewoundAuthoritativePoints),
   };
 }
 
@@ -451,9 +498,40 @@ export function syncRemoteHitboxDebug({
   standHeight,
 }) {
   const rewindMs = getLagCompensationRewindMs(debugPingRoundTripMs);
-  const rewoundState = interpolateRemotePlayerSnapshotAtTime(authoritativeSnapshots, getTimelineNow() - rewindMs);
+  const rewoundTargetTime = getTimelineNow() - rewindMs;
+  const rewoundPair = getSnapshotPairAtTime(authoritativeSnapshots, rewoundTargetTime, { timeKey: 'receivedAt' });
+  const rewoundState = interpolateRemotePlayerSnapshotAtTime(authoritativeSnapshots, rewoundTargetTime);
   const debugEnabled = showHitVolumeDebug && !hideForSpectator;
   const localBoneDrivenSnapshot = captureRemoteBoneDrivenSnapshot(visual.characterHitBones, localHitboxSettings);
+  let rewoundDebugPoints = rewoundState?.hitboxDebug?.points ?? null;
+  let rewoundDebugHitboxes = rewoundState?.hitboxes ?? null;
+  if (rewoundPair?.kind === 'between') {
+    const previousPoints = rewoundPair.previousSnapshot?.hitboxDebug?.points ?? null;
+    const nextPoints = rewoundPair.nextSnapshot?.hitboxDebug?.points ?? null;
+    if (previousPoints && nextPoints) {
+      rewoundDebugPoints = interpolateRemoteHitboxPoints(
+        previousPoints,
+        nextPoints,
+        rewoundPair.alpha,
+        REMOTE_REWOUND_HITBOX_POINTS,
+      );
+      rewoundDebugHitboxes = buildRemoteHitboxSnapshotFromPoints({
+        points: rewoundDebugPoints,
+        headOffset: REMOTE_CHARACTER_HITBOX_SETTINGS.headOffset,
+        headRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.headRadius,
+        headSize: REMOTE_CHARACTER_HITBOX_SETTINGS.headSize,
+        torsoRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoRadius,
+        torsoLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoLengthPadding,
+        pelvisRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisRadius,
+        pelvisLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisLengthPadding,
+        armRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.armRadius,
+        armLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.armLengthPadding,
+        handRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.handRadius,
+        legRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.legRadius,
+        legLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.legLengthPadding,
+      }, REMOTE_REWOUND_HITBOX_SNAPSHOT);
+    }
+  }
 
   visual.hitVolumeDebugGroup.group.visible = debugEnabled && hitboxDebugSettings.showLatestHitboxes;
   visual.positionDebugGroup.group.visible = debugEnabled && hitboxDebugSettings.showLatestMarkers && Boolean(authoritativeState?.position);
@@ -498,15 +576,26 @@ export function syncRemoteHitboxDebug({
         ? {
           presentationState: visual.animationDebugState.presentationState ?? null,
           targetClip: visual.animationDebugState.targetClip ?? null,
+          delayedBaseTargetClip: visual.animationDebugState.delayedBaseTargetClip ?? null,
           baseClip: visual.animationDebugState.baseClip ?? null,
+          presentationClip: visual.animationDebugState.presentationClip ?? null,
           activeCharacterClip: visual.animationDebugState.activeCharacterClip ?? null,
           activeUpperBodyClip: visual.animationDebugState.activeUpperBodyClip ?? null,
           fullBodyActionClip: visual.animationDebugState.fullBodyActionClip ?? null,
           upperBodyActionTime: Number(visual.animationDebugState.upperBodyActionTime ?? 0),
           fullBodyActionTime: Number(visual.animationDebugState.fullBodyActionTime ?? 0),
           fireBaseLocked: Boolean(visual.animationDebugState.fireBaseLocked),
+          authoritativeTargetClip: authoritativeState?.hitboxDebug?.targetClip ?? null,
+          authoritativeDelayedBaseTargetClip: authoritativeState?.hitboxDebug?.delayedBaseTargetClip ?? null,
+          authoritativeBaseClip: authoritativeState?.hitboxDebug?.baseClip ?? null,
+          authoritativePresentationClip: authoritativeState?.hitboxDebug?.presentationClip ?? null,
+          authoritativeActiveClip: authoritativeState?.hitboxDebug?.activeClip ?? null,
+          authoritativeFireBaseLocked: Boolean(authoritativeState?.hitboxDebug?.fireBaseLocked),
           clipTransition: visual.animationDebugState.clipTransition
             ? { ...visual.animationDebugState.clipTransition }
+            : null,
+          authoritativeClipTransition: authoritativeState?.hitboxDebug?.clipTransition
+            ? { ...authoritativeState.hitboxDebug.clipTransition }
             : null,
           freezePose: Boolean(visual.animationDebugState.freezePose),
         }
@@ -525,7 +614,10 @@ export function syncRemoteHitboxDebug({
       pose: buildPoseComparisonState(
         localBoneDrivenSnapshot,
         authoritativeState?.hitboxes,
-        rewoundState?.hitboxes,
+        rewoundDebugHitboxes,
+        REMOTE_LOCAL_HITBOX_POINTS,
+        authoritativeState?.hitboxDebug?.points,
+        rewoundDebugPoints,
       ),
     };
   } else {
@@ -558,7 +650,7 @@ export function syncRemoteHitboxDebug({
   if (debugEnabled && hitboxDebugSettings.showRewoundHitboxes) {
     updateRemoteAuthoritativeHitVolumeDebugGroup(
       visual.rewoundHitVolumeDebugGroup,
-      rewoundState?.hitboxes,
+      rewoundDebugHitboxes,
     );
   }
 

@@ -197,6 +197,23 @@ function summarizeRemoteAnimationTraceSamples(samples) {
       activeClipChangeCount: 0,
       fullBodyClipChangeCount: 0,
       upperBodyClipChangeCount: 0,
+      pointSampleCount: 0,
+      averageLatestHeadPointHorizontalDistance: 0,
+      averageLatestNeckPointHorizontalDistance: 0,
+      averageLatestSpinePointHorizontalDistance: 0,
+      averageLatestPelvisPointHorizontalDistance: 0,
+      maxLatestHeadPointHorizontalDistance: 0,
+      maxLatestNeckPointHorizontalDistance: 0,
+      maxLatestSpinePointHorizontalDistance: 0,
+      maxLatestPelvisPointHorizontalDistance: 0,
+      averageRewoundHeadPointHorizontalDistance: 0,
+      averageRewoundNeckPointHorizontalDistance: 0,
+      averageRewoundSpinePointHorizontalDistance: 0,
+      averageRewoundPelvisPointHorizontalDistance: 0,
+      maxRewoundHeadPointHorizontalDistance: 0,
+      maxRewoundNeckPointHorizontalDistance: 0,
+      maxRewoundSpinePointHorizontalDistance: 0,
+      maxRewoundPelvisPointHorizontalDistance: 0,
     };
   }
 
@@ -227,6 +244,23 @@ function summarizeRemoteAnimationTraceSamples(samples) {
   let averageRewoundTorsoPoseHorizontalDistance = 0;
   let averageRewoundPelvisPoseHorizontalDistance = 0;
   let poseSampleCount = 0;
+  let pointSampleCount = 0;
+  let averageLatestHeadPointHorizontalDistance = 0;
+  let averageLatestNeckPointHorizontalDistance = 0;
+  let averageLatestSpinePointHorizontalDistance = 0;
+  let averageLatestPelvisPointHorizontalDistance = 0;
+  let maxLatestHeadPointHorizontalDistance = 0;
+  let maxLatestNeckPointHorizontalDistance = 0;
+  let maxLatestSpinePointHorizontalDistance = 0;
+  let maxLatestPelvisPointHorizontalDistance = 0;
+  let averageRewoundHeadPointHorizontalDistance = 0;
+  let averageRewoundNeckPointHorizontalDistance = 0;
+  let averageRewoundSpinePointHorizontalDistance = 0;
+  let averageRewoundPelvisPointHorizontalDistance = 0;
+  let maxRewoundHeadPointHorizontalDistance = 0;
+  let maxRewoundNeckPointHorizontalDistance = 0;
+  let maxRewoundSpinePointHorizontalDistance = 0;
+  let maxRewoundPelvisPointHorizontalDistance = 0;
 
   for (let index = 0; index < samples.length; index += 1) {
     const sample = samples[index];
@@ -301,6 +335,39 @@ function summarizeRemoteAnimationTraceSamples(samples) {
       maxRewoundTorsoPoseHorizontalDistance = Math.max(maxRewoundTorsoPoseHorizontalDistance, rewoundTorsoPoseError);
       maxRewoundPelvisPoseHorizontalDistance = Math.max(maxRewoundPelvisPoseHorizontalDistance, rewoundPelvisPoseError);
     }
+
+    const latestPointError = pose?.points?.latestError ?? null;
+    const rewoundPointError = pose?.points?.rewoundError ?? null;
+    if (
+      latestPointError?.head || latestPointError?.neck || latestPointError?.spine || latestPointError?.pelvis
+      || rewoundPointError?.head || rewoundPointError?.neck || rewoundPointError?.spine || rewoundPointError?.pelvis
+    ) {
+      const latestHeadPointError = Number(latestPointError?.head?.horizontalDistance ?? 0);
+      const latestNeckPointError = Number(latestPointError?.neck?.horizontalDistance ?? 0);
+      const latestSpinePointError = Number(latestPointError?.spine?.horizontalDistance ?? 0);
+      const latestPelvisPointError = Number(latestPointError?.pelvis?.horizontalDistance ?? 0);
+      const rewoundHeadPointError = Number(rewoundPointError?.head?.horizontalDistance ?? 0);
+      const rewoundNeckPointError = Number(rewoundPointError?.neck?.horizontalDistance ?? 0);
+      const rewoundSpinePointError = Number(rewoundPointError?.spine?.horizontalDistance ?? 0);
+      const rewoundPelvisPointError = Number(rewoundPointError?.pelvis?.horizontalDistance ?? 0);
+      pointSampleCount += 1;
+      averageLatestHeadPointHorizontalDistance += latestHeadPointError;
+      averageLatestNeckPointHorizontalDistance += latestNeckPointError;
+      averageLatestSpinePointHorizontalDistance += latestSpinePointError;
+      averageLatestPelvisPointHorizontalDistance += latestPelvisPointError;
+      maxLatestHeadPointHorizontalDistance = Math.max(maxLatestHeadPointHorizontalDistance, latestHeadPointError);
+      maxLatestNeckPointHorizontalDistance = Math.max(maxLatestNeckPointHorizontalDistance, latestNeckPointError);
+      maxLatestSpinePointHorizontalDistance = Math.max(maxLatestSpinePointHorizontalDistance, latestSpinePointError);
+      maxLatestPelvisPointHorizontalDistance = Math.max(maxLatestPelvisPointHorizontalDistance, latestPelvisPointError);
+      averageRewoundHeadPointHorizontalDistance += rewoundHeadPointError;
+      averageRewoundNeckPointHorizontalDistance += rewoundNeckPointError;
+      averageRewoundSpinePointHorizontalDistance += rewoundSpinePointError;
+      averageRewoundPelvisPointHorizontalDistance += rewoundPelvisPointError;
+      maxRewoundHeadPointHorizontalDistance = Math.max(maxRewoundHeadPointHorizontalDistance, rewoundHeadPointError);
+      maxRewoundNeckPointHorizontalDistance = Math.max(maxRewoundNeckPointHorizontalDistance, rewoundNeckPointError);
+      maxRewoundSpinePointHorizontalDistance = Math.max(maxRewoundSpinePointHorizontalDistance, rewoundSpinePointError);
+      maxRewoundPelvisPointHorizontalDistance = Math.max(maxRewoundPelvisPointHorizontalDistance, rewoundPelvisPointError);
+    }
   }
 
   return {
@@ -339,6 +406,39 @@ function summarizeRemoteAnimationTraceSamples(samples) {
     maxRewoundHeadPoseHorizontalDistance,
     maxRewoundTorsoPoseHorizontalDistance,
     maxRewoundPelvisPoseHorizontalDistance,
+    pointSampleCount,
+    averageLatestHeadPointHorizontalDistance: pointSampleCount > 0
+      ? averageLatestHeadPointHorizontalDistance / pointSampleCount
+      : 0,
+    averageLatestNeckPointHorizontalDistance: pointSampleCount > 0
+      ? averageLatestNeckPointHorizontalDistance / pointSampleCount
+      : 0,
+    averageLatestSpinePointHorizontalDistance: pointSampleCount > 0
+      ? averageLatestSpinePointHorizontalDistance / pointSampleCount
+      : 0,
+    averageLatestPelvisPointHorizontalDistance: pointSampleCount > 0
+      ? averageLatestPelvisPointHorizontalDistance / pointSampleCount
+      : 0,
+    maxLatestHeadPointHorizontalDistance,
+    maxLatestNeckPointHorizontalDistance,
+    maxLatestSpinePointHorizontalDistance,
+    maxLatestPelvisPointHorizontalDistance,
+    averageRewoundHeadPointHorizontalDistance: pointSampleCount > 0
+      ? averageRewoundHeadPointHorizontalDistance / pointSampleCount
+      : 0,
+    averageRewoundNeckPointHorizontalDistance: pointSampleCount > 0
+      ? averageRewoundNeckPointHorizontalDistance / pointSampleCount
+      : 0,
+    averageRewoundSpinePointHorizontalDistance: pointSampleCount > 0
+      ? averageRewoundSpinePointHorizontalDistance / pointSampleCount
+      : 0,
+    averageRewoundPelvisPointHorizontalDistance: pointSampleCount > 0
+      ? averageRewoundPelvisPointHorizontalDistance / pointSampleCount
+      : 0,
+    maxRewoundHeadPointHorizontalDistance,
+    maxRewoundNeckPointHorizontalDistance,
+    maxRewoundSpinePointHorizontalDistance,
+    maxRewoundPelvisPointHorizontalDistance,
   };
 }
 

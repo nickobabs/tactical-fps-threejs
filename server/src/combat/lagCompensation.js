@@ -1,12 +1,15 @@
 import { computePlayerHitboxLayout, createPlayerHitboxLayout } from '../../../src/shared/playerHitboxes.js';
 import {
+  createRemoteHitboxPointCache,
   buildRemoteHitboxSnapshotFromPoints,
+  interpolateRemoteHitboxPoints,
   createRemoteHitboxSnapshot,
+  REMOTE_HITBOX_BONE_KEYS,
   REMOTE_HITBOX_HEAD_OFFSET,
 } from '../../../src/shared/remoteHitboxes.js';
 import { getMissingRemoteHitBoneKeys } from '../../../src/shared/remoteSkeleton.js';
 import { NETCODE_SERVER_HITBOX_HISTORY_MS } from '../../../src/shared/netcode.js';
-import { interpolateRemoteHitboxHistoryAtTime } from '../../../src/shared/remoteTimeline.js';
+import { getSnapshotPairAtTime, interpolateRemoteHitboxHistoryAtTime } from '../../../src/shared/remoteTimeline.js';
 import { REMOTE_CHARACTER_HITBOX_SETTINGS } from '../../../src/shared/remoteCharacterConfig.js';
 
 export function buildAuthoritativeHitboxes(player) {
@@ -129,12 +132,27 @@ function cloneHitboxSnapshot(hitboxes) {
   };
 }
 
+function cloneHitboxPoints(points) {
+  if (!points) {
+    return null;
+  }
+
+  const cloned = createRemoteHitboxPointCache();
+  for (const key of REMOTE_HITBOX_BONE_KEYS) {
+    cloned[key].x = Number(points[key]?.x ?? 0);
+    cloned[key].y = Number(points[key]?.y ?? 0);
+    cloned[key].z = Number(points[key]?.z ?? 0);
+  }
+  return cloned;
+}
+
 export function recordPlayerHitboxHistory(player, now) {
   if (!player?.authoritativeHitboxes) {
     return;
   }
 
   const snapshot = cloneHitboxSnapshot(player.authoritativeHitboxes);
+  const points = cloneHitboxPoints(player.hitboxRig?.hitboxPoints);
   if (!snapshot) {
     return;
   }
@@ -144,6 +162,7 @@ export function recordPlayerHitboxHistory(player, now) {
   history.push({
     recordedAt,
     hitboxes: snapshot,
+    points,
   });
 
   const cutoff = recordedAt - NETCODE_SERVER_HITBOX_HISTORY_MS;
@@ -156,6 +175,31 @@ export function getLagCompensatedHitboxes(target, rewindTimestamp) {
   const history = target?.hitboxHistory ?? null;
   if (!Array.isArray(history) || history.length === 0) {
     return target?.authoritativeHitboxes ?? null;
+  }
+
+  const pointPair = getSnapshotPairAtTime(history, rewindTimestamp, { timeKey: 'recordedAt' });
+  if (pointPair?.kind === 'between' && pointPair.previousSnapshot?.points && pointPair.nextSnapshot?.points) {
+    const interpolatedPoints = interpolateRemoteHitboxPoints(
+      pointPair.previousSnapshot.points,
+      pointPair.nextSnapshot.points,
+      pointPair.alpha,
+      createRemoteHitboxPointCache(),
+    );
+    return buildRemoteHitboxSnapshotFromPoints({
+      points: interpolatedPoints,
+      headOffset: REMOTE_CHARACTER_HITBOX_SETTINGS.headOffset ?? REMOTE_HITBOX_HEAD_OFFSET,
+      headRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.headRadius,
+      headSize: REMOTE_CHARACTER_HITBOX_SETTINGS.headSize,
+      torsoRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoRadius,
+      torsoLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoLengthPadding,
+      pelvisRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisRadius,
+      pelvisLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisLengthPadding,
+      armRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.armRadius,
+      armLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.armLengthPadding,
+      handRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.handRadius,
+      legRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.legRadius,
+      legLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.legLengthPadding,
+    }, createRemoteHitboxSnapshot());
   }
 
   return interpolateRemoteHitboxHistoryAtTime(history, rewindTimestamp)

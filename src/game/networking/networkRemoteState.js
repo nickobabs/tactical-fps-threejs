@@ -19,6 +19,10 @@ function hasSameVector(a, b) {
   return a && b && a.x === b.x && a.y === b.y && a.z === b.z;
 }
 
+function hasSameVelocity(a, b) {
+  return hasSameVector(a, b);
+}
+
 function hasSameHead(a, b) {
   return a && b
     && hasSamePoint(a.center, b.center)
@@ -72,6 +76,56 @@ export function hasSameHitboxes(a, b) {
   return true;
 }
 
+function hasSameClipTransition(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b) {
+    return !a && !b;
+  }
+  return a.active === b.active
+    && a.fromClip === b.fromClip
+    && a.toClip === b.toClip
+    && a.elapsed === b.elapsed
+    && a.duration === b.duration
+    && a.alpha === b.alpha;
+}
+
+function hasSameHitboxDebug(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b) {
+    return !a && !b;
+  }
+  return a.targetClip === b.targetClip
+    && a.delayedBaseTargetClip === b.delayedBaseTargetClip
+    && a.baseClip === b.baseClip
+    && a.presentationClip === b.presentationClip
+    && a.activeClip === b.activeClip
+    && a.fireBaseLocked === b.fireBaseLocked
+    && a.fireTime === b.fireTime
+    && a.clipTime === b.clipTime
+    && a.clipPlaybackSpeed === b.clipPlaybackSpeed
+    && hasSameClipTransition(a.clipTransition, b.clipTransition)
+    && hasSamePoint(a.points?.head, b.points?.head)
+    && hasSamePoint(a.points?.neck, b.points?.neck)
+    && hasSamePoint(a.points?.spine, b.points?.spine)
+    && hasSamePoint(a.points?.pelvis, b.points?.pelvis)
+    && hasSamePoint(a.points?.leftUpperArm, b.points?.leftUpperArm)
+    && hasSamePoint(a.points?.leftForearm, b.points?.leftForearm)
+    && hasSamePoint(a.points?.leftHand, b.points?.leftHand)
+    && hasSamePoint(a.points?.rightUpperArm, b.points?.rightUpperArm)
+    && hasSamePoint(a.points?.rightForearm, b.points?.rightForearm)
+    && hasSamePoint(a.points?.rightHand, b.points?.rightHand)
+    && hasSamePoint(a.points?.leftThigh, b.points?.leftThigh)
+    && hasSamePoint(a.points?.leftCalf, b.points?.leftCalf)
+    && hasSamePoint(a.points?.leftFoot, b.points?.leftFoot)
+    && hasSamePoint(a.points?.rightThigh, b.points?.rightThigh)
+    && hasSamePoint(a.points?.rightCalf, b.points?.rightCalf)
+    && hasSamePoint(a.points?.rightFoot, b.points?.rightFoot);
+}
+
 export function pushRemotePlayerSnapshot(remotePlayerBuffers, playerId, normalizedState, receivedAt) {
   const buffer = remotePlayerBuffers.get(playerId) ?? [];
   const previousSnapshot = buffer[buffer.length - 1];
@@ -79,6 +133,7 @@ export function pushRemotePlayerSnapshot(remotePlayerBuffers, playerId, normaliz
     && previousSnapshot.position.x === normalizedState.position.x
     && previousSnapshot.position.y === normalizedState.position.y
     && previousSnapshot.position.z === normalizedState.position.z
+    && hasSameVelocity(previousSnapshot.velocity, normalizedState.velocity)
     && previousSnapshot.yaw === normalizedState.yaw
     && previousSnapshot.pitch === normalizedState.pitch
     && previousSnapshot.currentHeight === normalizedState.currentHeight
@@ -90,7 +145,8 @@ export function pushRemotePlayerSnapshot(remotePlayerBuffers, playerId, normaliz
     && previousSnapshot.presentationState === normalizedState.presentationState
     && previousSnapshot.deathClip === normalizedState.deathClip
     && previousSnapshot.isAlive === normalizedState.isAlive
-    && hasSameHitboxes(previousSnapshot.hitboxes, normalizedState.hitboxes);
+    && hasSameHitboxes(previousSnapshot.hitboxes, normalizedState.hitboxes)
+    && hasSameHitboxDebug(previousSnapshot.hitboxDebug, normalizedState.hitboxDebug);
 
   if (!isDuplicate) {
     buffer.push({

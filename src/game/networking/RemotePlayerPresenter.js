@@ -22,14 +22,13 @@ import {
 import { isPlayerPresentationCrouched } from '../../shared/playerMovement.js';
 import {
   clearRemoteIdleEntryState,
-  resolveRemoteIdleEntryTarget,
 } from '../../shared/remotePoseState.js';
+import { resolveRemotePoseClipIntent } from '../../shared/remotePoseEvaluation.js';
 import {
   createRemoteClipTransitionState,
   REMOTE_FULL_BODY_FIRE_ACTION_DURATION,
   REMOTE_PERSISTENT_ACTION_TIME,
   REMOTE_UPPER_BODY_ACTION_DURATION,
-  shouldLockRemoteFireBaseClip,
   stepRemoteClipTransitionState,
 } from '../../shared/remotePosePlayback.js';
 import {
@@ -108,14 +107,12 @@ const REMOTE_BORROWED_WEAPON_DEFINITIONS = {
     hideFlash: true,
   },
 };
-const NORMALIZED_REMOTE_CLIPS = Object.fromEntries(
-  Object.entries(REMOTE_CLIPS).map(([key, value]) => [key, normalizeRemoteClipName(value)]),
-);
 const REMOTE_JUMP_TIME_SCALE = 0.76;
 const REMOTE_JUMP_END_HOLD_RATIO = 0.58;
 const REMOTE_RIFLE_TARGET_LENGTH = 0.82;
 const REMOTE_WEAPON_TUNING_STORAGE_KEY = 'remoteWeaponTuning.v3';
 const REMOTE_IDLE_ENTRY_DELAY = 0.1;
+const REMOTE_USE_LEFT_HAND_IK = false;
 const REMOTE_IK_BLEND_FACTOR = 0.9;
 const REMOTE_IK_ITERATIONS = 2;
 const REMOTE_WEAPON_ROTATION_ORDER = 'XZY';
@@ -864,22 +861,6 @@ function setRemotePlayerWeapon(visual, weaponKey) {
     });
 }
 
-function resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta) {
-  const resolved = resolveRemoteIdleEntryTarget({
-    targetClip: normalizeRemoteClipName(targetClip),
-    idleEntryCandidateClip: visual.idleEntryCandidateClip,
-    idleEntryElapsed: visual.idleEntryElapsed,
-    lastNonIdleClip: visual.lastNonIdleBaseClip,
-    delta,
-    idleEntryDelay: REMOTE_IDLE_ENTRY_DELAY,
-    clips: NORMALIZED_REMOTE_CLIPS,
-  });
-  visual.idleEntryCandidateClip = resolved.idleEntryCandidateClip;
-  visual.idleEntryElapsed = resolved.idleEntryElapsed;
-  visual.lastNonIdleBaseClip = resolved.lastNonIdleClip;
-  return resolved.resolvedClip;
-}
-
 function findFirstSkinnedMesh(root) {
   let match = null;
   root.traverse((child) => {
@@ -891,6 +872,9 @@ function findFirstSkinnedMesh(root) {
 }
 
 async function ensureRemoteLeftHandIk(visual) {
+  if (!REMOTE_USE_LEFT_HAND_IK) {
+    return;
+  }
   const definition = visual.characterDefinition;
   if (!definition?.supportsLeftHandIk || visual.leftHandIkSolver || !visual.characterSkinnedMesh) {
     return;
@@ -930,6 +914,9 @@ async function ensureRemoteLeftHandIk(visual) {
 }
 
 function updateRemoteLeftHandIk(visual) {
+  if (!REMOTE_USE_LEFT_HAND_IK) {
+    return;
+  }
   if (!visual.leftHandIkSolver || !visual.leftHandIkTargetBone) {
     return;
   }
@@ -1245,7 +1232,7 @@ function updateRemoteBodyAndAnchorPresentation(visual, {
 
 function updateRemoteAnimationPresentation(visual, {
   delta,
-  authoritativeState,
+  animationState,
   presentationState,
   isAlive,
 } = {}) {
@@ -1254,14 +1241,14 @@ function updateRemoteAnimationPresentation(visual, {
   }
 
   const debugSettings = getRemoteDebugSettings();
-  const rawCrouchState = Boolean(authoritativeState?.isCrouched);
+  const rawCrouchState = Boolean(animationState?.isCrouched);
   if (visual.lastRawCrouchState !== null && visual.lastRawCrouchState !== rawCrouchState) {
     clearRemoteIdleEntryCarryover(visual);
   }
   visual.lastRawCrouchState = rawCrouchState;
   const targetClip = debugSettings.freezePose
     ? debugSettings.freezeClip
-    : selectTargetClip(authoritativeState, presentationState);
+    : selectTargetClip(animationState, presentationState);
   if (debugSettings.freezePose) {
     stepRemoteClipTransitionState(visual.clipTransition, {
       nextClip: normalizeRemoteClipName(targetClip),
@@ -1288,41 +1275,48 @@ function updateRemoteAnimationPresentation(visual, {
     });
   } else {
     const fullBodyActionClip = updateRemoteFullBodyAction(visual, delta);
-    const delayedBaseTargetClip = resolveBaseClipWithIdleEntryDelay(visual, targetClip, delta);
-    const fireBaseLocked = shouldLockRemoteFireBaseClip({
+    const clipIntent = resolveRemotePoseClipIntent({
+      state: animationState,
+      presentationState,
       characterDefinition: visual.characterDefinition,
       weaponKey: visual.weaponKey,
-      targetClip: delayedBaseTargetClip,
       activeUpperBodyClip: visual.activeUpperBodyClip,
       upperBodyActionTime: visual.upperBodyActionTime,
+      fullBodyActionClip,
+      idleEntryCandidateClip: visual.idleEntryCandidateClip,
+      idleEntryElapsed: visual.idleEntryElapsed,
+      lastNonIdleClip: visual.lastNonIdleBaseClip,
+      delta,
+      idleEntryDelay: REMOTE_IDLE_ENTRY_DELAY,
       clips: REMOTE_CLIPS,
     });
-    const baseClip = fireBaseLocked
-      ? REMOTE_CLIPS.fire
-      : delayedBaseTargetClip;
-    const resolvedPresentationClip = fullBodyActionClip ?? baseClip;
+    visual.idleEntryCandidateClip = clipIntent.idleEntryCandidateClip;
+    visual.idleEntryElapsed = clipIntent.idleEntryElapsed;
+    visual.lastNonIdleBaseClip = clipIntent.lastNonIdleClip;
     stepRemoteClipTransitionState(visual.clipTransition, {
-      nextClip: normalizeRemoteClipName(resolvedPresentationClip),
+      nextClip: normalizeRemoteClipName(clipIntent.presentationClip),
       currentClip: visual.activeCharacterClip,
       delta,
     });
-    setRemoteCharacterClip(visual, resolvedPresentationClip, {
+    setRemoteCharacterClip(visual, clipIntent.presentationClip, {
       clipFadeDuration: visual.clipTransition.duration,
     });
-    updateClipPlaybackParameters(visual, authoritativeState, targetClip);
+    updateClipPlaybackParameters(visual, animationState, targetClip);
     updateRemoteUpperBodyAction(visual, delta);
     visual.characterMixer.update(delta);
     captureRemoteAimBoneBasePose(visual);
     visual.animationDebugState = {
       presentationState,
       targetClip,
-      baseClip,
+      delayedBaseTargetClip: clipIntent.delayedBaseTargetClip ?? null,
+      baseClip: clipIntent.baseClip,
+      presentationClip: clipIntent.presentationClip ?? null,
       activeCharacterClip: visual.activeCharacterClip ?? null,
       activeUpperBodyClip: visual.activeUpperBodyClip ?? null,
-      fullBodyActionClip: visual.fullBodyActionClip ?? null,
+      fullBodyActionClip: clipIntent.fullBodyActionClip ?? null,
       upperBodyActionTime: Number(visual.upperBodyActionTime ?? 0),
       fullBodyActionTime: Number(visual.fullBodyActionTime ?? 0),
-      fireBaseLocked,
+      fireBaseLocked: clipIntent.fireBaseLocked,
       clipTransition: {
         ...visual.clipTransition,
       },
@@ -1420,7 +1414,7 @@ function updateRemotePlayerVisual(visual, player, delta, authoritativeState, bod
   });
   updateRemoteAnimationPresentation(visual, {
     delta,
-    authoritativeState,
+    animationState: player,
     presentationState,
     isAlive,
   });

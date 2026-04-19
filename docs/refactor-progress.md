@@ -27,6 +27,10 @@ See also:
   - next meaningful multiplayer-quality step is shared pose/blend evaluation between visible remote presentation and the authoritative hitbox rig
   - crouch-fatigue, ADAD, and transition hitbox pops are now considered pose-parity problems more than simple threshold problems
   - latest traces now show rewound root timing is effectively solved, while head/torso/pelvis pose parity still lags during transitions
+- [session-note-2026-04-19-remote-hitbox-rewind-parity.md](/C:/Users/nicko/tactical-fps-threejs/docs/session-notes/session-note-2026-04-19-remote-hitbox-rewind-parity.md)
+  - the main visible remote transition-lag bug was client-side state mismatch, not just rewind math
+  - visible remote animation now uses render-time interpolated state, and the rewound debug overlay is authoritative-derived from replicated snapshots/raw points
+  - current status is good enough for checkpointing; next work here should be validation/hardening rather than more blind threshold tweaks
 
 ## What Is Already In Better Shape
 
@@ -71,15 +75,19 @@ See also:
   - remote hitbox debug now lives in [remoteHitboxDebug.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxDebug.js)
   - remote hitbox audit now lives in [remoteHitboxAudit.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxAudit.js)
   - remote clip-selection policy now lives in [remoteAnimationPolicy.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPolicy.js)
+  - shared clip-intent evaluation now also lives in [remotePoseEvaluation.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remotePoseEvaluation.js)
   - low-level mixer/action helpers now live in [remoteAnimationPlayback.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPlayback.js)
   - fire/hit orchestration now lives in [remoteAnimationEffects.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationEffects.js)
   - death playback/reset helpers now live in [remoteAnimationDeath.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationDeath.js)
   - aim/weapon/character-root presentation helpers now live in [remoteAnimationPresentation.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteAnimationPresentation.js)
   - [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js) is now more of a remote-animation/runtime orchestrator than a single-file implementation dump
+  - the visible remote animation path now consumes render-time interpolated remote state rather than the newest authoritative snapshot
+  - the rewound hitbox debug path now rebuilds from authoritative-derived raw points instead of only lerping final volumes
 - Network client state helpers
   - remote snapshot dedupe/pruning now lives in [networkRemoteState.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/networkRemoteState.js)
   - pending event queue and gameplay-state helpers now live in [networkClientState.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/networkClientState.js)
   - [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js) now keeps reconnect lifecycle local while delegating lower-risk state bookkeeping
+  - render-time remote snapshots now also interpolate `velocity`, which matters for transition-driving playback parity
 
 ## Main Remaining Hotspots
 
@@ -123,8 +131,8 @@ See also:
   - these are functionally important and still fairly dense
   - they should only be refactored when there is a clear ownership win, not just because they are large
   - the first useful server combat and payload extractions are now done, so future slices should target state-application or event-construction boundaries only if they are equally clear
-  - the next clear structural win is likely not another small threshold tweak, but a shared pose/blend-state layer consumed by both `RemotePlayerPresenter` and `remoteHitboxRig`
-  - that work is now partially underway: both sides share clip-transition state, but authoritative pose parity still needs more than shared fade duration/state alone
+  - the shared clip-intent layer is now real, and server lag-comp history now stores raw hitbox points in addition to built volumes
+  - the next clear structural win here is hardening/verification, not another speculative threshold tweak
 - Connection lifecycle in [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
   - future cleanup here must preserve explicit active-room ownership
   - stale async room callbacks are now a known regression risk
@@ -156,7 +164,7 @@ See also:
   - remote presentation / hitbox parity
   - connection lifecycle ownership and stale async callbacks
 - For remote multiplayer polish, prefer shared pose-state extraction over piling on more one-off crouch / transition heuristics
-- Treat rewound root alignment as mostly solved for now; focus next on pose-transition parity, not rewind timing
+- Treat rewound root alignment as solved enough for now; keep future work focused on validation and parity hardening rather than reopening broad rewind-timing investigation without new evidence
 - Rebuild after each code refactor slice
 
 ## Practical Next Refactor Order

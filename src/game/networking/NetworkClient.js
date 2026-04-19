@@ -753,16 +753,21 @@ export class NetworkClient {
         continue;
       }
 
-      interpolatedPlayers.push({
-        playerId,
-        position: {
-          x: Number(snapshot.position?.x ?? 0),
-          y: Number(snapshot.position?.y ?? 0),
-          z: Number(snapshot.position?.z ?? 0),
-        },
-        yaw: Number(snapshot.yaw ?? 0),
-        pitch: Number(snapshot.pitch ?? 0),
-        currentHeight: Number(snapshot.currentHeight ?? 0),
+        interpolatedPlayers.push({
+          playerId,
+          position: {
+            x: Number(snapshot.position?.x ?? 0),
+            y: Number(snapshot.position?.y ?? 0),
+            z: Number(snapshot.position?.z ?? 0),
+          },
+          velocity: {
+            x: Number(snapshot.velocity?.x ?? 0),
+            y: Number(snapshot.velocity?.y ?? 0),
+            z: Number(snapshot.velocity?.z ?? 0),
+          },
+          yaw: Number(snapshot.yaw ?? 0),
+          pitch: Number(snapshot.pitch ?? 0),
+          currentHeight: Number(snapshot.currentHeight ?? 0),
         isCrouched: Boolean(snapshot.isCrouched),
         displayName: snapshot.displayName,
         team: snapshot.team,

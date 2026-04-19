@@ -127,6 +127,11 @@ export function interpolateRemotePlayerSnapshotAtTime(snapshots, targetTime) {
       y: lerpNumber(previousSnapshot?.position?.y, nextSnapshot?.position?.y, alpha),
       z: lerpNumber(previousSnapshot?.position?.z, nextSnapshot?.position?.z, alpha),
     },
+    velocity: {
+      x: lerpNumber(previousSnapshot?.velocity?.x, nextSnapshot?.velocity?.x, alpha),
+      y: lerpNumber(previousSnapshot?.velocity?.y, nextSnapshot?.velocity?.y, alpha),
+      z: lerpNumber(previousSnapshot?.velocity?.z, nextSnapshot?.velocity?.z, alpha),
+    },
     yaw: interpolateAngle(Number(previousSnapshot?.yaw ?? 0), Number(nextSnapshot?.yaw ?? 0), alpha),
     pitch: lerpNumber(previousSnapshot?.pitch, nextSnapshot?.pitch, alpha),
     currentHeight: lerpNumber(previousSnapshot?.currentHeight, nextSnapshot?.currentHeight, alpha),
