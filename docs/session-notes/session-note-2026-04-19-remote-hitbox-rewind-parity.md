@@ -142,5 +142,40 @@ This area is in a materially better state:
 - visible remote animation timing is aligned with render-time interpolation
 - rewound hitbox debug is authoritative-derived and visually trustworthy
 - the obvious transition-lag symptom appears fixed
+- client/server now also share the melee/non-melee locomotion-boundary carryover reset rule for idle weapon swaps
+- shared torso defaults now include:
+  - `torsoTopOffset.z = 0.035`
+  - `pelvisRadius = 0.2`
+  - `pelvisLengthPadding = -0.12`
+
+## Remaining Caveat
+
+One issue remains intentionally unresolved for now:
+
+- the head hit volume still does not perfectly match the visible mesh at the most extreme pitch angles
+
+What we learned:
+
+- this is not mainly a rewind-timing problem anymore
+- it is not primarily a torso-offset problem either
+- the remaining issue is in head-fit / head-orientation inference at pitch extremes
+
+This pass did improve head-basis correctness and stability:
+
+- the head basis is now orthonormalized
+- extreme-pitch turn cases now have a degeneracy/sign guard to reduce morphing and snapping
+
+But that still does not make the head volume follow the visible skull perfectly at the hardest edge cases.
+
+## Later Revisit Idea
+
+If this is revisited later, a promising direction is to stop inferring head orientation purely from `head` / `neck` / clavicle points and instead add helper sockets or marker bones on the character model, for example:
+
+- `head_center`
+- `head_front`
+- `head_top`
+- optionally `head_back`
+
+That would let the head hitbox derive center/orientation from stable authored anchors instead of increasingly specialized point-derived heuristics.
 
 If this area is revisited later, the next work should be validation and hardening, not another blind threshold-tweak pass.

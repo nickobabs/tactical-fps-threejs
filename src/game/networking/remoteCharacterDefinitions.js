@@ -1,10 +1,15 @@
 import { TEAMS } from '../../shared/constants.js';
 
+const REMOTE_CHARACTER_ENV = typeof import.meta !== 'undefined'
+  && import.meta?.env
+  ? import.meta.env
+  : {};
+
 const REMOTE_LEGACY_CHARACTER_MODEL_PATH = '/models/players/tester3.glb';
 const REMOTE_DEFAULT_CHARACTER_MODEL_PATH = '/models/players/newtest.glb';
 const REMOTE_DEFENDER_CHARACTER_MODEL_PATH = '/models/players/defender.glb';
 const REMOTE_EXPERIMENTAL_ANIMATION_ROOT = '/models/players/animations';
-const REMOTE_CHARACTER_VARIANT = import.meta.env.VITE_REMOTE_CHARACTER_VARIANT ?? 'experimental';
+const REMOTE_CHARACTER_VARIANT = REMOTE_CHARACTER_ENV.VITE_REMOTE_CHARACTER_VARIANT ?? 'experimental';
 
 const REMOTE_EXPERIMENTAL_LOWER_BODY_PATTERNS = [
   /bip01$/i,

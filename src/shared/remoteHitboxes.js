@@ -33,7 +33,13 @@ export const REMOTE_HITBOX_HEAD_OFFSET = {
   y: 0.035,
   z: -0.005,
 };
+export const REMOTE_HITBOX_TORSO_TOP_OFFSET = {
+  x: 0,
+  y: 0,
+  z: 0,
+};
 export const REMOTE_HITBOX_HEAD_PIVOT_COMPENSATION = 1.1;
+export const REMOTE_HITBOX_HEAD_ANCHOR_TORSO_BLEND = 0.75;
 
 const HEAD_UP = { x: 0, y: 1, z: 0 };
 const HEAD_RIGHT = { x: 1, y: 0, z: 0 };
@@ -156,6 +162,49 @@ function crossVectors(target, a, b) {
   return target;
 }
 
+function blendVector(target, a, b, alpha) {
+  const t = Math.max(0, Math.min(1, Number(alpha ?? 0)));
+  target.x = lerpNumber(a?.x, b?.x, t);
+  target.y = lerpNumber(a?.y, b?.y, t);
+  target.z = lerpNumber(a?.z, b?.z, t);
+  return target;
+}
+
+function dotVectors(a, b) {
+  return (
+    (Number(a?.x ?? 0) * Number(b?.x ?? 0))
+    + (Number(a?.y ?? 0) * Number(b?.y ?? 0))
+    + (Number(a?.z ?? 0) * Number(b?.z ?? 0))
+  );
+}
+
+function negateVector(target) {
+  target.x = -Number(target.x ?? 0);
+  target.y = -Number(target.y ?? 0);
+  target.z = -Number(target.z ?? 0);
+  return target;
+}
+
+function buildUpperBodyBasis(points) {
+  const spine = points?.spine ?? null;
+  const neck = points?.neck ?? null;
+  const leftClavicle = points?.leftClavicle ?? null;
+  const rightClavicle = points?.rightClavicle ?? null;
+  const up = normalizeVector({
+    x: Number(neck?.x ?? 0) - Number(spine?.x ?? 0),
+    y: Number(neck?.y ?? 0) - Number(spine?.y ?? 0),
+    z: Number(neck?.z ?? 0) - Number(spine?.z ?? 0),
+  }, HEAD_UP);
+  const right = normalizeVector({
+    x: Number(rightClavicle?.x ?? 0) - Number(leftClavicle?.x ?? 0),
+    y: Number(rightClavicle?.y ?? 0) - Number(leftClavicle?.y ?? 0),
+    z: Number(rightClavicle?.z ?? 0) - Number(leftClavicle?.z ?? 0),
+  }, HEAD_RIGHT);
+  const forward = normalizeVector(crossVectors({ x: 0, y: 0, z: 0 }, right, up), HEAD_FORWARD);
+  const correctedRight = normalizeVector(crossVectors({ x: 0, y: 0, z: 0 }, up, forward), HEAD_RIGHT);
+  return { right: correctedRight, up, forward };
+}
+
 function buildHeadCenter(target, points, headOffset, basis = null) {
   const head = points?.head ?? null;
   const neck = points?.neck ?? null;
@@ -176,14 +225,23 @@ function buildHeadCenter(target, points, headOffset, basis = null) {
   };
   const headNeckLength = Math.hypot(up.x, up.y, up.z);
   normalizeVector(up, HEAD_UP);
-
-  const shoulderSpan = {
-    x: Number(points?.rightClavicle?.x ?? 0) - Number(points?.leftClavicle?.x ?? 0),
-    y: Number(points?.rightClavicle?.y ?? 0) - Number(points?.leftClavicle?.y ?? 0),
-    z: Number(points?.rightClavicle?.z ?? 0) - Number(points?.leftClavicle?.z ?? 0),
-  };
-  const right = normalizeVector(shoulderSpan, HEAD_RIGHT);
-  const forward = normalizeVector(crossVectors({ x: 0, y: 0, z: 0 }, right, up), HEAD_FORWARD);
+  const torsoBasis = buildUpperBodyBasis(points);
+  const torsoUp = torsoBasis.up;
+  let forward = crossVectors({ x: 0, y: 0, z: 0 }, torsoBasis.right, up);
+  const forwardLength = Math.hypot(forward.x, forward.y, forward.z);
+  if (forwardLength <= 1e-4) {
+    forward = { ...torsoBasis.forward };
+  } else {
+    normalizeVector(forward, HEAD_FORWARD);
+    if (dotVectors(forward, torsoBasis.forward) < 0) {
+      negateVector(forward);
+    }
+  }
+  const right = normalizeVector(crossVectors({ x: 0, y: 0, z: 0 }, up, forward), HEAD_RIGHT);
+  if (dotVectors(right, torsoBasis.right) < 0) {
+    negateVector(right);
+    negateVector(forward);
+  }
   if (basis) {
     copyPoint(basis.right, right);
     copyPoint(basis.up, up);
@@ -194,11 +252,15 @@ function buildHeadCenter(target, points, headOffset, basis = null) {
   const offsetY = Number(headOffset?.y ?? 0);
   const offsetZ = Number(headOffset?.z ?? 0);
   const anchorExtension = headNeckLength * REMOTE_HITBOX_HEAD_PIVOT_COMPENSATION;
+  const anchorUp = normalizeVector(
+    blendVector({ x: 0, y: 0, z: 0 }, up, torsoUp, REMOTE_HITBOX_HEAD_ANCHOR_TORSO_BLEND),
+    HEAD_UP,
+  );
   setPoint(
     target,
-    Number(head.x ?? 0) + right.x * offsetX + up.x * (offsetY + anchorExtension) + forward.x * offsetZ,
-    Number(head.y ?? 0) + right.y * offsetX + up.y * (offsetY + anchorExtension) + forward.y * offsetZ,
-    Number(head.z ?? 0) + right.z * offsetX + up.z * (offsetY + anchorExtension) + forward.z * offsetZ,
+    Number(head.x ?? 0) + right.x * offsetX + anchorUp.x * (offsetY + anchorExtension) + forward.x * offsetZ,
+    Number(head.y ?? 0) + right.y * offsetX + anchorUp.y * (offsetY + anchorExtension) + forward.y * offsetZ,
+    Number(head.z ?? 0) + right.z * offsetX + anchorUp.z * (offsetY + anchorExtension) + forward.z * offsetZ,
   );
 }
 
@@ -336,6 +398,7 @@ export function buildRemoteHitboxSnapshotFromPoints({
   headRadius = REMOTE_HITBOX_RADII.head,
   headSize = null,
   torsoRadius = REMOTE_HITBOX_RADII.torso,
+  torsoTopOffset = REMOTE_HITBOX_TORSO_TOP_OFFSET,
   torsoLengthPadding = 0,
   pelvisRadius = REMOTE_HITBOX_RADII.pelvis,
   pelvisLengthPadding = 0,
@@ -370,8 +433,29 @@ export function buildRemoteHitboxSnapshotFromPoints({
   snapshot.head.size.x = resolvedHeadSize.x;
   snapshot.head.size.y = resolvedHeadSize.y;
   snapshot.head.size.z = resolvedHeadSize.z;
+  const torsoBasis = buildUpperBodyBasis(finalPoints);
 
-  writeSegment(snapshot.torso, finalPoints.spine, finalPoints.neck, resolvedTorsoRadius, torsoLengthPadding, 'start');
+  writeSegment(
+    snapshot.torso,
+    finalPoints.spine,
+    {
+      x: Number(finalPoints.neck?.x ?? 0)
+        + (torsoBasis.right.x * Number(torsoTopOffset?.x ?? 0))
+        + (torsoBasis.up.x * Number(torsoTopOffset?.y ?? 0))
+        + (torsoBasis.forward.x * Number(torsoTopOffset?.z ?? 0)),
+      y: Number(finalPoints.neck?.y ?? 0)
+        + (torsoBasis.right.y * Number(torsoTopOffset?.x ?? 0))
+        + (torsoBasis.up.y * Number(torsoTopOffset?.y ?? 0))
+        + (torsoBasis.forward.y * Number(torsoTopOffset?.z ?? 0)),
+      z: Number(finalPoints.neck?.z ?? 0)
+        + (torsoBasis.right.z * Number(torsoTopOffset?.x ?? 0))
+        + (torsoBasis.up.z * Number(torsoTopOffset?.y ?? 0))
+        + (torsoBasis.forward.z * Number(torsoTopOffset?.z ?? 0)),
+    },
+    resolvedTorsoRadius,
+    torsoLengthPadding,
+    'start',
+  );
   writeSegment(snapshot.pelvis, stablePoints.pelvis, stablePoints.spine, resolvedPelvisRadius, pelvisLengthPadding);
 
   writeSegment(snapshot.arms[0], finalPoints.leftClavicle, finalPoints.leftUpperArm, resolvedArmRadius, armLengthPadding);

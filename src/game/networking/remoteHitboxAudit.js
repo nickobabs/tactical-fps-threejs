@@ -55,6 +55,7 @@ export function maybeSendRemoteHitboxAudit({
     headRadius: hitboxSettings.headRadius,
     headSize: hitboxSettings.headSize,
     torsoRadius: hitboxSettings.torsoRadius,
+    torsoTopOffset: hitboxSettings.torsoTopOffset,
     torsoLengthPadding: hitboxSettings.torsoLengthPadding,
     pelvisRadius: hitboxSettings.pelvisRadius,
     pelvisLengthPadding: hitboxSettings.pelvisLengthPadding,

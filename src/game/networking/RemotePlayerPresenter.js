@@ -14,6 +14,7 @@ import {
   REMOTE_CHARACTER_MODEL_SCALE,
   REMOTE_AIM_BONE_SPECS,
   REMOTE_CLIPS,
+  crossesRemoteMeleeLocomotionBoundary,
   usesRemoteMeleeClipSet,
 } from '../../shared/remoteCharacterConfig.js';
 import {
@@ -831,9 +832,7 @@ function setRemotePlayerWeapon(visual, weaponKey) {
   }
 
   const previousWeaponKey = visual.weaponKey || 'rifle';
-  const crossesMeleeLocomotionBoundary = usesRemoteMeleeClipSet(previousWeaponKey)
-    !== usesRemoteMeleeClipSet(nextWeaponKey);
-  if (crossesMeleeLocomotionBoundary) {
+  if (crossesRemoteMeleeLocomotionBoundary(previousWeaponKey, nextWeaponKey)) {
     clearRemoteIdleEntryCarryover(visual);
   }
 
@@ -1636,6 +1635,7 @@ export class RemotePlayerPresenter {
           headRadius: hitboxSettings.headRadius,
           headSize: hitboxSettings.headSize,
           torsoRadius: hitboxSettings.torsoRadius,
+          torsoTopOffset: hitboxSettings.torsoTopOffset,
           torsoLengthPadding: hitboxSettings.torsoLengthPadding,
           pelvisRadius: hitboxSettings.pelvisRadius,
           pelvisLengthPadding: hitboxSettings.pelvisLengthPadding,

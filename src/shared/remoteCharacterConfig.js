@@ -78,9 +78,10 @@ export const REMOTE_CHARACTER_HITBOX_SETTINGS = {
   headRadius: 0.15,
   headSize: { x: 0.24, y: 0.3, z: 0.255 },
   torsoRadius: 0.17,
+  torsoTopOffset: { x: 0, y: 0, z: 0.035 },
   torsoLengthPadding: -0.085,
-  pelvisRadius: 0.19,
-  pelvisLengthPadding: 0,
+  pelvisRadius: 0.2,
+  pelvisLengthPadding: -0.12,
   armRadius: 0.08,
   armLengthPadding: 0,
   handRadius: 0.09,
@@ -103,6 +104,10 @@ export function getRemoteSocketPoseKey(weaponKey, isScoped) {
 
 export function usesRemoteMeleeClipSet(weaponKey) {
   return String(weaponKey ?? 'rifle') === 'knife';
+}
+
+export function crossesRemoteMeleeLocomotionBoundary(previousWeaponKey, nextWeaponKey) {
+  return usesRemoteMeleeClipSet(previousWeaponKey) !== usesRemoteMeleeClipSet(nextWeaponKey);
 }
 
 export function supportsRemoteWalkClips(weaponKey) {

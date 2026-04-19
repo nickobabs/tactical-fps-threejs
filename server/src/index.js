@@ -58,7 +58,7 @@ app.use('/debug/remote-animation-trace', (request, response, next) => {
   next();
 });
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 app.post('/debug/movement-trace', async (request, response) => {
   const payload = request.body;

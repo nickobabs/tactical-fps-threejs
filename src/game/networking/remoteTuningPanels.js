@@ -383,6 +383,8 @@ export function createRemoteCharacterTuningPanelUi({
   const headHeightControl = createRow({ label: 'Head H', min: 0.08, max: 0.5, step: 0.005 });
   const headDepthControl = createRow({ label: 'Head D', min: 0.08, max: 0.5, step: 0.005 });
   const torsoRadiusControl = createRow({ label: 'Torso Rad', min: 0.05, max: 0.35, step: 0.005 });
+  const torsoTopXControl = createRow({ label: 'Torso Top X', min: -0.3, max: 0.3, step: 0.005 });
+  const torsoTopZControl = createRow({ label: 'Torso Top Z', min: -0.3, max: 0.3, step: 0.005 });
   const torsoLengthPaddingControl = createRow({ label: 'Torso Len', min: -0.5, max: 0.5, step: 0.005 });
   const pelvisRadiusControl = createRow({ label: 'Pelvis Rad', min: 0.05, max: 0.35, step: 0.005 });
   const pelvisLengthPaddingControl = createRow({ label: 'Pelvis Len', min: -0.5, max: 0.5, step: 0.005 });
@@ -422,7 +424,7 @@ export function createRemoteCharacterTuningPanelUi({
 
   const hitboxControlGroups = {
     head: [headOffsetXControl, headOffsetYControl, headOffsetZControl, headWidthControl, headHeightControl, headDepthControl],
-    torso: [torsoRadiusControl, torsoLengthPaddingControl],
+    torso: [torsoRadiusControl, torsoTopXControl, torsoTopZControl, torsoLengthPaddingControl],
     pelvis: [pelvisRadiusControl, pelvisLengthPaddingControl],
     arms: [armRadiusControl, armLengthPaddingControl],
     hands: [handRadiusControl],
@@ -476,6 +478,12 @@ export function createRemoteCharacterTuningPanelUi({
     const torsoRadiusText = String(Number(hitboxes.torsoRadius).toFixed(3));
     torsoRadiusControl.range.value = torsoRadiusText;
     torsoRadiusControl.number.value = torsoRadiusText;
+    const torsoTopXText = String(Number(hitboxes.torsoTopOffset?.x ?? 0).toFixed(3));
+    torsoTopXControl.range.value = torsoTopXText;
+    torsoTopXControl.number.value = torsoTopXText;
+    const torsoTopZText = String(Number(hitboxes.torsoTopOffset?.z ?? 0).toFixed(3));
+    torsoTopZControl.range.value = torsoTopZText;
+    torsoTopZControl.number.value = torsoTopZText;
     const torsoLengthPaddingText = String(Number(hitboxes.torsoLengthPadding).toFixed(3));
     torsoLengthPaddingControl.range.value = torsoLengthPaddingText;
     torsoLengthPaddingControl.number.value = torsoLengthPaddingText;
@@ -613,6 +621,30 @@ export function createRemoteCharacterTuningPanelUi({
   bindHitboxRadius(armRadiusControl, 'armRadius');
   bindHitboxRadius(handRadiusControl, 'handRadius');
   bindHitboxRadius(legRadiusControl, 'legRadius');
+
+  const bindHitboxOffsetAxis = (control, key, axis) => {
+    const applyValue = (rawValue) => {
+      const nextValue = Number(rawValue);
+      if (!Number.isFinite(nextValue)) {
+        return;
+      }
+      const hitboxes = getRemoteHitboxSettings();
+      window.__remoteWeaponTuning.setHitboxes({
+        [key]: {
+          ...(hitboxes[key] ?? {}),
+          [axis]: nextValue,
+        },
+      });
+      const text = String(Number(nextValue).toFixed(3));
+      control.range.value = text;
+      control.number.value = text;
+    };
+    control.range.addEventListener('input', (event) => applyValue(event.target.value));
+    control.number.addEventListener('input', (event) => applyValue(event.target.value));
+  };
+
+  bindHitboxOffsetAxis(torsoTopXControl, 'torsoTopOffset', 'x');
+  bindHitboxOffsetAxis(torsoTopZControl, 'torsoTopOffset', 'z');
 
   const bindHitboxLengthPadding = (control, key) => {
     const applyValue = (rawValue) => {

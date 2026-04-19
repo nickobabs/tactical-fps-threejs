@@ -62,6 +62,7 @@ import {
   triggerRemoteHitboxRigFire,
   updateRemoteHitboxRig,
 } from '../remoteHitboxRig.js';
+import { getRequestedRemoteCharacterDefinition } from '../../../src/game/networking/remoteCharacterDefinitions.js';
 import {
   buildAuthoritativeHitboxes,
   clearPlayerHitboxHistory,
@@ -905,8 +906,11 @@ export class TacticalRoom extends Room {
     this.objectiveState = this.createObjectiveState();
     this.roundManager.setGamemode(GAMEMODES.DEBUG);
     this.gameplaySettings = createGameplaySettingsForGamemode(this.roundManager.gamemode);
-    void createRemoteHitboxRig().catch((error) => {
-      console.warn('[TacticalRoom] Failed to preload remote hitbox rig.', error);
+    void Promise.all([
+      createRemoteHitboxRig(TEAMS.ATTACKERS),
+      createRemoteHitboxRig(TEAMS.DEFENDERS),
+    ]).catch((error) => {
+      console.warn('[TacticalRoom] Failed to preload remote hitbox rigs.', error);
     });
     this.setSimulationInterval(() => {
       this.updateObjectiveState(SERVER_OBJECTIVE_STEP);
@@ -1103,6 +1107,10 @@ export class TacticalRoom extends Room {
         await this.ensureCollisionWorldForMap(readyState.mapId);
         await this.ensurePlantZonesForMap(readyState.mapId);
         await this.ensureTeamSpawnPointsForMap(readyState.mapId);
+        const requestedDefinition = getRequestedRemoteCharacterDefinition(player.team);
+        if (player.hitboxRig?.definitionId !== requestedDefinition?.id) {
+          player.hitboxRig = await createRemoteHitboxRig(player.team);
+        }
         player.isReady = true;
         player.health = player.maxHealth;
         player.isAlive = true;

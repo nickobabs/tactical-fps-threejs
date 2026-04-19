@@ -43,6 +43,7 @@ export function createRemoteTuningStore({
 
   function cloneRemoteHitboxSettings(settings = defaultCharacterSettings.hitboxes) {
     const headOffset = settings?.headOffset ?? defaultCharacterSettings.hitboxes.headOffset;
+    const torsoTopOffset = settings?.torsoTopOffset ?? defaultCharacterSettings.hitboxes.torsoTopOffset;
     return {
       headOffset: {
         x: Number.isFinite(Number(headOffset.x)) ? Number(headOffset.x) : defaultCharacterSettings.hitboxes.headOffset.x,
@@ -66,6 +67,17 @@ export function createRemoteTuningStore({
       torsoRadius: Number.isFinite(Number(settings?.torsoRadius))
         ? Number(settings.torsoRadius)
         : defaultCharacterSettings.hitboxes.torsoRadius,
+      torsoTopOffset: {
+        x: Number.isFinite(Number(torsoTopOffset?.x))
+          ? Number(torsoTopOffset.x)
+          : defaultCharacterSettings.hitboxes.torsoTopOffset.x,
+        y: Number.isFinite(Number(torsoTopOffset?.y))
+          ? Number(torsoTopOffset.y)
+          : defaultCharacterSettings.hitboxes.torsoTopOffset.y,
+        z: Number.isFinite(Number(torsoTopOffset?.z))
+          ? Number(torsoTopOffset.z)
+          : defaultCharacterSettings.hitboxes.torsoTopOffset.z,
+      },
       torsoLengthPadding: Number.isFinite(Number(settings?.torsoLengthPadding))
         ? Number(settings.torsoLengthPadding)
         : defaultCharacterSettings.hitboxes.torsoLengthPadding,

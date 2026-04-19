@@ -31,6 +31,7 @@ See also:
   - the main visible remote transition-lag bug was client-side state mismatch, not just rewind math
   - visible remote animation now uses render-time interpolated state, and the rewound debug overlay is authoritative-derived from replicated snapshots/raw points
   - current status is good enough for checkpointing; next work here should be validation/hardening rather than more blind threshold tweaks
+  - remaining head-fit issues are now understood as extreme-pitch orientation/anchor problems, not broad rewind-parity failures
 
 ## What Is Already In Better Shape
 
@@ -83,6 +84,7 @@ See also:
   - [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js) is now more of a remote-animation/runtime orchestrator than a single-file implementation dump
   - the visible remote animation path now consumes render-time interpolated remote state rather than the newest authoritative snapshot
   - the rewound hitbox debug path now rebuilds from authoritative-derived raw points instead of only lerping final volumes
+  - current follow-up work here should stay narrow; the next plausible deeper improvement for extreme-pitch head fit is authored helper sockets / marker bones rather than more blind point-derived heuristics
 - Network client state helpers
   - remote snapshot dedupe/pruning now lives in [networkRemoteState.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/networkRemoteState.js)
   - pending event queue and gameplay-state helpers now live in [networkClientState.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/networkClientState.js)

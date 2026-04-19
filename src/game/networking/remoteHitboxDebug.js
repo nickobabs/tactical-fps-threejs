@@ -40,6 +40,10 @@ const REMOTE_REWOUND_HITBOX_SNAPSHOT = createRemoteHitboxSnapshot();
 const DEBUG_BASIS_RIGHT = new THREE.Vector3();
 const DEBUG_BASIS_UP = new THREE.Vector3();
 const DEBUG_BASIS_FORWARD = new THREE.Vector3();
+const DEBUG_HEAD_POINT = new THREE.Vector3();
+const DEBUG_NECK_POINT = new THREE.Vector3();
+const DEBUG_SPINE_POINT = new THREE.Vector3();
+const DEBUG_CENTER_POINT = new THREE.Vector3();
 
 function cloneVector3Like(value) {
   if (!value) {
@@ -83,6 +87,55 @@ function getPoseError(a, b) {
   };
 }
 
+function getSegmentVector(start, end) {
+  if (!start || !end) {
+    return null;
+  }
+  return {
+    x: Number(end.x ?? 0) - Number(start.x ?? 0),
+    y: Number(end.y ?? 0) - Number(start.y ?? 0),
+    z: Number(end.z ?? 0) - Number(start.z ?? 0),
+  };
+}
+
+function getVectorLength(vector) {
+  if (!vector) {
+    return 0;
+  }
+  return Math.hypot(Number(vector.x ?? 0), Number(vector.y ?? 0), Number(vector.z ?? 0));
+}
+
+function getSegmentComparison(localStart, localEnd, authoritativeStart, authoritativeEnd) {
+  const localVector = getSegmentVector(localStart, localEnd);
+  const authoritativeVector = getSegmentVector(authoritativeStart, authoritativeEnd);
+  if (!localVector || !authoritativeVector) {
+    return null;
+  }
+
+  const localLength = getVectorLength(localVector);
+  const authoritativeLength = getVectorLength(authoritativeVector);
+  if (localLength <= 1e-6 || authoritativeLength <= 1e-6) {
+    return null;
+  }
+
+  const dot = (
+    (localVector.x * authoritativeVector.x)
+    + (localVector.y * authoritativeVector.y)
+    + (localVector.z * authoritativeVector.z)
+  ) / (localLength * authoritativeLength);
+  const clampedDot = Math.max(-1, Math.min(1, dot));
+  return {
+    angleDegrees: THREE.MathUtils.radToDeg(Math.acos(clampedDot)),
+    lengthDelta: authoritativeLength - localLength,
+    localLength,
+    authoritativeLength,
+  };
+}
+
+function getSegmentLength(start, end) {
+  return getVectorLength(getSegmentVector(start, end));
+}
+
 function buildPointComparisonState(localPoints, latestAuthoritativePoints, rewoundAuthoritativePoints) {
   return {
     local: {
@@ -90,30 +143,91 @@ function buildPointComparisonState(localPoints, latestAuthoritativePoints, rewou
       neck: cloneVector3Like(localPoints?.neck),
       spine: cloneVector3Like(localPoints?.spine),
       pelvis: cloneVector3Like(localPoints?.pelvis),
+      leftClavicle: cloneVector3Like(localPoints?.leftClavicle),
+      rightClavicle: cloneVector3Like(localPoints?.rightClavicle),
     },
     latest: {
       head: cloneVector3Like(latestAuthoritativePoints?.head),
       neck: cloneVector3Like(latestAuthoritativePoints?.neck),
       spine: cloneVector3Like(latestAuthoritativePoints?.spine),
       pelvis: cloneVector3Like(latestAuthoritativePoints?.pelvis),
+      leftClavicle: cloneVector3Like(latestAuthoritativePoints?.leftClavicle),
+      rightClavicle: cloneVector3Like(latestAuthoritativePoints?.rightClavicle),
     },
     rewound: {
       head: cloneVector3Like(rewoundAuthoritativePoints?.head),
       neck: cloneVector3Like(rewoundAuthoritativePoints?.neck),
       spine: cloneVector3Like(rewoundAuthoritativePoints?.spine),
       pelvis: cloneVector3Like(rewoundAuthoritativePoints?.pelvis),
+      leftClavicle: cloneVector3Like(rewoundAuthoritativePoints?.leftClavicle),
+      rightClavicle: cloneVector3Like(rewoundAuthoritativePoints?.rightClavicle),
     },
     latestError: {
       head: getPoseError(localPoints?.head, latestAuthoritativePoints?.head),
       neck: getPoseError(localPoints?.neck, latestAuthoritativePoints?.neck),
       spine: getPoseError(localPoints?.spine, latestAuthoritativePoints?.spine),
       pelvis: getPoseError(localPoints?.pelvis, latestAuthoritativePoints?.pelvis),
+      leftClavicle: getPoseError(localPoints?.leftClavicle, latestAuthoritativePoints?.leftClavicle),
+      rightClavicle: getPoseError(localPoints?.rightClavicle, latestAuthoritativePoints?.rightClavicle),
     },
     rewoundError: {
       head: getPoseError(localPoints?.head, rewoundAuthoritativePoints?.head),
       neck: getPoseError(localPoints?.neck, rewoundAuthoritativePoints?.neck),
       spine: getPoseError(localPoints?.spine, rewoundAuthoritativePoints?.spine),
       pelvis: getPoseError(localPoints?.pelvis, rewoundAuthoritativePoints?.pelvis),
+      leftClavicle: getPoseError(localPoints?.leftClavicle, rewoundAuthoritativePoints?.leftClavicle),
+      rightClavicle: getPoseError(localPoints?.rightClavicle, rewoundAuthoritativePoints?.rightClavicle),
+    },
+    latestChain: {
+      spineToNeck: getSegmentComparison(
+        localPoints?.spine,
+        localPoints?.neck,
+        latestAuthoritativePoints?.spine,
+        latestAuthoritativePoints?.neck,
+      ),
+      neckToHead: getSegmentComparison(
+        localPoints?.neck,
+        localPoints?.head,
+        latestAuthoritativePoints?.neck,
+        latestAuthoritativePoints?.head,
+      ),
+      clavicleSpan: getSegmentComparison(
+        localPoints?.leftClavicle,
+        localPoints?.rightClavicle,
+        latestAuthoritativePoints?.leftClavicle,
+        latestAuthoritativePoints?.rightClavicle,
+      ),
+    },
+    rewoundChain: {
+      spineToNeck: getSegmentComparison(
+        localPoints?.spine,
+        localPoints?.neck,
+        rewoundAuthoritativePoints?.spine,
+        rewoundAuthoritativePoints?.neck,
+      ),
+      neckToHead: getSegmentComparison(
+        localPoints?.neck,
+        localPoints?.head,
+        rewoundAuthoritativePoints?.neck,
+        rewoundAuthoritativePoints?.head,
+      ),
+      clavicleSpan: getSegmentComparison(
+        localPoints?.leftClavicle,
+        localPoints?.rightClavicle,
+        rewoundAuthoritativePoints?.leftClavicle,
+        rewoundAuthoritativePoints?.rightClavicle,
+      ),
+    },
+    construction: {
+      local: {
+        neckToHeadLength: getSegmentLength(localPoints?.neck, localPoints?.head),
+      },
+      latest: {
+        neckToHeadLength: getSegmentLength(latestAuthoritativePoints?.neck, latestAuthoritativePoints?.head),
+      },
+      rewound: {
+        neckToHeadLength: getSegmentLength(rewoundAuthoritativePoints?.neck, rewoundAuthoritativePoints?.head),
+      },
     },
   };
 }
@@ -163,6 +277,17 @@ function buildPoseComparisonState(
       pelvis: getPoseError(meshPelvis, rewoundPelvis),
     },
     points: buildPointComparisonState(localPoints, latestAuthoritativePoints, rewoundAuthoritativePoints),
+    headConstruction: {
+      local: {
+        headPointToCenter: getPoseError(localPoints?.head, meshHead),
+      },
+      latest: {
+        headPointToCenter: getPoseError(latestAuthoritativePoints?.head, latestHead),
+      },
+      rewound: {
+        headPointToCenter: getPoseError(rewoundAuthoritativePoints?.head, rewoundHead),
+      },
+    },
   };
 }
 
@@ -191,6 +316,210 @@ function createRemoteHitSphereDebugMesh(color) {
     depthWrite: false,
   });
   return new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), material);
+}
+
+function createRemoteHeadConstructionDebugGroup(colors = {}) {
+  const group = new THREE.Group();
+  group.renderOrder = 1300;
+
+  const pointMaterial = (color) => new THREE.MeshBasicMaterial({
+    color,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const axisMaterial = (color) => new THREE.LineBasicMaterial({
+    color,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.95,
+  });
+  const pointGeometry = new THREE.SphereGeometry(0.028, 10, 8);
+  const headPoint = new THREE.Mesh(pointGeometry, pointMaterial(colors.headPoint ?? 0xff6b6b));
+  const neckPoint = new THREE.Mesh(pointGeometry, pointMaterial(colors.neckPoint ?? 0x58d1ff));
+  const spinePoint = new THREE.Mesh(pointGeometry, pointMaterial(colors.spinePoint ?? 0x9cff7a));
+  const centerPoint = new THREE.Mesh(pointGeometry, pointMaterial(colors.centerPoint ?? 0xfff27a));
+
+  const createAxis = (color) => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+    const line = new THREE.Line(geometry, axisMaterial(color));
+    line.renderOrder = 1301;
+    return line;
+  };
+
+  const rightAxis = createAxis(colors.rightAxis ?? 0xff5d5d);
+  const upAxis = createAxis(colors.upAxis ?? 0x5dff8f);
+  const forwardAxis = createAxis(colors.forwardAxis ?? 0x67a6ff);
+
+  group.add(headPoint, neckPoint, spinePoint, centerPoint, rightAxis, upAxis, forwardAxis);
+  return {
+    group,
+    headPoint,
+    neckPoint,
+    spinePoint,
+    centerPoint,
+    rightAxis,
+    upAxis,
+    forwardAxis,
+  };
+}
+
+function createPointDebugMesh(color, radius = 0.024) {
+  return new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 10, 8),
+    new THREE.MeshBasicMaterial({
+      color,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.95,
+    }),
+  );
+}
+
+function createSegmentDebugLine(color) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+  const line = new THREE.Line(
+    geometry,
+    new THREE.LineBasicMaterial({
+      color,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.95,
+    }),
+  );
+  line.renderOrder = 1301;
+  return line;
+}
+
+function createRemoteUpperBodyChainDebugGroup(colors = {}) {
+  const group = new THREE.Group();
+  group.renderOrder = 1300;
+
+  const spinePoint = createPointDebugMesh(colors.spinePoint ?? 0x6bff95);
+  const neckPoint = createPointDebugMesh(colors.neckPoint ?? 0x58d1ff);
+  const headPoint = createPointDebugMesh(colors.headPoint ?? 0xff6b6b);
+  const leftClaviclePoint = createPointDebugMesh(colors.leftClaviclePoint ?? 0xffd166, 0.02);
+  const rightClaviclePoint = createPointDebugMesh(colors.rightClaviclePoint ?? 0xffd166, 0.02);
+  const spineToNeck = createSegmentDebugLine(colors.spineToNeck ?? 0x7cf7a3);
+  const neckToHead = createSegmentDebugLine(colors.neckToHead ?? 0x74d8ff);
+  const clavicleSpan = createSegmentDebugLine(colors.clavicleSpan ?? 0xffd166);
+
+  group.add(
+    spinePoint,
+    neckPoint,
+    headPoint,
+    leftClaviclePoint,
+    rightClaviclePoint,
+    spineToNeck,
+    neckToHead,
+    clavicleSpan,
+  );
+
+  return {
+    group,
+    spinePoint,
+    neckPoint,
+    headPoint,
+    leftClaviclePoint,
+    rightClaviclePoint,
+    spineToNeck,
+    neckToHead,
+    clavicleSpan,
+  };
+}
+
+function updateDebugLine(line, start, end) {
+  const positions = line.geometry.attributes.position.array;
+  positions[0] = start.x;
+  positions[1] = start.y;
+  positions[2] = start.z;
+  positions[3] = end.x;
+  positions[4] = end.y;
+  positions[5] = end.z;
+  line.geometry.attributes.position.needsUpdate = true;
+  line.geometry.computeBoundingSphere();
+}
+
+function updateRemoteHeadConstructionDebugGroup(debugGroup, points, headHitbox, axisScale = 0.16) {
+  if (!debugGroup) {
+    return false;
+  }
+  const headPoint = points?.head ?? null;
+  const neckPoint = points?.neck ?? null;
+  const spinePoint = points?.spine ?? null;
+  const center = headHitbox?.center ?? null;
+  const right = headHitbox?.right ?? null;
+  const up = headHitbox?.up ?? null;
+  const forward = headHitbox?.forward ?? null;
+  const visible = Boolean(headPoint && neckPoint && spinePoint && center && right && up && forward);
+  debugGroup.group.visible = visible;
+  if (!visible) {
+    return false;
+  }
+
+  debugGroup.headPoint.position.set(Number(headPoint.x ?? 0), Number(headPoint.y ?? 0), Number(headPoint.z ?? 0));
+  debugGroup.neckPoint.position.set(Number(neckPoint.x ?? 0), Number(neckPoint.y ?? 0), Number(neckPoint.z ?? 0));
+  debugGroup.spinePoint.position.set(Number(spinePoint.x ?? 0), Number(spinePoint.y ?? 0), Number(spinePoint.z ?? 0));
+  debugGroup.centerPoint.position.set(Number(center.x ?? 0), Number(center.y ?? 0), Number(center.z ?? 0));
+
+  DEBUG_CENTER_POINT.set(Number(center.x ?? 0), Number(center.y ?? 0), Number(center.z ?? 0));
+  updateDebugLine(
+    debugGroup.rightAxis,
+    DEBUG_CENTER_POINT,
+    DEBUG_HEAD_POINT.set(Number(center.x ?? 0), Number(center.y ?? 0), Number(center.z ?? 0))
+      .addScaledVector(DEBUG_BASIS_RIGHT.set(Number(right.x ?? 0), Number(right.y ?? 0), Number(right.z ?? 0)), axisScale),
+  );
+  updateDebugLine(
+    debugGroup.upAxis,
+    DEBUG_CENTER_POINT,
+    DEBUG_NECK_POINT.set(Number(center.x ?? 0), Number(center.y ?? 0), Number(center.z ?? 0))
+      .addScaledVector(DEBUG_BASIS_UP.set(Number(up.x ?? 0), Number(up.y ?? 0), Number(up.z ?? 0)), axisScale),
+  );
+  updateDebugLine(
+    debugGroup.forwardAxis,
+    DEBUG_CENTER_POINT,
+    DEBUG_SPINE_POINT.set(Number(center.x ?? 0), Number(center.y ?? 0), Number(center.z ?? 0))
+      .addScaledVector(DEBUG_BASIS_FORWARD.set(Number(forward.x ?? 0), Number(forward.y ?? 0), Number(forward.z ?? 0)), axisScale),
+  );
+  return true;
+}
+
+function updateRemoteUpperBodyChainDebugGroup(debugGroup, points) {
+  if (!debugGroup) {
+    return false;
+  }
+
+  const spine = points?.spine ?? null;
+  const neck = points?.neck ?? null;
+  const head = points?.head ?? null;
+  const leftClavicle = points?.leftClavicle ?? null;
+  const rightClavicle = points?.rightClavicle ?? null;
+  const visible = Boolean(spine && neck && head && leftClavicle && rightClavicle);
+  debugGroup.group.visible = visible;
+  if (!visible) {
+    return false;
+  }
+
+  debugGroup.spinePoint.position.set(Number(spine.x ?? 0), Number(spine.y ?? 0), Number(spine.z ?? 0));
+  debugGroup.neckPoint.position.set(Number(neck.x ?? 0), Number(neck.y ?? 0), Number(neck.z ?? 0));
+  debugGroup.headPoint.position.set(Number(head.x ?? 0), Number(head.y ?? 0), Number(head.z ?? 0));
+  debugGroup.leftClaviclePoint.position.set(
+    Number(leftClavicle.x ?? 0),
+    Number(leftClavicle.y ?? 0),
+    Number(leftClavicle.z ?? 0),
+  );
+  debugGroup.rightClaviclePoint.position.set(
+    Number(rightClavicle.x ?? 0),
+    Number(rightClavicle.y ?? 0),
+    Number(rightClavicle.z ?? 0),
+  );
+
+  updateDebugLine(debugGroup.spineToNeck, spine, neck);
+  updateDebugLine(debugGroup.neckToHead, neck, head);
+  updateDebugLine(debugGroup.clavicleSpan, leftClavicle, rightClavicle);
+  return true;
 }
 
 function updateRemoteHitEllipsoidDebugMesh(debugMesh, ellipsoid) {
@@ -251,6 +580,8 @@ function createRemoteHitVolumeDebugGroup(colors = {}) {
     createRemoteHitSphereDebugMesh(colors.hands ?? colors.arms ?? 0xffd166),
   ];
   const legs = Array.from({ length: 4 }, () => createRemoteHitCapsuleDebugMesh(colors.legs ?? 0xc792ff));
+  const headConstruction = createRemoteHeadConstructionDebugGroup(colors.headConstruction ?? {});
+  const upperBodyChain = createRemoteUpperBodyChainDebugGroup(colors.upperBodyChain ?? {});
 
   group.add(
     head,
@@ -259,9 +590,21 @@ function createRemoteHitVolumeDebugGroup(colors = {}) {
     ...arms.map((entry) => entry.group),
     ...hands,
     ...legs.map((entry) => entry.group),
+    headConstruction.group,
+    upperBodyChain.group,
   );
 
-  return { group, head, torso, pelvis, arms, hands, legs };
+  return {
+    group,
+    head,
+    torso,
+    pelvis,
+    arms,
+    hands,
+    legs,
+    headConstruction,
+    upperBodyChain,
+  };
 }
 
 function createRemotePositionDebugGroup() {
@@ -443,6 +786,7 @@ function captureRemoteBoneDrivenSnapshot(bones, localHitboxSettings) {
     headRadius: localHitboxSettings.headRadius,
     headSize: localHitboxSettings.headSize,
     torsoRadius: localHitboxSettings.torsoRadius,
+    torsoTopOffset: localHitboxSettings.torsoTopOffset,
     torsoLengthPadding: localHitboxSettings.torsoLengthPadding,
     pelvisRadius: localHitboxSettings.pelvisRadius,
     pelvisLengthPadding: localHitboxSettings.pelvisLengthPadding,
@@ -521,6 +865,7 @@ export function syncRemoteHitboxDebug({
         headRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.headRadius,
         headSize: REMOTE_CHARACTER_HITBOX_SETTINGS.headSize,
         torsoRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoRadius,
+        torsoTopOffset: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoTopOffset,
         torsoLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.torsoLengthPadding,
         pelvisRadius: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisRadius,
         pelvisLengthPadding: REMOTE_CHARACTER_HITBOX_SETTINGS.pelvisLengthPadding,
@@ -603,6 +948,7 @@ export function syncRemoteHitboxDebug({
       playerState: {
         currentHeight: Number(player.currentHeight ?? authoritativeState?.currentHeight ?? 0),
         isCrouched: Boolean(player.isCrouched ?? authoritativeState?.isCrouched),
+        pitch: Number(player.pitch ?? authoritativeState?.pitch ?? 0),
         crouchFatigue: Number(authoritativeState?.crouchFatigue ?? 0),
         crouchToggleCount: Number(authoritativeState?.crouchToggleCount ?? 0),
         timeSinceCrouchToggle: authoritativeState?.timeSinceCrouchToggle == null
@@ -645,12 +991,30 @@ export function syncRemoteHitboxDebug({
         }, standHeight);
       }
     }
+    updateRemoteHeadConstructionDebugGroup(
+      visual.hitVolumeDebugGroup.headConstruction,
+      localHitboxDebugEnabled ? REMOTE_LOCAL_HITBOX_POINTS : authoritativeState?.hitboxDebug?.points,
+      localHitboxDebugEnabled ? localBoneDrivenSnapshot?.head : authoritativeState?.hitboxes?.head,
+    );
+    updateRemoteUpperBodyChainDebugGroup(
+      visual.hitVolumeDebugGroup.upperBodyChain,
+      localHitboxDebugEnabled ? REMOTE_LOCAL_HITBOX_POINTS : authoritativeState?.hitboxDebug?.points,
+    );
   }
 
   if (debugEnabled && hitboxDebugSettings.showRewoundHitboxes) {
     updateRemoteAuthoritativeHitVolumeDebugGroup(
       visual.rewoundHitVolumeDebugGroup,
       rewoundDebugHitboxes,
+    );
+    updateRemoteHeadConstructionDebugGroup(
+      visual.rewoundHitVolumeDebugGroup.headConstruction,
+      rewoundDebugPoints,
+      rewoundDebugHitboxes?.head,
+    );
+    updateRemoteUpperBodyChainDebugGroup(
+      visual.rewoundHitVolumeDebugGroup.upperBodyChain,
+      rewoundDebugPoints,
     );
   }
 

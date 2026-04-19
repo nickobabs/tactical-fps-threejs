@@ -2,159 +2,201 @@
 
 ## Status
 
-This feature is now functionally resolved enough to use for authoritative PvP hit validation.
+This branch is now in a usable checkpoint state for authoritative PvP hit validation.
 
-The current result:
+Current result:
 
 - server-authoritative segmented hit volumes are active
-- `F3` authoritative debug now follows the visible remote mesh closely enough to trust during normal play
-- head, torso, pelvis, arms, hands, and legs are all driven from the remote skeleton snapshot path
+- the `F3` rewound overlay follows the visible remote mesh closely enough to trust during normal play
+- the original high-value bug, rewound hitboxes visibly falling behind the remote mesh during direction changes and crouch transitions, is functionally resolved
 
-This document is now a record of what actually fixed the branch, not an open handoff for an unsolved system.
+This document records the current best understanding of what actually fixed the branch and what remains open.
 
-## Final Outcome
+## What Actually Fixed The Main Problem
 
-The branch did not fail because segmented bone-driven hit volumes were a bad idea.
+The main visible rewind mismatch was not primarily:
 
-It failed because the authoritative server rig was still evaluating an upper-body pose that did not match the visible client remote mesh.
+- rewind timestamp selection
+- clip-selection disagreement
+- or final-volume interpolation alone
 
-The decisive fix was:
+The decisive fix path was:
 
-- removing left-hand IK from the authoritative hitbox rig
+1. shared clip-intent evaluation between client presentation and server authoritative rig
+2. client visible remote animation switching to render-time interpolated remote state instead of the newest authoritative snapshot
+3. rewound debug hitboxes rebuilding from authoritative-derived raw points instead of only lerping final hit volumes
+4. server hitbox history also carrying raw points for better rewind reconstruction
 
-That was the major upper-body parity bug.
+In practice, the biggest real bug was that the visible remote mesh and the rewind/debug view were evaluating from different temporal slices of remote state.
 
-In practice:
+Once remote animation playback used the same render-time interpolated state as the visible root, the rewound overlay tightened up dramatically.
 
-- the visible remote mesh was not consistently using the same left-arm rifle-grip pose that the server rig was solving
-- the authoritative left arm and nearby upper-body hit volumes were therefore being pulled into the wrong place
-- once authoritative left-hand IK was disabled, the hit volumes snapped back onto the real visible pose
+## Supporting Fixes That Matter
 
-## What Else Was Needed
+### Shared Client/Server Pose Intent
 
-Several supporting fixes were still required around that core change.
+Shared clip-intent evaluation now lives in:
 
-### Server Rig Parity
+- [remotePoseEvaluation.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remotePoseEvaluation.js)
 
-Important server-side corrections:
+Consumers:
 
-- switched the rig clone path to `SkeletonUtils.clone(...)`
-- normalized external FBX clip start times
-- stripped root motion from imported clips
-- matched jump clip behavior more closely with the client baseline
-- captured one explicit final post-pose hitbox point set for authoritative use
-
-Relevant file:
-
+- [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
 - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
 
-### Snapshot / Protocol Consistency
+This reduced policy drift in:
 
-- remote snapshot dedupe in the client now includes serialized `hitboxes`
-- authoritative hitreg consumes authoritative hitbox snapshots directly
+- target clip
+- delayed idle-entry behavior
+- base clip vs presentation clip
+- fire-base lock behavior
+
+### Render-Time Remote Snapshot Consistency
+
+Shared interpolation now includes transition-driving state, not only root transform:
+
+- [remoteTimeline.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteTimeline.js)
+
+Remote snapshot dedupe now also respects transition-driving data:
+
+- [networkRemoteState.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/networkRemoteState.js)
+
+This matters because animation parity can still break even when coarse position changes are tiny.
+
+### Authoritative-Derived Rewind Debug
 
 Relevant files:
 
-- [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
-- [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
+- [remoteHitboxDebug.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/remoteHitboxDebug.js)
+- [lagCompensation.js](/C:/Users/nicko/tactical-fps-threejs/server/src/combat/lagCompensation.js)
+- [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
 
-### Head Hitbox Follow
+The rewound debug path now:
 
-The original head sphere logic was too naive.
+- rewinds against replicated authoritative snapshots
+- interpolates authoritative raw points when available
+- rebuilds hit volumes from those points
 
-The final head solution now:
+Important nuance:
 
-- builds the head center from a pose-relative basis instead of a fixed world-space offset
-- uses neck-to-head direction as the main local up axis
-- compensates for the head pivot being too close to the neck by extending farther along that direction
+- this is still a client-side reconstruction of authoritative state
+- it is not a literal render of server process memory
+- but it is authoritative-derived, not a disguised local fallback path
 
-Relevant file:
+### Team-Specific Authoritative Rig Selection
 
-- [remoteHitboxes.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteHitboxes.js)
+The server authoritative rig is no longer hardcoded to one player model.
 
-## Final Tuned Head Values
-
-The baked shared defaults that matched the visible mesh during the final tuning pass are:
-
-- `headOffset.x = 0`
-- `headOffset.y = 0.035`
-- `headOffset.z = -0.005`
-- `headRadius = 0.15`
-
-These are now reflected in:
-
-- [remoteCharacterConfig.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteCharacterConfig.js)
-- [remoteHitboxes.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteHitboxes.js)
-
-## Debug Workflow
-
-### F3
-
-`F3` still shows remote hit volumes.
-
-By default:
-
-- it prefers the authoritative server hitbox snapshot
-
-### F6 Local Hitbox Debug
-
-For tuning, `F6` now includes a `Local Hitbox Debug` toggle.
-
-When enabled:
-
-- `F3` stops preferring the server snapshot
-- it rebuilds hitboxes locally from the current visual remote bones
-- head offset and head radius tuning in `F6` affect the debug overlay directly
-
-This exists for tuning only.
-Real hitreg remains server authoritative.
-
-Relevant file:
-
-- [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
-
-## Important Files
-
-### Client
-
-- [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
-- [NetworkClient.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/NetworkClient.js)
-
-### Server
+Relevant files:
 
 - [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
 - [TacticalRoom.js](/C:/Users/nicko/tactical-fps-threejs/server/src/rooms/TacticalRoom.js)
 
-### Shared
+This was the correct architectural fix even though it did not end up being the main remaining head-fit issue.
+
+### Idle Weapon-Switch Carryover Parity
+
+The client presenter and server rig now share the same melee/non-melee locomotion-boundary carryover reset rule for idle weapon switches.
+
+Relevant files:
 
 - [remoteCharacterConfig.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteCharacterConfig.js)
-- [remoteHitboxes.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteHitboxes.js)
+- [RemotePlayerPresenter.js](/C:/Users/nicko/tactical-fps-threejs/src/game/networking/RemotePlayerPresenter.js)
+- [remoteHitboxRig.js](/C:/Users/nicko/tactical-fps-threejs/server/src/remoteHitboxRig.js)
 
-## Current Best Interpretation
+That removes another small but real client/server drift risk.
 
-The correct architecture for this project is:
+## Final Tuned Shared Defaults
+
+Current baked defaults in [remoteCharacterConfig.js](/C:/Users/nicko/tactical-fps-threejs/src/shared/remoteCharacterConfig.js):
+
+- `headOffset = { x: 0, y: 0.035, z: -0.005 }`
+- `headRadius = 0.15`
+- `headSize = { x: 0.24, y: 0.3, z: 0.255 }`
+- `torsoTopOffset = { x: 0, y: 0, z: 0.035 }`
+- `pelvisRadius = 0.2`
+- `pelvisLengthPadding = -0.12`
+
+The torso-top offset is applied in torso-local axes, not raw world `x/z`, so it rotates correctly with the mesh.
+
+## Current Remaining Caveat
+
+One issue remains intentionally unresolved for now:
+
+- the head hit volume still does not perfectly match the visible mesh at the most extreme pitch angles
+
+What we learned:
+
+- this is no longer mainly a rewind problem
+- it is also not mainly a torso-offset problem
+- the remaining issue is head-fit and head-orientation inference at pitch extremes
+
+Recent work improved correctness here:
+
+- head basis is orthonormalized
+- extreme-pitch turning now has a degeneracy/sign guard to reduce morphing and snapping
+
+But the head volume still does not follow the visible skull perfectly in the hardest edge cases.
+
+## Debug / Tuning Workflow
+
+### F3
+
+`F3` remains the main remote hitbox visualizer.
+
+Current behavior:
+
+- latest view prefers authoritative hitboxes unless local hitbox debug is enabled
+- rewound view is authoritative-derived from replicated snapshots/raw points
+
+### F6
+
+`F6` remains the local tuning surface.
+
+Useful current controls:
+
+- head offset / head size tuning
+- pelvis radius / length tuning
+- torso top offset tuning
+- local hitbox debug toggle
+
+This exists for tuning only. Real hitreg remains server authoritative.
+
+## Later Revisit Idea
+
+If the max-pitch head-fit issue is revisited later, a promising direction is to add helper sockets or marker bones on the character model rather than continuing to infer head orientation only from `head` / `neck` / clavicle points.
+
+For example:
+
+- `head_center`
+- `head_front`
+- `head_top`
+- optionally `head_back`
+
+Why this is attractive:
+
+- it reduces inference
+- it gives the hitbox builder stable authored anchors
+- it is easier to reason about than stacking more basis heuristics on top of a small set of moving points
+
+Main tradeoff:
+
+- it requires asset work and consistent support across remote character models
+
+## Best Current Interpretation
+
+The correct architecture for this project still looks like:
 
 - authoritative server hit validation
 - segmented bone-driven hit volumes
-- shared snapshot construction
-- a simplified authoritative pose contract rather than trying to mirror every experimental client-side post-process step
+- shared snapshot construction rules
+- shared pose-intent policy
+- authoritative-derived rewind debug
 
 The key lesson from this branch is:
 
-- matching the visible remote mesh matters more than adding more complex pose processing
-- extra pose stages, especially left-hand IK, are only acceptable if the server and visible client mesh truly share them
+- matching the visible remote mesh temporally and structurally matters more than piling on more ad hoc heuristics
 
 ## Short Summary
 
-The remote hitbox branch is now in a usable state. The main breakthrough was removing left-hand IK from the authoritative hitbox rig, which was the primary cause of upper-body pose drift relative to the visible remote mesh. Additional server rig fixes, shared hitbox snapshot logic, and a pose-relative head sphere anchor completed the system. Final head tuning values were baked into shared defaults, and `F6` now includes a local hitbox debug mode so future visual tuning can be done safely without changing real server-authoritative hitreg.
-
-## Follow-up Root Cause
-
-The later locomotion and jump mismatch was not caused by aim pitch, late weapon attachment, or IK. Stage-by-stage audit showed the divergence already existed immediately after base clip sampling on the client and server.
-
-The actual regression was inconsistent root-motion stripping:
-
-- the server removed translation tracks from `Bip01.position`
-- the client removed root motion from `mixamorigHips` / `hips` / `root` / `_rootJoint` / `armature`, but not `Bip01`
-
-That meant the visible client rig could still carry baked `Bip01` translation during run and jump while the authoritative server rig did not. Once the client root-motion strip list was updated to include `Bip01`, remote authoritative hitboxes and the visible remote mesh returned to near-perfect parity across idle, locomotion, and air states.
+The remote hitbox branch is now in a strong checkpoint state. The major rewind-parity problem was solved by aligning visible remote animation with render-time interpolated remote state and by rebuilding rewound debug hitboxes from authoritative-derived raw points. Additional parity fixes around team-specific server rigs, snapshot state consistency, local-axis torso tuning, and shared weapon-switch carryover rules hardened the system further. The remaining known caveat is head-fit at extreme pitch angles, which is better understood now but intentionally left for later work.

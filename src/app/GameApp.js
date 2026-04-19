@@ -214,6 +214,15 @@ function summarizeRemoteAnimationTraceSamples(samples) {
       maxRewoundNeckPointHorizontalDistance: 0,
       maxRewoundSpinePointHorizontalDistance: 0,
       maxRewoundPelvisPointHorizontalDistance: 0,
+      constructionSampleCount: 0,
+      averageLatestHeadPointToCenterHorizontalDistance: 0,
+      averageRewoundHeadPointToCenterHorizontalDistance: 0,
+      maxLatestHeadPointToCenterHorizontalDistance: 0,
+      maxRewoundHeadPointToCenterHorizontalDistance: 0,
+      averageLatestNeckToHeadLength: 0,
+      averageRewoundNeckToHeadLength: 0,
+      maxLatestNeckToHeadLength: 0,
+      maxRewoundNeckToHeadLength: 0,
     };
   }
 
@@ -261,6 +270,15 @@ function summarizeRemoteAnimationTraceSamples(samples) {
   let maxRewoundNeckPointHorizontalDistance = 0;
   let maxRewoundSpinePointHorizontalDistance = 0;
   let maxRewoundPelvisPointHorizontalDistance = 0;
+  let constructionSampleCount = 0;
+  let averageLatestHeadPointToCenterHorizontalDistance = 0;
+  let averageRewoundHeadPointToCenterHorizontalDistance = 0;
+  let maxLatestHeadPointToCenterHorizontalDistance = 0;
+  let maxRewoundHeadPointToCenterHorizontalDistance = 0;
+  let averageLatestNeckToHeadLength = 0;
+  let averageRewoundNeckToHeadLength = 0;
+  let maxLatestNeckToHeadLength = 0;
+  let maxRewoundNeckToHeadLength = 0;
 
   for (let index = 0; index < samples.length; index += 1) {
     const sample = samples[index];
@@ -368,6 +386,35 @@ function summarizeRemoteAnimationTraceSamples(samples) {
       maxRewoundSpinePointHorizontalDistance = Math.max(maxRewoundSpinePointHorizontalDistance, rewoundSpinePointError);
       maxRewoundPelvisPointHorizontalDistance = Math.max(maxRewoundPelvisPointHorizontalDistance, rewoundPelvisPointError);
     }
+
+    const construction = pose?.headConstruction ?? null;
+    const pointConstruction = pose?.points?.construction ?? null;
+    const latestHeadPointToCenter = Number(construction?.latest?.headPointToCenter?.horizontalDistance ?? 0);
+    const rewoundHeadPointToCenter = Number(construction?.rewound?.headPointToCenter?.horizontalDistance ?? 0);
+    const latestNeckToHeadLength = Number(pointConstruction?.latest?.neckToHeadLength ?? 0);
+    const rewoundNeckToHeadLength = Number(pointConstruction?.rewound?.neckToHeadLength ?? 0);
+    if (
+      construction?.latest?.headPointToCenter
+      || construction?.rewound?.headPointToCenter
+      || pointConstruction?.latest?.neckToHeadLength != null
+      || pointConstruction?.rewound?.neckToHeadLength != null
+    ) {
+      constructionSampleCount += 1;
+      averageLatestHeadPointToCenterHorizontalDistance += latestHeadPointToCenter;
+      averageRewoundHeadPointToCenterHorizontalDistance += rewoundHeadPointToCenter;
+      maxLatestHeadPointToCenterHorizontalDistance = Math.max(
+        maxLatestHeadPointToCenterHorizontalDistance,
+        latestHeadPointToCenter,
+      );
+      maxRewoundHeadPointToCenterHorizontalDistance = Math.max(
+        maxRewoundHeadPointToCenterHorizontalDistance,
+        rewoundHeadPointToCenter,
+      );
+      averageLatestNeckToHeadLength += latestNeckToHeadLength;
+      averageRewoundNeckToHeadLength += rewoundNeckToHeadLength;
+      maxLatestNeckToHeadLength = Math.max(maxLatestNeckToHeadLength, latestNeckToHeadLength);
+      maxRewoundNeckToHeadLength = Math.max(maxRewoundNeckToHeadLength, rewoundNeckToHeadLength);
+    }
   }
 
   return {
@@ -439,6 +486,23 @@ function summarizeRemoteAnimationTraceSamples(samples) {
     maxRewoundNeckPointHorizontalDistance,
     maxRewoundSpinePointHorizontalDistance,
     maxRewoundPelvisPointHorizontalDistance,
+    constructionSampleCount,
+    averageLatestHeadPointToCenterHorizontalDistance: constructionSampleCount > 0
+      ? averageLatestHeadPointToCenterHorizontalDistance / constructionSampleCount
+      : 0,
+    averageRewoundHeadPointToCenterHorizontalDistance: constructionSampleCount > 0
+      ? averageRewoundHeadPointToCenterHorizontalDistance / constructionSampleCount
+      : 0,
+    maxLatestHeadPointToCenterHorizontalDistance,
+    maxRewoundHeadPointToCenterHorizontalDistance,
+    averageLatestNeckToHeadLength: constructionSampleCount > 0
+      ? averageLatestNeckToHeadLength / constructionSampleCount
+      : 0,
+    averageRewoundNeckToHeadLength: constructionSampleCount > 0
+      ? averageRewoundNeckToHeadLength / constructionSampleCount
+      : 0,
+    maxLatestNeckToHeadLength,
+    maxRewoundNeckToHeadLength,
   };
 }
 

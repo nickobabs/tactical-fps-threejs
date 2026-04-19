@@ -15,6 +15,7 @@ import {
   REMOTE_AIM_PITCH_MIN,
   REMOTE_AIM_STATE_FACTORS,
   REMOTE_PRIMARY_CHARACTER_SKELETON,
+  crossesRemoteMeleeLocomotionBoundary,
   getRemoteSocketPoseKey,
 } from '../../src/shared/remoteCharacterConfig.js';
 import {
@@ -36,9 +37,9 @@ import {
   resolveRemoteHitBones,
   resolveRemoteRootJoint,
 } from '../../src/shared/remoteSkeleton.js';
+import { getRequestedRemoteCharacterDefinition } from '../../src/game/networking/remoteCharacterDefinitions.js';
 
 const REMOTE_PLAYER_STAND_HEIGHT = 1.72;
-const REMOTE_MODEL_URL = new URL('../../public/models/players/newtest.glb', import.meta.url);
 const REMOTE_ANIMATION_ROOT_URL = new URL('../../public/models/players/animations/', import.meta.url);
 const REMOTE_RIFLE_MODEL_URL = new URL('../../public/models/weapons/newak.glb', import.meta.url);
 const REMOTE_IDLE_ENTRY_DELAY = 0.1;
@@ -81,7 +82,7 @@ const TMP_SIZE = new THREE.Vector3();
 const TMP_ROOT_WORLD = new THREE.Vector3();
 const REMOTE_ROOT_MOTION_BONE_NAMES = ['mixamorighips', 'hips', 'root', '_rootjoint', 'armature', 'bip01'];
 
-let remoteRigAssetPromise = null;
+const remoteRigAssetPromises = new Map();
 const externalClipCache = new Map();
 let remoteIkSolverPromise = null;
 
@@ -252,13 +253,21 @@ async function loadRemoteRifleAsset() {
   };
 }
 
-async function loadRemoteRigAsset() {
-  if (!remoteRigAssetPromise) {
-    remoteRigAssetPromise = (async () => {
+function getRemoteModelUrlForDefinition(definition) {
+  const modelPath = String(definition?.modelPath ?? '/models/players/newtest.glb');
+  return new URL(`../../public${modelPath}`, import.meta.url);
+}
+
+async function loadRemoteRigAsset(teamKey = null) {
+  const definition = getRequestedRemoteCharacterDefinition(teamKey)
+    ?? getRequestedRemoteCharacterDefinition(null);
+  const definitionId = String(definition?.id ?? 'default');
+  if (!remoteRigAssetPromises.has(definitionId)) {
+    remoteRigAssetPromises.set(definitionId, (async () => {
       ensureNodeLoaderShims();
       const loader = new GLTFLoader();
       const [buffer, rifleAsset] = await Promise.all([
-        fs.readFile(REMOTE_MODEL_URL),
+        fs.readFile(getRemoteModelUrlForDefinition(definition)),
         loadRemoteRifleAsset(),
       ]);
       const gltf = await new Promise((resolve, reject) => {
@@ -273,7 +282,8 @@ async function loadRemoteRigAsset() {
       template.scale.setScalar(scale);
       template.updateMatrixWorld(true);
       TMP_BOX.setFromObject(template);
-      const rootJoint = resolveRemoteRootJoint(template, REMOTE_PRIMARY_CHARACTER_SKELETON);
+      const skeleton = definition?.skeleton ?? REMOTE_PRIMARY_CHARACTER_SKELETON;
+      const rootJoint = resolveRemoteRootJoint(template, skeleton);
       if (rootJoint) {
         rootJoint.getWorldPosition(TMP_ROOT_WORLD);
         template.position.set(-TMP_ROOT_WORLD.x, -TMP_BOX.min.y, -TMP_ROOT_WORLD.z);
@@ -284,22 +294,24 @@ async function loadRemoteRigAsset() {
       template.updateMatrixWorld(true);
 
       return {
+        definition,
         template,
         clips: await buildClipMap(),
         cloneSkinned,
         rifleScene: rifleAsset.scene,
       };
-    })();
+    })());
   }
 
-  return remoteRigAssetPromise;
+  return remoteRigAssetPromises.get(definitionId);
 }
 
-function findRigBones(root) {
-  const bones = resolveRemoteHitBones(root, REMOTE_PRIMARY_CHARACTER_SKELETON);
+function findRigBones(root, definition) {
+  const skeleton = definition?.skeleton ?? REMOTE_PRIMARY_CHARACTER_SKELETON;
+  const bones = resolveRemoteHitBones(root, skeleton);
   return {
     ...bones,
-    weaponSocket: root.getObjectByName(REMOTE_PRIMARY_CHARACTER_SKELETON.weaponSocket),
+    weaponSocket: root.getObjectByName(skeleton.weaponSocket),
   };
 }
 
@@ -517,10 +529,11 @@ async function ensureLeftHandIk(rig) {
   }
 
   const skeleton = rig.skinnedMesh.skeleton;
+  const characterSkeleton = rig.characterSkeleton ?? REMOTE_PRIMARY_CHARACTER_SKELETON;
   const findBoneIndex = (boneName) => skeleton.bones.findIndex((bone) => bone?.name === boneName);
-  const upperArmIndex = findBoneIndex(REMOTE_PRIMARY_CHARACTER_SKELETON.leftUpperArm);
-  const forearmIndex = findBoneIndex(REMOTE_PRIMARY_CHARACTER_SKELETON.leftForearm);
-  const handIndex = findBoneIndex(REMOTE_PRIMARY_CHARACTER_SKELETON.leftHand);
+  const upperArmIndex = findBoneIndex(characterSkeleton.leftUpperArm);
+  const forearmIndex = findBoneIndex(characterSkeleton.leftForearm);
+  const handIndex = findBoneIndex(characterSkeleton.leftHand);
   if (upperArmIndex < 0 || forearmIndex < 0 || handIndex < 0) {
     return;
   }
@@ -573,8 +586,8 @@ function updateLeftHandIk(rig, player) {
 }
 
 
-export async function createRemoteHitboxRig() {
-  const asset = await loadRemoteRigAsset();
+export async function createRemoteHitboxRig(teamKey = null) {
+  const asset = await loadRemoteRigAsset(teamKey);
   const container = new THREE.Group();
   const root = asset.cloneSkinned(asset.template);
   const basePosition = root.position.clone();
@@ -598,7 +611,9 @@ export async function createRemoteHitboxRig() {
     actions.set(name, { action, playbackSpeed: entry.playbackSpeed });
   }
   const weaponAnchor = new THREE.Group();
-  const weaponSocket = root.getObjectByName(REMOTE_PRIMARY_CHARACTER_SKELETON.weaponSocket);
+  const weaponSocket = root.getObjectByName(
+    asset.definition?.skeleton?.weaponSocket ?? REMOTE_PRIMARY_CHARACTER_SKELETON.weaponSocket,
+  );
   weaponAnchor.scale.setScalar(1 / Math.max(REMOTE_CHARACTER_MODEL_SCALE, 1e-6));
   if (weaponSocket) {
     weaponSocket.add(weaponAnchor);
@@ -616,11 +631,13 @@ export async function createRemoteHitboxRig() {
   const rig = {
     container,
     root,
+    definitionId: asset.definition?.id ?? null,
+    characterSkeleton: asset.definition?.skeleton ?? REMOTE_PRIMARY_CHARACTER_SKELETON,
     basePosition,
     baseQuaternion,
     mixer,
     actions,
-    bones: findRigBones(root),
+    bones: findRigBones(root, asset.definition),
     aimBones: null,
     hitboxPoints: createRemoteHitboxPointCache(),
     activeClip: null,
@@ -630,6 +647,7 @@ export async function createRemoteHitboxRig() {
     idleEntryElapsed: 0,
     lastNonIdleMovementClip: null,
     lastRawCrouchState: null,
+    lastWeaponKey: null,
     weaponAnchor,
     weaponRoot,
     skinnedMesh,
@@ -637,7 +655,7 @@ export async function createRemoteHitboxRig() {
     leftHandIkTargetBone: null,
   };
   console.info('[remoteHitboxRig] Hitbox audit:', describeRemoteHitboxAudit({
-    root: resolveRemoteRootJoint(root, REMOTE_PRIMARY_CHARACTER_SKELETON),
+    root: resolveRemoteRootJoint(root, asset.definition?.skeleton ?? REMOTE_PRIMARY_CHARACTER_SKELETON),
     bones: rig.bones,
   }));
   await ensureLeftHandIk(rig);
@@ -662,6 +680,14 @@ export function updateRemoteHitboxRig(rig, player, delta) {
     clearRigIdleEntryCarryover(rig);
   }
   rig.lastRawCrouchState = rawCrouchState;
+  const nextWeaponKey = String(player?.activeWeaponKey ?? 'rifle');
+  if (
+    rig.lastWeaponKey
+    && crossesRemoteMeleeLocomotionBoundary(rig.lastWeaponKey, nextWeaponKey)
+  ) {
+    clearRigIdleEntryCarryover(rig);
+  }
+  rig.lastWeaponKey = nextWeaponKey;
   const clipIntent = resolveRemotePoseClipIntent({
     state: {
       ...player?.motionState,

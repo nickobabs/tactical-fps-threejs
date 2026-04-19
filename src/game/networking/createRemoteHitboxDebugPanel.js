@@ -102,6 +102,14 @@ export function createRemoteHitboxDebugPanel({ remotePlayerPresenter }) {
   status.style.color = 'rgba(174, 211, 255, 0.86)';
   overlay.appendChild(status);
 
+  function formatDist(value) {
+    return Number(value ?? 0).toFixed(3);
+  }
+
+  function formatAngle(value) {
+    return Number(value ?? 0).toFixed(1);
+  }
+
   function sync() {
     const settings = remotePlayerPresenter?.getHitboxDebugSettings?.() ?? {};
     for (const [key, row] of rows.entries()) {
@@ -109,6 +117,10 @@ export function createRemoteHitboxDebugPanel({ remotePlayerPresenter }) {
     }
 
     const debugState = remotePlayerPresenter?.getDebugState?.() ?? null;
+    const latestPoints = debugState?.pose?.points?.latestError ?? null;
+    const rewoundPoints = debugState?.pose?.points?.rewoundError ?? null;
+    const latestChain = debugState?.pose?.points?.latestChain ?? null;
+    const rewoundChain = debugState?.pose?.points?.rewoundChain ?? null;
     status.textContent = [
       `Tracked remotes: ${Number(debugState?.trackedRemoteCount ?? 0)}`,
       `Focus: ${debugState?.focusDisplayName ?? debugState?.focusPlayerId ?? 'none'}`,
@@ -118,6 +130,10 @@ export function createRemoteHitboxDebugPanel({ remotePlayerPresenter }) {
       `Anim: ${debugState?.animation?.presentationState ?? 'none'} target=${debugState?.animation?.targetClip ?? 'none'} base=${debugState?.animation?.baseClip ?? 'none'}`,
       `Auth: target=${debugState?.animation?.authoritativeTargetClip ?? 'none'} base=${debugState?.animation?.authoritativeBaseClip ?? 'none'} active=${debugState?.animation?.authoritativeActiveClip ?? 'none'}`,
       `Layers: active=${debugState?.animation?.activeCharacterClip ?? 'none'} upper=${debugState?.animation?.activeUpperBodyClip ?? 'none'} full=${debugState?.animation?.fullBodyActionClip ?? 'none'} lock=${debugState?.animation?.fireBaseLocked ? 'yes' : 'no'}`,
+      `Pts latest xz: h=${formatDist(latestPoints?.head?.horizontalDistance)} n=${formatDist(latestPoints?.neck?.horizontalDistance)} s=${formatDist(latestPoints?.spine?.horizontalDistance)} lc=${formatDist(latestPoints?.leftClavicle?.horizontalDistance)} rc=${formatDist(latestPoints?.rightClavicle?.horizontalDistance)}`,
+      `Pts rewind xz: h=${formatDist(rewoundPoints?.head?.horizontalDistance)} n=${formatDist(rewoundPoints?.neck?.horizontalDistance)} s=${formatDist(rewoundPoints?.spine?.horizontalDistance)} lc=${formatDist(rewoundPoints?.leftClavicle?.horizontalDistance)} rc=${formatDist(rewoundPoints?.rightClavicle?.horizontalDistance)}`,
+      `Chain latest deg: s-n=${formatAngle(latestChain?.spineToNeck?.angleDegrees)} n-h=${formatAngle(latestChain?.neckToHead?.angleDegrees)} clav=${formatAngle(latestChain?.clavicleSpan?.angleDegrees)}`,
+      `Chain rewind deg: s-n=${formatAngle(rewoundChain?.spineToNeck?.angleDegrees)} n-h=${formatAngle(rewoundChain?.neckToHead?.angleDegrees)} clav=${formatAngle(rewoundChain?.clavicleSpan?.angleDegrees)}`,
     ].join('\n');
   }
 
